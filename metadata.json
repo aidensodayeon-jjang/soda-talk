@@ -1,0 +1,6 @@
+{
+  "name": "AI Competition Platform",
+  "description": "A minimalist, high-fidelity AI competition and evaluation platform inspired by MUJI, Notion, and Apple design. Integrates with LM Studio for prompt tuning, live arena simulation, and automated scoring.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

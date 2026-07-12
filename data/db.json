@@ -1,0 +1,49 @@
+{
+  "users": [
+    {
+      "id": "user-1",
+      "username": "admin",
+      "displayName": "운영자",
+      "passwordHash": "admin123"
+    },
+    {
+      "id": "user-2",
+      "username": "muji",
+      "displayName": "무인양품",
+      "passwordHash": "muji123"
+    }
+  ],
+  "settings": {
+    "lmStudioUrl": "http://192.168.0.93:1234",
+    "modelName": "meta-llama-3-8b-instruct",
+    "fallbackMode": true
+  },
+  "chats": [
+    {
+      "id": "chat-default",
+      "userId": "user-1",
+      "title": "첫 번째 대화방 ☕",
+      "createdAt": "2026-07-12T07:09:53.704Z",
+      "messages": [
+        {
+          "id": "msg-1",
+          "sender": "assistant",
+          "text": "안녕하세요! 무인양품, 노션, 애플의 단정하고 부드러운 감성을 닮은 AI 비서입니다. 192.168.0.93:1234 포트의 LM Studio 서비스가 지정되어 있습니다. 언제든 편안히 말을 걸어주세요.",
+          "timestamp": "2026-07-12T07:09:53.705Z"
+        },
+        {
+          "id": "msg-1783840222320-user",
+          "sender": "user",
+          "text": "하이",
+          "timestamp": "2026-07-12T07:10:22.320Z"
+        },
+        {
+          "id": "msg-1783840222555-assistant",
+          "sender": "assistant",
+          "text": "[가상 코어 에러] 일시적인 통신 과부하로 답변을 생성할 수 없습니다: {\"error\":{\"code\":400,\"message\":\"API key not valid. Please pass a valid API key.\",\"status\":\"INVALID_ARGUMENT\",\"details\":[{\"@type\":\"type.googleapis.com/google.rpc.ErrorInfo\",\"reason\":\"API_KEY_INVALID\",\"domain\":\"googleapis.com\",\"metadata\":{\"service\":\"generativelanguage.googleapis.com\"}},{\"@type\":\"type.googleapis.com/google.rpc.LocalizedMessage\",\"locale\":\"en-US\",\"message\":\"API key not valid. Please pass a valid API key.\"}]}}",
+          "timestamp": "2026-07-12T07:10:22.555Z"
+        }
+      ]
+    }
+  ]
+}
