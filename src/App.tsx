@@ -18,7 +18,15 @@ import {
   MessageSquare,
   BookOpen,
   ArrowRight,
-  Info
+  Info,
+  Sun,
+  ChevronDown,
+  FileText,
+  Zap,
+  Users,
+  Key,
+  PlusCircle,
+  Activity
 } from "lucide-react";
 import { ChatRoom, Message, LMStudioConfig } from "./types";
 
@@ -34,12 +42,165 @@ export default function App() {
 
   // Settings Panel State
   const [showSettings, setShowSettings] = useState(false);
-  const [lmStudioUrl, setLmStudioUrl] = useState("http://192.168.0.93:1234");
+  const [aiProvider, setAiProvider] = useState("local");
+  const [openaiApiKey, setOpenaiApiKey] = useState("");
+  const [lmStudioUrl, setLmStudioUrl] = useState("https://granular-kindly-morally.ngrok-free.dev");
   const [modelName, setModelName] = useState("meta-llama-3-8b-instruct");
   const [fallbackMode, setFallbackMode] = useState(true);
+  const [hybridModeEnabled, setHybridModeEnabled] = useState(false);
+  const [dailyGptQuota, setDailyGptQuota] = useState(3);
   const [lmStudioConnected, setLmStudioConnected] = useState<boolean | null>(null);
   const [testingConnection, setTestingConnection] = useState(false);
   const [testMessage, setTestMessage] = useState("");
+
+  const [temperature, setTemperature] = useState(0.7);
+  const [maxTokens, setMaxTokens] = useState(1024);
+  const [language, setLanguage] = useState("Korean");
+  const [systemStatus, setSystemStatus] = useState<{ memoryUsage?: { total: number, free: number }, openaiUsage?: { used: number, limit: number } }>({});
+
+  // Admin Panel State
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const [adminUsers, setAdminUsers] = useState<any[]>([]);
+  const [adminChats, setAdminChats] = useState<any[]>([]);
+  const [adminSelectedUserId, setAdminSelectedUserId] = useState<string | null>(null);
+  const [adminSelectedUserStatsId, setAdminSelectedUserStatsId] = useState<string | null>(null);
+  const [adminUserStats, setAdminUserStats] = useState<any>(null);
+  const [showGlobalDashboard, setShowGlobalDashboard] = useState(false);
+  const [globalStats, setGlobalStats] = useState<any>(null);
+  const [newUsername, setNewUsername] = useState("");
+  const [newDisplayName, setNewDisplayName] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [adminError, setAdminError] = useState("");
+
+  const fetchAdminUsers = async () => {
+    try {
+      const res = await fetch("/api/admin/users", {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setAdminUsers(data.users);
+      }
+    } catch (err) {
+      console.error("Failed to load users", err);
+    }
+  };
+
+  const fetchGlobalStats = async () => {
+    try {
+      const res = await fetch('/api/admin/stats/all', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setGlobalStats(data);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const fetchUserStats = async (userId: string) => {
+    try {
+      const res = await fetch(`/api/admin/users/${userId}/stats`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setAdminUserStats(data);
+        setAdminSelectedUserStatsId(userId);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const fetchAdminChats = async () => {
+    try {
+      const res = await fetch("/api/admin/chats", {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (res.ok) setAdminChats(data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  useEffect(() => {
+    if (showAdminPanel) {
+      fetchAdminUsers();
+      fetchAdminChats();
+    }
+  }, [showAdminPanel]);
+
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAdminError("");
+    try {
+      const res = await fetch("/api/admin/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ username: newUsername, displayName: newDisplayName, password: newPassword })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setNewUsername("");
+        setNewDisplayName("");
+        setNewPassword("");
+        fetchAdminUsers();
+      } else {
+        setAdminError(data.error);
+      }
+    } catch (err) {
+      setAdminError("생성 실패");
+    }
+  };
+
+  const handleDeleteUser = async (userId: string) => {
+    if (!window.confirm("정말 이 유저를 삭제하시겠습니까?")) return;
+    try {
+      await fetch(`/api/admin/users/${userId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      fetchAdminUsers();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleUpdatePersona = async (userId: string, newPersona: string) => {
+    try {
+      await fetch(`/api/admin/users/${userId}/persona`, {
+        method: "PUT",
+        headers: { 
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}` 
+        },
+        body: JSON.stringify({ persona: newPersona })
+      });
+      fetchAdminUsers();
+      alert("페르소나가 업데이트 되었습니다!");
+    } catch (err) {
+      console.error(err);
+      alert("페르소나 업데이트 실패");
+    }
+  };
+
+  const handleGenerateApiKey = async (userId: string) => {
+    if (!window.confirm("기존 API 키가 있다면 무효화됩니다. 새로 발급하시겠습니까?")) return;
+    try {
+      await fetch(`/api/admin/users/${userId}/apikey`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      fetchAdminUsers();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -88,10 +249,7 @@ export default function App() {
       const data = await res.json();
       if (res.ok) {
         setChats(data);
-        // Automatically activate first chat if available
-        if (data.length > 0 && !activeChatId) {
-          setActiveChatId(data[0].id);
-        }
+        // Do not auto-activate first chat (per user request to start fresh)
       }
     } catch (err) {
       console.error("Failed to fetch chats", err);
@@ -103,15 +261,42 @@ export default function App() {
       const res = await fetch("/api/lmstudio/config");
       const data = await res.json();
       if (res.ok) {
-        setLmStudioUrl(data.lmStudioUrl);
-        setModelName(data.modelName);
+        if (data.aiProvider)        setAiProvider(data.aiProvider || "local");
+        setOpenaiApiKey(data.openaiApiKey || "");
+        if (data.lmStudioUrl) setLmStudioUrl(data.lmStudioUrl);
+        if (data.modelName) setModelName(data.modelName);
         setFallbackMode(data.fallbackMode);
+        if (data.hybridModeEnabled !== undefined) setHybridModeEnabled(data.hybridModeEnabled);
+        if (data.dailyGptQuota !== undefined) setDailyGptQuota(data.dailyGptQuota);
+        if (data.temperature !== undefined) setTemperature(data.temperature);
+        if (data.maxTokens !== undefined) setMaxTokens(data.maxTokens);
+        if (data.language !== undefined) setLanguage(data.language);
         checkConnection(data.lmStudioUrl);
       }
     } catch (err) {
       console.error("Failed to load LM Studio settings", err);
     }
   };
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (user) {
+      const fetchStatus = async () => {
+        try {
+          const res = await fetch("/api/system/status");
+          if (res.ok) {
+            const data = await res.json();
+            setSystemStatus(data);
+          }
+        } catch (err) {
+          // ignore
+        }
+      };
+      fetchStatus();
+      interval = setInterval(fetchStatus, 3000);
+    }
+    return () => clearInterval(interval);
+  }, [user]);
 
   const checkConnection = async (urlToCheck?: string) => {
     const url = urlToCheck || lmStudioUrl;
@@ -130,24 +315,8 @@ export default function App() {
     }
   };
 
-  const handleCreateNewChat = async (initialTitle?: string) => {
-    try {
-      const res = await fetch("/api/chats", {
-        method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({ title: initialTitle || "새로운 대화 ✨" })
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setChats(prev => [data, ...prev]);
-        setActiveChatId(data.id);
-      }
-    } catch (err) {
-      console.error("New chat creation failed", err);
-    }
+  const handleCreateNewChat = () => {
+    setActiveChatId(null);
   };
 
   const handleDeleteChat = async (e: React.MouseEvent, chatId: string) => {
@@ -206,53 +375,167 @@ export default function App() {
     setSending(true);
     if (!presetText) setInputText("");
 
-    // Optimistically add user message to local state
-    const tempUserMsg: Message = {
-      id: "temp-user-msg-" + Date.now(),
+    // 1. Create and render User Message locally
+    const userMsg: Message = {
+      id: "msg-" + Date.now() + "-user",
       sender: "user",
       text: textToSend,
       timestamp: new Date().toISOString()
     };
 
+    let updatedChats = chats;
+    setChats(prev => {
+      updatedChats = prev.map(c => {
+        if (c.id === targetChatId) return { ...c, messages: [...c.messages, userMsg] };
+        return c;
+      });
+      return updatedChats;
+    });
+
+    // Sync User Message to backend
+    try {
+      await fetch(`/api/chats/${targetChatId}/sync`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ messages: [userMsg] })
+      });
+    } catch (err) {
+      console.error("Failed to sync user message", err);
+    }
+
+    // 2. Prepare for Assistant Message stream
+    const assistantMsgId = "msg-" + Date.now() + "-assistant";
+    let assistantMsgText = "";
+
     setChats(prev => prev.map(c => {
       if (c.id === targetChatId) {
-        return { ...c, messages: [...c.messages, tempUserMsg] };
+        return {
+          ...c,
+          messages: [...c.messages, { id: assistantMsgId, sender: "assistant", text: "", timestamp: new Date().toISOString() }]
+        };
       }
       return c;
     }));
 
     try {
-      const res = await fetch(`/api/chats/${targetChatId}/messages`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({ text: textToSend })
-      });
+      const currentChat = chats.find(c => c.id === targetChatId);
+      const previousMessages = currentChat ? currentChat.messages : [];
+      const cleanMessages = previousMessages.filter(m => !m.text.includes("로컬 엔진이 잠시 쉬고 있어"));
+      const windowedMessages = [...cleanMessages, userMsg].slice(-20);
       
-      const data = await res.json();
-      if (res.ok) {
-        // Update full message history in local chat state
-        setChats(prev => prev.map(c => {
-          if (c.id === targetChatId) {
-            return {
-              ...c,
-              title: data.chatTitle || c.title,
-              messages: c.messages.filter(m => m.id !== tempUserMsg.id).concat([
-                data.userMessage,
-                data.assistantMessage
-              ])
-            };
-          }
-          return c;
-        }));
-      } else {
-        alert(data.error || "메시지 발송에 실패했습니다.");
+      const conversationHistory = windowedMessages.map(m => ({
+        role: m.sender === "user" ? "user" : "assistant",
+        content: m.text
+      }));
+
+      const sodabotPersona = "코딩 학원 '디랩(D-Lab)'의 인공지능 코딩 반려봇 '소다봇'이야. 초등학생 눈높이의 친근한 한국어 반말 구어체(~했어?, ~야!)와 이모지를 적극 사용해. 에러에는 깊이 공감해주고, 코딩 질문에는 정답 대신 단계별 힌트만 줘.";
+
+      const res = await fetch(`/api/lmstudio/stream`, {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json", 
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          model: modelName,
+          messages: [
+            { role: "system", content: sodabotPersona },
+            ...conversationHistory
+          ],
+          temperature: temperature,
+          max_tokens: maxTokens,
+          stream: true
+        })
+      });
+
+      console.log("LM Studio HTTP status:", res.status);
+      if (!res.ok) {
+        const errText = await res.text();
+        console.error("LM Studio error response:", errText);
+        throw new Error(errText || `LM Studio HTTP 에러: ${res.status}`);
       }
-    } catch (err) {
-      console.error("Message send failure", err);
+
+      if (!res.body) throw new Error("ReadableStream not supported in this browser.");
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let done = false;
+      let buffer = "";
+
+      while (!done) {
+        const { value, done: readerDone } = await reader.read();
+        done = readerDone;
+        if (value) {
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || ""; // Keep the last incomplete line in buffer
+          
+          for (let line of lines) {
+            line = line.trim();
+            if (line.startsWith("data:") && !line.includes("[DONE]")) {
+              try {
+                const payload = line.replace(/^data:\s*/, "");
+                const parsed = JSON.parse(payload);
+                const tokenContent = parsed.choices?.[0]?.delta?.content || "";
+                
+                if (tokenContent) {
+                  assistantMsgText += tokenContent;
+                  console.log("Received token:", tokenContent, "Total text so far:", assistantMsgText);
+                  
+                  setChats(prev => prev.map(c => {
+                    if (c.id === targetChatId) {
+                      return {
+                        ...c,
+                        messages: c.messages.map(m => 
+                          m.id === assistantMsgId ? { ...m, text: assistantMsgText } : m
+                        )
+                      };
+                    }
+                    return c;
+                  }));
+                }
+              } catch (e) {
+                console.error("Stream parse error:", e, "Line:", line);
+              }
+            }
+          }
+        }
+      }
+
+      console.log("Stream completely finished!");
+
+    } catch (err: any) {
+      console.warn("Client-side LM Studio connect error:", err);
+      const errDetails = err.message || err.toString();
+      assistantMsgText = "로컬 엔진이 잠시 쉬고 있어! 에러 원인: [" + errDetails + "]";
+      setChats(prev => prev.map(c => {
+        if (c.id === targetChatId) {
+          return {
+            ...c,
+            messages: c.messages.map(m => m.id === assistantMsgId ? { ...m, text: assistantMsgText } : m)
+          };
+        }
+        return c;
+      }));
     } finally {
+      // Sync finalized Assistant Message to backend
+      const assistantMsgFinal: Message = {
+        id: assistantMsgId,
+        sender: "assistant",
+        text: assistantMsgText,
+        timestamp: new Date().toISOString()
+      };
+      
+      try {
+        await fetch(`/api/chats/${targetChatId}/sync`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ messages: [assistantMsgFinal] })
+        });
+      } catch (err) {
+        console.error("Failed to sync assistant message", err);
+      }
+      
       setSending(false);
     }
   };
@@ -264,9 +547,13 @@ export default function App() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          aiProvider,
+          openaiApiKey,
           lmStudioUrl,
           modelName,
-          fallbackMode
+          fallbackMode,
+          hybridModeEnabled,
+          dailyGptQuota
         })
       });
       if (res.ok) {
@@ -275,6 +562,20 @@ export default function App() {
       }
     } catch (err) {
       console.error("Failed to save settings", err);
+    }
+  };
+
+  const handleToggleProvider = async () => {
+    const newProvider = aiProvider === "local" ? "openai" : "local";
+    setAiProvider(newProvider); // Optimistic UI update
+    try {
+      await fetch("/api/lmstudio/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ aiProvider: newProvider })
+      });
+    } catch (err) {
+      console.error("Failed to toggle provider", err);
     }
   };
 
@@ -325,8 +626,8 @@ export default function App() {
     },
     {
       title: "브랜드 카피라이팅 기획 ✏️",
-      desc: "무인양품처럼 꾸밈없고 일상에 녹아드는 간결한 문장의 한 줄 광고 기획서.",
-      prompt: "가벼운 린넨 이불 제품에 어울리는 무인양품 풍의 담백하고 미니멀한 가을용 카피 3가지만 적어줘."
+      desc: "꾸밈없고 일상에 녹아드는 간결한 문장의 한 줄 광고 기획서.",
+      prompt: "가벼운 린넨 이불 제품에 어울리는 담백하고 미니멀한 가을용 카피 3가지만 적어줘."
     },
     {
       title: "따뜻한 맞춤법 교정기 ☕",
@@ -335,6 +636,375 @@ export default function App() {
     }
   ];
 
+  const memTotalGB = systemStatus?.memoryUsage ? (systemStatus.memoryUsage.total / 1024 / 1024 / 1024).toFixed(1) : "8.0";
+  const memFreeGB = systemStatus?.memoryUsage ? (systemStatus.memoryUsage.free / 1024 / 1024 / 1024).toFixed(1) : "1.8";
+  const memUsedGB = (parseFloat(memTotalGB) - parseFloat(memFreeGB)).toFixed(1);
+  const memPercent = Math.min(100, Math.max(0, (parseFloat(memUsedGB) / parseFloat(memTotalGB)) * 100));
+  
+  const openaiUsed = systemStatus?.openaiUsage?.used || 3240;
+  const openaiLimit = systemStatus?.openaiUsage?.limit || 10000;
+  const openaiPercent = Math.min(100, Math.max(0, (openaiUsed / openaiLimit) * 100));
+
+  // ===== ADMIN CUSTOM LAYOUT =====
+  if (user?.username === "admin") {
+    return (
+      <div className="flex h-screen bg-[#FAF9F6] text-[#1D1D1F] font-sans antialiased overflow-hidden">
+        {/* 1. Admin Left Sidebar */}
+        <aside className="w-64 border-r border-[#EAE6DF] bg-[#FAF9F6] flex flex-col shrink-0 select-none">
+          <div className="p-5 pb-2">
+            <h1 className="text-xl font-bold tracking-tight text-[#1D1D1F] flex items-center gap-2">
+              <span className="w-6 h-6 rounded-lg bg-indigo-600 text-white flex items-center justify-center text-xs">S</span>
+              Admin Console
+            </h1>
+          </div>
+          
+          <div className="flex-1 overflow-y-auto px-3 py-4 space-y-4">
+            <div className="space-y-1">
+              <div className="text-[10px] font-bold text-[#86868B] px-2 mb-2 uppercase tracking-wider">시스템 관리</div>
+              <button onClick={() => { fetchGlobalStats(); setShowGlobalDashboard(true); }} className="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 flex items-center gap-2 transition-colors">
+                <Activity className="w-4 h-4" /> 통합 모니터링
+              </button>
+              <button onClick={() => setShowAdminPanel(true)} className="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-indigo-700 hover:bg-indigo-50 border border-transparent hover:border-indigo-200 flex items-center gap-2 transition-colors">
+                <Users className="w-4 h-4" /> 유저 관리
+              </button>
+              <button onClick={() => setShowSettings(true)} className="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-[#5C5B57] hover:bg-white border border-transparent hover:border-[#EAE6DF] flex items-center gap-2 transition-colors">
+                <Settings className="w-4 h-4" /> 서버 설정
+              </button>
+            </div>
+            
+            <div className="space-y-1 pt-4 border-t border-[#EAE6DF]">
+              <div className="flex items-center justify-between px-2 mb-2">
+                <div className="text-[10px] font-bold text-[#86868B] uppercase tracking-wider">미니 대화 기록</div>
+                <button 
+                  onClick={handleCreateNewChat}
+                  className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold transition-colors"
+                >
+                  <PlusCircle className="w-3 h-3 inline mr-0.5" />새 대화
+                </button>
+              </div>
+              {chats.map(chat => (
+                <div
+                  key={chat.id}
+                  onClick={() => setActiveChatId(chat.id)}
+                  className={`w-full text-left px-3 py-2 rounded-xl text-xs font-medium truncate cursor-pointer transition-colors ${activeChatId === chat.id ? "bg-white border border-[#EAE6DF] shadow-sm text-[#1D1D1F]" : "text-[#5C5B57] hover:bg-[#EAE6DF]/50"}`}
+                >
+                  <MessageSquare className="w-3.5 h-3.5 inline mr-1.5 opacity-70" />
+                  {chat.title}
+                </div>
+              ))}
+            </div>
+          </div>
+          
+          <div className="p-3 border-t border-[#EAE6DF] bg-white">
+            <div className="flex items-center gap-2 p-1.5 rounded-lg bg-[#FAF9F6] border border-[#EAE6DF] mb-2">
+              <div className="w-7 h-7 rounded-full bg-[#FAF9F6] border border-[#EAE6DF] flex items-center justify-center text-[#5C5B57] font-mono text-[11px] font-bold">A</div>
+              <div className="truncate flex-1 min-w-0">
+                <p className="text-xs font-semibold text-[#1D1D1F] truncate">최고 운영자</p>
+                <p className="text-[10px] text-[#86868B] font-mono truncate">@admin</p>
+              </div>
+            </div>
+            <button onClick={handleLogout} className="w-full py-1.5 px-2 bg-[#FAF9F6] hover:bg-rose-50 border border-[#EAE6DF] hover:border-rose-200 rounded-lg text-[10px] font-medium text-[#5C5B57] hover:text-rose-700 flex items-center justify-center gap-1 transition-colors">
+              <LogOut className="w-3 h-3" /> 로그아웃
+            </button>
+          </div>
+        </aside>
+
+        {/* 2. Admin Center Main (Global Dashboard Inline) */}
+        <main className="flex-1 flex flex-col h-screen overflow-y-auto bg-white border-r border-[#EAE6DF] p-6 relative">
+          <div className="max-w-4xl mx-auto w-full space-y-6">
+            <div className="space-y-1">
+              <h2 className="text-2xl font-bold text-[#1D1D1F]">시스템 통합 모니터링</h2>
+              <p className="text-sm text-[#86868B]">모든 사용자의 대화 통계 및 AI 리소스 사용 현황을 실시간으로 파악합니다.</p>
+            </div>
+
+            <div className="grid grid-cols-3 gap-4">
+              <div className="p-5 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-3xl text-white shadow-lg shadow-indigo-200">
+                <Activity className="w-6 h-6 mb-3 opacity-80" />
+                <p className="text-xs font-medium opacity-80">활성 엔진</p>
+                <p className="text-lg font-bold truncate">{modelName || "Qwen 4B"}</p>
+              </div>
+              <div className="p-5 bg-white border border-[#EAE6DF] rounded-3xl shadow-sm">
+                <Users className="w-6 h-6 mb-3 text-emerald-500" />
+                <p className="text-xs font-medium text-[#86868B]">등록된 사용자</p>
+                <p className="text-lg font-bold text-[#1D1D1F]">{globalStats?.users?.length || 0} 명</p>
+              </div>
+              <div className="p-5 bg-white border border-[#EAE6DF] rounded-3xl shadow-sm">
+                <MessageSquare className="w-6 h-6 mb-3 text-blue-500" />
+                <p className="text-xs font-medium text-[#86868B]">총 대화방 수</p>
+                <p className="text-lg font-bold text-[#1D1D1F]">{globalStats?.users?.reduce((acc:any, u:any) => acc + u.totalChats, 0) || 0} 개</p>
+              </div>
+            </div>
+
+            <div className="p-6 bg-[#FAF9F6] border border-[#EAE6DF] rounded-3xl space-y-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-bold text-[#1D1D1F]">하이브리드 라우팅 및 할당량 관리</h3>
+                  <p className="text-xs text-[#86868B]">유저당 하루에 허용할 프리미엄 GPT 호출 횟수를 설정합니다.</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={hybridModeEnabled} 
+                      onChange={async (e) => {
+                        const checked = e.target.checked;
+                        setHybridModeEnabled(checked);
+                        try {
+                          await fetch("/api/lmstudio/config", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ hybridModeEnabled: checked, dailyGptQuota })
+                          });
+                          fetchGlobalStats();
+                        } catch (err) {}
+                      }} 
+                      className="sr-only peer" 
+                    />
+                    <div className="w-11 h-6 bg-[#EAE6DF] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input 
+                      type="number" min="0" value={dailyGptQuota} 
+                      onChange={(e) => setDailyGptQuota(parseInt(e.target.value))}
+                      className="w-20 p-2 bg-white border border-[#EAE6DF] rounded-xl text-sm text-center font-mono focus:border-emerald-400 focus:outline-none" 
+                    />
+                    <button 
+                      onClick={async () => {
+                        try {
+                          await fetch("/api/lmstudio/config", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ dailyGptQuota, hybridModeEnabled })
+                          });
+                          alert("저장되었습니다!");
+                          fetchGlobalStats();
+                        } catch (err) {}
+                      }}
+                      className="px-4 py-2 bg-[#1D1D1F] hover:bg-black text-white rounded-xl text-xs font-semibold transition-colors shadow-sm"
+                    >
+                      저장
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-bold text-[#1D1D1F]">사용자별 일일 쿼터 소진 현황</h3>
+                <button onClick={fetchGlobalStats} className="text-[10px] text-indigo-600 font-bold hover:underline">새로고침</button>
+              </div>
+              <div className="border border-[#EAE6DF] rounded-2xl overflow-hidden shadow-sm bg-white">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-[#FAF9F6] text-[#86868B] border-b border-[#EAE6DF]">
+                    <tr>
+                      <th className="p-3 font-semibold">유저</th>
+                      <th className="p-3 font-semibold text-center">총 대화방</th>
+                      <th className="p-3 font-semibold w-1/2">오늘 GPT 사용 현황 (한도: {globalStats?.settings?.dailyGptQuota || dailyGptQuota}회)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#EAE6DF]">
+                    {globalStats?.users?.map((u: any) => {
+                      const quota = globalStats?.settings?.dailyGptQuota || dailyGptQuota || 3;
+                      const usage = u.gptUsageCount || 0;
+                      const percentage = Math.min((usage / quota) * 100, 100);
+                      const isExhausted = usage >= quota;
+
+                      return (
+                        <tr key={u.id} className="hover:bg-[#FAF9F6] transition-colors">
+                          <td className="p-3">
+                            <div className="font-bold text-[#1D1D1F]">{u.displayName}</div>
+                            <div className="text-[10px] font-mono text-[#86868B]">@{u.username}</div>
+                          </td>
+                          <td className="p-3 text-center font-mono text-[#1D1D1F]">{u.totalChats}</td>
+                          <td className="p-3">
+                            {hybridModeEnabled ? (
+                              <div className="space-y-1.5">
+                                <div className="flex justify-between text-[10px] text-[#86868B] font-medium">
+                                  <span>{usage} 회 사용</span>
+                                  <span className={isExhausted ? "text-rose-500 font-bold" : ""}>
+                                    {isExhausted ? "한도 초과" : `${quota - usage} 회 남음`}
+                                  </span>
+                                </div>
+                                <div className="h-2 w-full bg-[#EAE6DF] rounded-full overflow-hidden">
+                                  <div 
+                                    className={`h-full transition-all duration-1000 ${isExhausted ? 'bg-rose-500' : 'bg-gradient-to-r from-emerald-400 to-emerald-500'}`} 
+                                    style={{ width: `${percentage}%` }}
+                                  />
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="text-[10px] text-[#B0ACA5] text-center">하이브리드 모드 꺼짐</div>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </main>
+
+        {/* 3. Admin Right Sidebar (Mini Chat) */}
+        <aside className="w-[340px] bg-[#FAF9F6] flex flex-col shrink-0 select-none">
+          <header className="h-12 border-b border-[#EAE6DF] bg-white flex items-center justify-between px-4 shrink-0">
+            <span className="text-xs font-bold text-[#1D1D1F]">미니 대화 테스트</span>
+            <div className="flex items-center gap-1.5 text-[10px] text-[#86868B]">
+              <span className={`w-1.5 h-1.5 rounded-full ${lmStudioConnected ? "bg-emerald-500" : "bg-rose-500"}`} />
+              {lmStudioConnected ? "Connected" : "Offline"}
+            </div>
+          </header>
+          
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            {(!activeChat || activeChat.messages.length === 0) ? (
+              <div className="text-center py-10 opacity-50">
+                <MessageSquare className="w-8 h-8 mx-auto mb-2 text-[#86868B]" />
+                <p className="text-xs text-[#86868B]">새로운 대화를 시작하세요.</p>
+              </div>
+            ) : (
+              activeChat.messages.map((msg: any, i: number) => (
+                <div key={i} className={`flex gap-2 ${msg.sender === "user" ? "justify-end" : "justify-start"}`}>
+                  <div className={`max-w-[85%] p-3 rounded-2xl text-[11px] leading-relaxed shadow-sm ${msg.sender === "user" ? "bg-indigo-600 text-white rounded-br-none" : "bg-white border border-[#EAE6DF] text-[#1D1D1F] rounded-bl-none"}`}>
+                    {msg.text}
+                  </div>
+                </div>
+              ))
+            )}
+            {sending && (
+              <div className="flex gap-2 justify-start">
+                <div className="bg-white border border-[#EAE6DF] p-3 rounded-2xl rounded-bl-none shadow-sm">
+                  <div className="flex gap-1">
+                    <span className="w-1.5 h-1.5 bg-[#86868B] rounded-full animate-bounce"></span>
+                    <span className="w-1.5 h-1.5 bg-[#86868B] rounded-full animate-bounce" style={{ animationDelay: '0.15s' }}></span>
+                    <span className="w-1.5 h-1.5 bg-[#86868B] rounded-full animate-bounce" style={{ animationDelay: '0.3s' }}></span>
+                  </div>
+                </div>
+              </div>
+            )}
+            <div ref={chatEndRef} />
+          </div>
+
+          <div className="p-3 bg-white border-t border-[#EAE6DF]">
+            <form onSubmit={handleSendMessage} className="relative flex items-center">
+              <input
+                type="text"
+                disabled={sending}
+                value={inputText}
+                onChange={(e) => setInputText(e.target.value)}
+                placeholder="테스트 메시지 입력..."
+                className="w-full pl-3 pr-10 py-2.5 bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl text-[11px] focus:outline-none focus:border-indigo-400"
+              />
+              <button
+                type="submit"
+                disabled={!inputText.trim() || sending}
+                className="absolute right-1.5 p-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-[#FAF9F6] text-white disabled:text-[#B0ACA5] rounded-lg transition-colors"
+              >
+                <Send className="w-3 h-3" />
+              </button>
+            </form>
+          </div>
+        </aside>
+
+        {/* Modals for Admin */}
+        {showAdminPanel && (
+          <div className="fixed inset-0 bg-[#1D1D1F]/40 backdrop-blur-sm flex justify-center items-center z-50 animate-fade-in p-4">
+            <div className="bg-white border border-[#EAE6DF] rounded-3xl w-full max-w-4xl shadow-2xl p-6 relative overflow-hidden flex flex-col max-h-[90vh]">
+              {/* This points to the existing Admin Management Modal code */}
+              <div className="flex items-center justify-between pb-4 border-b border-[#FAF9F6] shrink-0">
+                <div className="space-y-1">
+                  <h3 className="text-base font-bold text-[#1D1D1F]">운영자 유저 관리</h3>
+                  <p className="text-xs text-[#86868B]">플랫폼의 모든 사용자를 관리하고 대화 기록을 조회합니다.</p>
+                </div>
+                <button onClick={() => setShowAdminPanel(false)} className="text-xs text-[#86868B] hover:text-[#1D1D1F] bg-[#FAF9F6] px-3 py-1.5 rounded-full">닫기 ✕</button>
+              </div>
+              <div className="flex-1 overflow-y-auto py-4 space-y-6">
+                {/* User Table (Simplified from existing) */}
+                <div className="border border-[#EAE6DF] rounded-2xl overflow-hidden shadow-sm">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-[#FAF9F6] text-[#86868B] border-b border-[#EAE6DF]">
+                      <tr>
+                        <th className="p-3 font-semibold">사용자 정보</th>
+                        <th className="p-3 font-semibold">맞춤형 페르소나 설정 (System Prompt)</th>
+                        <th className="p-3 font-semibold text-right">관리</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#EAE6DF]">
+                      {adminUsers.map(u => (
+                        <tr key={u.id} className="hover:bg-indigo-50/30 transition-colors align-top">
+                          <td className="p-3">
+                            <div className="font-medium text-[#1D1D1F]">{u.displayName}</div>
+                            <div className="font-mono text-[11px] text-[#86868B]">@{u.username}</div>
+                            <div className="font-mono text-[10px] text-[#5C5B57] mt-1 pt-1 border-t border-[#EAE6DF] w-fit">Key: {u.personalApiKey || "발급 안됨"}</div>
+                          </td>
+                          <td className="p-3">
+                            <div className="flex flex-col gap-2">
+                              <textarea 
+                                defaultValue={u.persona || ""}
+                                onBlur={(e) => {
+                                  if (e.target.value !== u.persona) {
+                                    handleUpdatePersona(u.id, e.target.value);
+                                  }
+                                }}
+                                placeholder="예: 이 유저에게는 초등학생 말투로 설명하세요."
+                                className="w-full h-20 p-2 bg-white border border-[#EAE6DF] rounded-xl text-[11px] focus:outline-none focus:border-indigo-400 resize-none"
+                              />
+                              <div className="text-[9px] text-[#86868B]">입력 후 영역 바깥을 클릭(포커스 해제)하면 자동 저장됩니다.</div>
+                            </div>
+                          </td>
+                          <td className="p-3 text-right space-x-2 whitespace-nowrap">
+                            <button onClick={() => handleGenerateApiKey(u.id)} className="px-2 py-1 bg-white border border-[#EAE6DF] hover:border-indigo-300 rounded-lg text-[10px]">Key 재발급</button>
+                            {u.id !== "user-1" && (
+                              <button onClick={() => handleDeleteUser(u.id)} className="px-2 py-1 bg-white border border-[#EAE6DF] text-rose-500 rounded-lg text-[10px]">삭제</button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showSettings && (
+          <div className="fixed inset-0 bg-[#1D1D1F]/40 backdrop-blur-sm flex justify-center items-center z-50 animate-fade-in p-4">
+            <div className="bg-white border border-[#EAE6DF] rounded-3xl w-full max-w-lg shadow-2xl p-6 relative flex flex-col">
+              <div className="flex items-center justify-between pb-4 border-b border-[#FAF9F6]">
+                <h3 className="text-base font-bold text-[#1D1D1F]">서버 설정</h3>
+                <button onClick={() => setShowSettings(false)} className="text-xs text-[#86868B] bg-[#FAF9F6] px-3 py-1.5 rounded-full">닫기 ✕</button>
+              </div>
+              <form onSubmit={handleSaveSettings} className="space-y-4 pt-4 overflow-y-auto max-h-[70vh]">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-[#1D1D1F]">기본 AI 제공자</label>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => setAiProvider("local")} className={`flex-1 py-2 rounded-xl text-xs border ${aiProvider === "local" ? "bg-indigo-50 border-indigo-200 text-indigo-700" : "bg-white border-[#EAE6DF]"}`}>로컬 (LM Studio)</button>
+                    <button type="button" onClick={() => setAiProvider("openai")} className={`flex-1 py-2 rounded-xl text-xs border ${aiProvider === "openai" ? "bg-indigo-50 border-indigo-200 text-indigo-700" : "bg-white border-[#EAE6DF]"}`}>클라우드 (OpenAI)</button>
+                  </div>
+                </div>
+                {aiProvider === "openai" && (
+                  <input type="password" value={openaiApiKey} onChange={e => setOpenaiApiKey(e.target.value)} className="w-full p-3 bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl text-xs" placeholder="OpenAI API Key" />
+                )}
+                <input type="text" value={lmStudioUrl} onChange={e => setLmStudioUrl(e.target.value)} className="w-full p-3 bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl text-xs" placeholder="LM Studio URL" />
+                <input type="text" value={modelName} onChange={e => setModelName(e.target.value)} className="w-full p-3 bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl text-xs" placeholder="모델명" />
+                
+                <div className="flex justify-between pt-2">
+                  <button type="button" onClick={handleTestSettingsConnection} className="px-4 py-2 border rounded-xl text-xs">{testingConnection ? "테스트 중..." : "테스트"}</button>
+                  <button type="submit" className="px-4 py-2 bg-black text-white rounded-xl text-xs">저장</button>
+                </div>
+                {testMessage && <p className="text-[10px] text-indigo-600">{testMessage}</p>}
+              </form>
+            </div>
+          </div>
+        )}
+
+      </div>
+    );
+  }
+
+  // ===== NORMAL USER LAYOUT =====
   return (
     <div className="flex h-screen bg-[#FAF9F6] text-[#2A2927] overflow-hidden font-sans selection:bg-[#9C282C]/10 selection:text-[#9C282C]">
       
@@ -348,8 +1018,15 @@ export default function App() {
               <Sparkles className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-sm font-semibold text-[#1D1D1F] tracking-tight">MUJI AI Chat</h2>
-              <span className="text-[10px] text-[#86868B] font-mono tracking-wider">STUDIO CORE v1.0</span>
+              <h2 className="text-sm font-semibold text-[#1D1D1F] tracking-tight">SODA TALK</h2>
+              <button 
+                onClick={handleToggleProvider}
+                className="flex items-center gap-1 text-[10px] text-[#86868B] hover:text-[#9C282C] font-mono tracking-wider transition-colors"
+                title="클릭하여 AI 모드 전환 (Local / Cloud)"
+              >
+                {aiProvider === "openai" ? "☁️ CLOUD AI CORE" : "🖥️ LOCAL AI CORE"}
+                <svg className="w-2.5 h-2.5 opacity-70" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+              </button>
             </div>
           </div>
 
@@ -364,10 +1041,23 @@ export default function App() {
           </button>
         </div>
 
+        {/* Categories (New UI) */}
+        <div className="px-3 pb-2 space-y-0.5">
+          <button className="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold bg-[#EAE6DF]/40 text-[#1D1D1F] flex items-center gap-2">
+            <MessageSquare className="w-3.5 h-3.5" /> 대화
+          </button>
+          <button className="w-full text-left px-3 py-2 rounded-xl text-xs font-medium text-[#5C5B57] hover:bg-[#EAE6DF]/20 flex items-center gap-2">
+            <Sparkles className="w-3.5 h-3.5" /> 아이디어
+          </button>
+          <button className="w-full text-left px-3 py-2 rounded-xl text-xs font-medium text-[#5C5B57] hover:bg-[#EAE6DF]/20 flex items-center gap-2">
+            <Cpu className="w-3.5 h-3.5" /> 코드 & 분석
+          </button>
+        </div>
+
         {/* Chat History List */}
-        <div className="flex-1 overflow-y-auto px-2 space-y-1 py-1 scrollbar-thin">
+        <div className="flex-1 overflow-y-auto px-2 space-y-1 py-1 scrollbar-thin border-t border-[#EAE6DF] pt-3 mt-1">
           <div className="px-3 py-1 text-[10px] font-semibold text-[#86868B] uppercase tracking-wider font-mono">
-            최근 대화방 목록 ({chats.length})
+            최근 대화 ({chats.length})
           </div>
 
           {chats.length === 0 ? (
@@ -432,6 +1122,28 @@ export default function App() {
               서버 설정
             </button>
 
+            
+            {user.username === "admin" && (
+              <>
+                <button
+                  onClick={() => setShowAdminPanel(true)}
+                  className="col-span-2 mb-1 py-1.5 px-2 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg text-[10px] font-medium text-indigo-700 flex items-center justify-center gap-1 cursor-pointer transition-colors"
+                >
+                  <Users className="w-3 h-3" />
+                  운영자 유저 관리
+                </button>
+                <button
+                  onClick={() => {
+                    fetchGlobalStats();
+                    setShowGlobalDashboard(true);
+                  }}
+                  className="col-span-2 mb-1 py-1.5 px-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg text-[10px] font-medium text-emerald-700 flex items-center justify-center gap-1 cursor-pointer transition-colors"
+                >
+                  <Activity className="w-3 h-3" />
+                  통합 대시보드
+                </button>
+              </>
+            )}
             {/* Logout button */}
             <button
               id="sidebar-logout-btn"
@@ -457,7 +1169,7 @@ export default function App() {
             <div className="flex items-center gap-1.5 text-xs text-[#86868B]">
               <span className={`w-1.5 h-1.5 rounded-full ${lmStudioConnected ? "bg-emerald-500" : "bg-amber-500"}`} />
               <span className="font-mono text-[11px] text-[#5C5B57]">
-                LM Studio {lmStudioUrl.replace("http://", "")}
+                {lmStudioConnected ? "AI Engine Connected" : "AI Engine Standby"}
               </span>
             </div>
           </div>
@@ -495,7 +1207,7 @@ export default function App() {
                     안녕하세요, {user.displayName}님.
                   </h1>
                   <p className="text-xs text-[#86868B] leading-relaxed">
-                    오늘 어떤 깊은 생각이나 질문을 안고 오셨나요? 무인양품의 정갈함과 노션의 담백함으로 정성스럽게 답변해 드릴게요.
+                    오늘 어떤 깊은 생각이나 질문을 안고 오셨나요? 정성스럽게 답변해 드릴게요.
                   </p>
                 </div>
 
@@ -522,7 +1234,7 @@ export default function App() {
                   <div>
                     <span className="font-semibold text-[#1D1D1F]">안정적인 연동 지능 제공</span>
                     <p className="text-[11px] text-[#86868B] mt-0.5">
-                      로컬 LM Studio API 호스트(<code className="font-mono text-[#9C282C]">192.168.0.93:1234</code>)가 꺼져 있거나 접근 불가능할 시, 
+                      로컬 AI 엔진이 꺼져 있거나 접근 불가능할 시, 
                       <strong>Gemini가 고도로 훈련된 Llama-3 가상 코어로 즉각 스왑</strong>되어 대화를 안전하게 완수합니다. 안심하고 사용하세요.
                     </p>
                   </div>
@@ -559,15 +1271,9 @@ export default function App() {
                           {msg.text}
                         </div>
 
-                        {/* Timestamp or Emulator Info */}
+                        {/* Timestamp */}
                         <div className="flex items-center justify-between text-[10px] text-[#86868B] font-mono border-t border-[#FAF9F6] pt-1.5 mt-2">
                           <span>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                          
-                          {!isUser && (
-                            <span className="text-[9px] text-[#9C282C] font-semibold bg-[#FAF9F6] px-1.5 py-0.5 rounded-full border border-[#EAE6DF]">
-                              Llama-3 (Virtual)
-                            </span>
-                          )}
                         </div>
                       </div>
 
@@ -630,120 +1336,483 @@ export default function App() {
 
             {/* Subtle footer credit notes */}
             <div className="flex justify-between items-center text-[10px] text-[#86868B] font-mono select-none px-1">
-              <span>* LM Studio API 포트: http://192.168.0.93:1234 (또는 가상 에뮬레이터 지원)</span>
+              <span>SODA TALK AI Assistant</span>
               <span>입력 완료 후 엔터를 누르면 전송됩니다.</span>
             </div>
           </div>
         </div>
       </main>
 
-      {/* 3. Settings Drawer / Dialog Modal (Apple Visual Overlay) */}
-      {showSettings && (
+      {/* 3. Right Dashboard Panel */}
+      <aside className="w-[320px] border-l border-[#EAE6DF] bg-white p-5 flex flex-col gap-6 overflow-y-auto shrink-0 select-none scrollbar-thin">
+        
+        {/* Header: AI 엔진 선택 */}
+        <div className="space-y-1">
+          <div className="flex justify-between items-center">
+            <span className="text-[10px] text-[#86868B] font-semibold">AI 엔진 선택</span>
+            <button className="w-6 h-6 flex items-center justify-center rounded-full border border-[#EAE6DF] hover:bg-[#FAF9F6] text-[#5C5B57] transition-colors">
+              <Sun className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <div className="flex items-center gap-1 cursor-pointer">
+            <span className="text-sm font-bold text-[#1D1D1F]">자동 (로컬 우선)</span>
+            <ChevronDown className="w-4 h-4 text-[#86868B]" />
+          </div>
+        </div>
+
+        {/* 현재 사용 엔진 카드 */}
+        <div className="space-y-3">
+          <h3 className="text-xs font-bold text-[#1D1D1F]">현재 사용 엔진</h3>
+          
+          <div className="p-4 bg-white border border-[#EAE6DF] rounded-2xl shadow-sm space-y-4">
+            
+            {/* Local Engine */}
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-[#FAF9F6] border border-[#EAE6DF] flex items-center justify-center text-[#1D1D1F]">
+                    <Cpu className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold text-[#1D1D1F]">로컬 엔진 {aiProvider === 'local' ? '(메인)' : '(백업)'}</div>
+                    <div className="text-[10px] text-[#86868B]">모델: {modelName || "Qwen 4B (GGUF)"}</div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className={`w-1.5 h-1.5 rounded-full ${lmStudioConnected ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`}></span>
+                  <span className={`text-[10px] font-semibold ${lmStudioConnected ? 'text-emerald-600' : 'text-rose-600'}`}>{lmStudioConnected ? '실행 중' : '오프라인'}</span>
+                </div>
+              </div>
+              
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px] text-[#86868B]">
+                  <span>메모리 사용량</span>
+                  <span>{memUsedGB}GB / {memTotalGB}GB</span>
+                </div>
+                <div className="h-1.5 w-full bg-[#FAF9F6] rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 transition-all duration-1000" 
+                    style={{ width: `${memPercent}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t border-[#EAE6DF] border-dashed pt-4" />
+
+            {/* OpenAI Cloud */}
+            <div className={`space-y-2 transition-opacity ${aiProvider === 'openai' || hybridModeEnabled ? 'opacity-100' : 'opacity-60 hover:opacity-100'}`}>
+              <div className="flex justify-between items-center">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-[#FAF9F6] border border-[#EAE6DF] flex items-center justify-center text-[#1D1D1F]">
+                    <Sparkles className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold text-[#1D1D1F]">OpenAI API {aiProvider === 'openai' ? '(메인)' : hybridModeEnabled ? '(하이브리드)' : '(백업)'}</div>
+                    <div className="text-[10px] text-[#86868B]">모델: gpt-4o-mini</div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                  <span className="text-[10px] font-semibold text-emerald-600">연결됨</span>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10px] text-[#86868B]">
+                  <span>요청 한도</span>
+                  <span>{openaiUsed.toLocaleString()} / {openaiLimit.toLocaleString()}</span>
+                </div>
+                <div className="h-1.5 w-full bg-[#FAF9F6] rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-gradient-to-r from-blue-400 to-indigo-400 transition-all duration-1000" 
+                    style={{ width: `${openaiPercent}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        {/* 대화 설정 */}
+        <div className="space-y-3 pt-2">
+          <h3 className="text-xs font-bold text-[#1D1D1F]">대화 설정</h3>
+          <div className="p-4 bg-[#FAF9F6]/50 border border-[#EAE6DF] rounded-2xl space-y-4">
+            
+            <div className="flex justify-between items-center gap-4">
+              <span className="text-[11px] font-medium text-[#5C5B57] shrink-0">응답 창의성</span>
+              <div className="flex items-center gap-2 flex-1">
+                <input 
+                  type="range" 
+                  min="0" max="1" step="0.1" 
+                  value={temperature}
+                  onChange={(e) => {
+                    setTemperature(parseFloat(e.target.value));
+                    // Optional: save on blur or debounce
+                  }}
+                  className="w-full h-1.5 bg-[#EAE6DF] rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                />
+                <span className="text-[11px] font-mono text-[#1D1D1F] w-4">{temperature}</span>
+              </div>
+            </div>
+
+            <div className="flex justify-between items-center gap-4">
+              <span className="text-[11px] font-medium text-[#5C5B57] shrink-0">최대 응답 길이</span>
+              <select 
+                value={maxTokens}
+                onChange={(e) => setMaxTokens(parseInt(e.target.value))}
+                className="bg-white border border-[#EAE6DF] rounded-lg text-[11px] px-2 py-1.5 focus:outline-none flex-1 text-[#1D1D1F]"
+              >
+                <option value={512}>512 토큰</option>
+                <option value={1024}>1024 토큰</option>
+                <option value={2048}>2048 토큰</option>
+              </select>
+            </div>
+
+            <div className="flex justify-between items-center gap-4">
+              <span className="text-[11px] font-medium text-[#5C5B57] shrink-0">언어</span>
+              <select 
+                value={language}
+                onChange={(e) => setLanguage(e.target.value)}
+                className="bg-white border border-[#EAE6DF] rounded-lg text-[11px] px-2 py-1.5 focus:outline-none flex-1 text-[#1D1D1F]"
+              >
+                <option value="Korean">한국어</option>
+                <option value="English">English</option>
+              </select>
+            </div>
+
+          </div>
+        </div>
+
+        {/* 추천 프롬프트 */}
+        <div className="space-y-3 pt-2 pb-4">
+          <div className="flex justify-between items-center">
+            <h3 className="text-xs font-bold text-[#1D1D1F]">추천 프롬프트</h3>
+            <RefreshCw className="w-3.5 h-3.5 text-[#86868B] cursor-pointer hover:text-[#1D1D1F]" />
+          </div>
+          <div className="space-y-1.5">
+            {[
+              { icon: FileText, text: "이 문서 요약해줘" },
+              { icon: Sparkles, text: "더 나은 제목을 제안해줘" },
+              { icon: Cpu, text: "코드 오류를 찾아줘" },
+              { icon: Zap, text: "마케팅 아이디어 5가지 제안해줘" },
+            ].map((p, i) => (
+              <div key={i} onClick={() => setInputText(p.text)} className="flex items-center gap-2 text-[11px] text-[#5C5B57] p-2 rounded-lg hover:bg-[#FAF9F6] cursor-pointer transition-colors border border-transparent hover:border-[#EAE6DF]">
+                <p.icon className="w-3.5 h-3.5 opacity-70" />
+                <span>{p.text}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+      </aside>
+
+
+      {/* 4. Admin User Management Drawer/Modal */}
+      {showAdminPanel && (
         <div className="fixed inset-0 bg-[#1D1D1F]/40 backdrop-blur-sm flex justify-center items-center z-50 animate-fade-in p-4">
-          <div className="bg-white border border-[#EAE6DF] rounded-3xl w-full max-w-lg shadow-2xl p-6 relative overflow-hidden space-y-6">
+          <div className="bg-white border border-[#EAE6DF] rounded-3xl w-full max-w-4xl shadow-2xl p-6 relative overflow-hidden flex flex-col max-h-[90vh]">
             
             {/* Header */}
-            <div className="flex items-center justify-between pb-3 border-b border-[#FAF9F6]">
+            <div className="flex items-center justify-between pb-4 border-b border-[#FAF9F6] shrink-0">
               <div className="flex items-center gap-2">
-                <Settings className="w-4.5 h-4.5 text-[#9C282C]" />
-                <h3 className="text-sm font-semibold text-[#1D1D1F]">LM Studio 연동 파라미터 제어</h3>
+                <Users className="w-5 h-5 text-indigo-600" />
+                <h3 className="text-base font-bold text-[#1D1D1F]">시스템 유저 및 API Key 관리 (운영자 전용)</h3>
               </div>
               <button
-                id="close-settings-modal-btn"
-                onClick={() => {
-                  setShowSettings(false);
-                  setTestMessage("");
-                }}
-                className="text-xs text-[#86868B] hover:text-[#1D1D1F] transition-colors cursor-pointer font-semibold"
+                onClick={() => setShowAdminPanel(false)}
+                className="text-xs text-[#86868B] hover:text-[#1D1D1F] transition-colors cursor-pointer font-semibold bg-[#FAF9F6] px-3 py-1.5 rounded-full"
               >
                 닫기 ✕
               </button>
             </div>
 
-            {/* Settings Form */}
-            <form onSubmit={handleSaveSettings} className="space-y-4 text-xs text-left">
+            <div className="flex-1 overflow-y-auto py-4 space-y-6 scrollbar-thin pr-2">
               
-              <div className="space-y-1.5">
-                <label className="font-semibold text-[#1D1D1F]">Base API URL 주소</label>
-                <input
-                  id="modal-settings-url-input"
-                  type="url"
-                  required
-                  value={lmStudioUrl}
-                  onChange={(e) => setLmStudioUrl(e.target.value)}
-                  className="w-full p-2.5 bg-[#FAF9F6] border border-[#EAE6DF] focus:border-[#2A2927] rounded-xl font-mono focus:outline-none transition-all"
-                  placeholder="예: http://192.168.0.93:1234"
-                />
-                <p className="text-[10px] text-[#86868B]">
-                  * 로컬망의 LM Studio Base API 주소입니다. 기본 포트는 <code className="font-bold text-[#9C282C]">1234</code> 입니다.
-                </p>
-              </div>
+              {adminSelectedUserStatsId && adminUserStats ? (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 mb-4">
+                    <button onClick={() => setAdminSelectedUserStatsId(null)} className="text-xs text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md font-semibold hover:bg-indigo-100 transition-colors">
+                      ← 뒤로 가기
+                    </button>
+                    <h4 className="text-sm font-bold text-[#1D1D1F]">
+                      {adminUserStats.user.displayName} (@{adminUserStats.user.username}) 대시보드
+                    </h4>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-4 bg-[#FAF9F6] border border-[#EAE6DF] rounded-2xl flex flex-col items-center justify-center gap-1">
+                      <span className="text-xs font-bold text-[#86868B]">총 대화방 수</span>
+                      <span className="text-2xl font-bold text-[#1D1D1F]">{adminUserStats.stats.totalChats}</span>
+                    </div>
+                    <div className="p-4 bg-[#FAF9F6] border border-[#EAE6DF] rounded-2xl flex flex-col items-center justify-center gap-1">
+                      <span className="text-xs font-bold text-[#86868B]">총 메시지 교환 수</span>
+                      <span className="text-2xl font-bold text-[#1D1D1F]">{adminUserStats.stats.totalMessages}</span>
+                    </div>
+                  </div>
 
-              <div className="space-y-1.5">
-                <label className="font-semibold text-[#1D1D1F]">추론 모델 식별자 (Model ID)</label>
-                <input
-                  id="modal-settings-model-input"
-                  type="text"
-                  required
-                  value={modelName}
-                  onChange={(e) => setModelName(e.target.value)}
-                  className="w-full p-2.5 bg-[#FAF9F6] border border-[#EAE6DF] focus:border-[#2A2927] rounded-xl font-mono focus:outline-none transition-all"
-                  placeholder="예: meta-llama-3-8b-instruct"
-                />
-                <p className="text-[10px] text-[#86868B]">
-                  * LM Studio에 실제 로드된 모델의 정확한 Model ID를 작성하세요.
-                </p>
-              </div>
-
-              {/* Checkbox Fallback option */}
-              <div className="p-3 bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl flex items-start gap-2.5">
-                <input
-                  id="modal-settings-fallback-checkbox"
-                  type="checkbox"
-                  checked={fallbackMode}
-                  onChange={(e) => setFallbackMode(e.target.checked)}
-                  className="mt-1 w-4 h-4 text-[#9C282C] border-[#EAE6DF] rounded focus:ring-[#9C282C]"
-                />
-                <div className="space-y-0.5">
-                  <label htmlFor="modal-settings-fallback-checkbox" className="font-semibold text-[#1D1D1F] cursor-pointer">
-                    지능형 클라우드 에뮬레이터 자동 전환 권장
-                  </label>
-                  <p className="text-[10px] text-[#86868B] leading-relaxed">
-                    로컬 호스트(192.168.0.93)와 직접 통신되지 않을 때, 고정밀 가상 Llama-3 코어를 자동으로 발동시켜 대화 흐름이 끊기지 않도록 영리하게 돕습니다.
-                  </p>
+                  <div className="p-4 bg-white border border-[#EAE6DF] rounded-2xl space-y-3">
+                    <h5 className="text-xs font-bold text-[#1D1D1F]">오늘의 인공지능 사용 현황</h5>
+                    {adminUserStats.settings.hybridModeEnabled ? (
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-xs text-[#86868B] font-medium">
+                          <span>GPT 할당량 소진</span>
+                          <span>{adminUserStats.user.gptUsageCount} / {adminUserStats.settings.dailyGptQuota} 회</span>
+                        </div>
+                        <div className="h-2 w-full bg-[#FAF9F6] rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-gradient-to-r from-emerald-400 to-emerald-500 transition-all duration-1000" 
+                            style={{ width: `${Math.min((adminUserStats.user.gptUsageCount / adminUserStats.settings.dailyGptQuota) * 100, 100)}%` }}
+                          />
+                        </div>
+                        <p className="text-[10px] text-[#86868B] mt-1">
+                          할당량 소진 후에는 자동으로 무제한 무료 로컬 모델(LM Studio)로 연결됩니다.
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-[#86868B]">하이브리드 모드가 비활성화되어 있습니다.</p>
+                    )}
+                  </div>
+                </div>
+              ) : adminSelectedUserId ? (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <button onClick={() => setAdminSelectedUserId(null)} className="text-xs text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md font-semibold hover:bg-indigo-100 transition-colors">
+                      ← 뒤로 가기
+                    </button>
+                    <h4 className="text-sm font-bold text-[#1D1D1F]">
+                      {adminUsers.find(u => u.id === adminSelectedUserId)?.displayName} 님의 대화 기록
+                    </h4>
+                  </div>
+                  {adminChats.filter(c => c.userId === adminSelectedUserId).length === 0 ? (
+                    <div className="text-center py-8 text-[#86868B] text-xs">대화 기록이 없습니다.</div>
+                  ) : (
+                    <div className="space-y-4">
+                      {adminChats.filter(c => c.userId === adminSelectedUserId).map(chat => (
+                        <div key={chat.id} className="border border-[#EAE6DF] rounded-xl overflow-hidden bg-white">
+                          <div className="bg-[#FAF9F6] px-3 py-2 border-b border-[#EAE6DF] flex justify-between items-center">
+                            <span className="text-xs font-bold text-[#1D1D1F]">{chat.title}</span>
+                            <span className="text-[10px] text-[#86868B]">{new Date(chat.createdAt).toLocaleString()}</span>
+                          </div>
+                          <div className="p-3 space-y-3 max-h-60 overflow-y-auto scrollbar-thin">
+                            {chat.messages.map((m: any) => (
+                              <div key={m.id} className={`flex ${m.sender === 'user' || m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                <div className={`max-w-[80%] rounded-lg px-3 py-2 text-xs ${m.sender === 'user' || m.role === 'user' ? 'bg-indigo-50 text-indigo-900' : 'bg-[#F5F5F7] text-[#1D1D1F]'}`}>
+                                  <div className="font-semibold text-[10px] mb-1 opacity-60">
+                                    {m.sender === 'user' || m.role === 'user' ? 'User' : 'Assistant'}
+                                  </div>
+                                  <div className="whitespace-pre-wrap">{m.text || m.content}</div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <>
+              {/* User List Table */}
+              <div className="space-y-3">
+                <h4 className="text-sm font-bold text-[#1D1D1F]">등록된 사용자 목록</h4>
+                <div className="border border-[#EAE6DF] rounded-2xl overflow-hidden shadow-sm">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-[#FAF9F6] text-[#86868B] border-b border-[#EAE6DF]">
+                      <tr>
+                        <th className="p-3 font-semibold">ID (계정)</th>
+                        <th className="p-3 font-semibold">이름</th>
+                        <th className="p-3 font-semibold">API Key</th>
+                        <th className="p-3 font-semibold text-right">관리 액션</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#EAE6DF] text-[#1D1D1F]">
+                      {adminUsers.map(u => (
+                        <tr key={u.id} className="hover:bg-indigo-50/30 transition-colors">
+                          <td className="p-3 font-mono text-[11px] font-semibold">{u.username}</td>
+                          <td className="p-3 font-medium">{u.displayName}</td>
+                          <td className="p-3 font-mono text-[10px] text-[#5C5B57]">
+                            {u.personalApiKey ? (
+                              <div className="flex items-center gap-2">
+                                <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-md select-all">
+                                  {u.personalApiKey}
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-[#B0ACA5]">발급 안됨</span>
+                            )}
+                          </td>
+                          <td className="p-3 text-right space-x-2">
+                            <button
+                              onClick={() => handleGenerateApiKey(u.id)}
+                              className="px-2.5 py-1.5 bg-white border border-[#EAE6DF] hover:border-indigo-300 hover:text-indigo-600 rounded-lg text-[10px] font-medium transition-colors inline-flex items-center gap-1 cursor-pointer"
+                            >
+                              <Key className="w-3 h-3" /> Key 재발급
+                            </button>
+                            <button
+                              onClick={() => fetchUserStats(u.id)}
+                              className="px-2.5 py-1.5 bg-white border border-[#EAE6DF] hover:border-emerald-300 hover:text-emerald-600 text-emerald-600 rounded-lg text-[10px] font-medium transition-colors inline-flex items-center gap-1 cursor-pointer"
+                            >
+                              <Activity className="w-3 h-3" /> 대시보드
+                            </button>
+                            <button
+                              onClick={() => setAdminSelectedUserId(u.id)}
+                              className="px-2.5 py-1.5 bg-white border border-[#EAE6DF] hover:border-blue-300 hover:text-blue-600 text-blue-500 rounded-lg text-[10px] font-medium transition-colors inline-flex items-center gap-1 cursor-pointer"
+                            >
+                              대화 보기
+                            </button>
+                            {u.id !== "user-1" && (
+                              <button
+                                onClick={() => handleDeleteUser(u.id)}
+                                className="px-2.5 py-1.5 bg-white border border-[#EAE6DF] hover:border-rose-300 hover:text-rose-600 text-rose-500 rounded-lg text-[10px] font-medium transition-colors inline-flex items-center gap-1 cursor-pointer"
+                              >
+                                <Trash2 className="w-3 h-3" /> 삭제
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
 
-              {/* Connection Test Diagnostics Block */}
-              {testMessage && (
-                <div className="p-3 bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl font-mono text-[11px] leading-relaxed text-[#5C5B57] flex items-start gap-2">
-                  <Info className="w-4 h-4 text-[#9C282C] shrink-0 mt-0.5" />
-                  <span>{testMessage}</span>
+              {/* Create User Form */}
+              <div className="space-y-3 pt-4 border-t border-[#EAE6DF] border-dashed">
+                <h4 className="text-sm font-bold text-[#1D1D1F] flex items-center gap-1.5">
+                  <PlusCircle className="w-4 h-4 text-indigo-500" /> 신규 사용자 강제 생성
+                </h4>
+                
+                <form onSubmit={handleCreateUser} className="bg-[#FAF9F6] p-4 rounded-2xl border border-[#EAE6DF] space-y-4">
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-semibold text-[#5C5B57]">로그인 ID</label>
+                      <input 
+                        required value={newUsername} onChange={e => setNewUsername(e.target.value)}
+                        className="w-full px-3 py-2 text-xs border border-[#EAE6DF] rounded-xl focus:outline-none focus:border-indigo-400 font-mono" placeholder="예: aiden" 
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-semibold text-[#5C5B57]">표시 이름</label>
+                      <input 
+                        required value={newDisplayName} onChange={e => setNewDisplayName(e.target.value)}
+                        className="w-full px-3 py-2 text-xs border border-[#EAE6DF] rounded-xl focus:outline-none focus:border-indigo-400" placeholder="예: 에이든" 
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-semibold text-[#5C5B57]">초기 비밀번호</label>
+                      <input 
+                        type="text" required value={newPassword} onChange={e => setNewPassword(e.target.value)}
+                        className="w-full px-3 py-2 text-xs border border-[#EAE6DF] rounded-xl focus:outline-none focus:border-indigo-400 font-mono" placeholder="password123" 
+                      />
+                    </div>
+                  </div>
+
+                  {adminError && <p className="text-xs text-rose-500 font-medium">{adminError}</p>}
+                  
+                  <div className="flex justify-end">
+                    <button type="submit" className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold transition-colors shadow-sm cursor-pointer">
+                      사용자 등록
+                    </button>
+                  </div>
+                </form>
+              </div>
+              </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+
+      {/* 5. Server Settings Modal */}
+      {showSettings && (
+        <div className="fixed inset-0 bg-[#1D1D1F]/40 backdrop-blur-sm flex justify-center items-center z-50 animate-fade-in p-4">
+          <div className="bg-white border border-[#EAE6DF] rounded-3xl w-full max-w-lg shadow-2xl p-6 relative overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between pb-4 border-b border-[#FAF9F6] shrink-0">
+              <div className="space-y-1">
+                <h3 className="text-base font-bold text-[#1D1D1F]">서버 설정 (운영자 전용)</h3>
+                <p className="text-xs text-[#86868B]">AI 엔진 라우팅 및 전역 설정을 변경합니다.</p>
+              </div>
+              <button
+                onClick={() => setShowSettings(false)}
+                className="text-xs text-[#86868B] hover:text-[#1D1D1F] transition-colors cursor-pointer font-semibold bg-[#FAF9F6] px-3 py-1.5 rounded-full"
+              >
+                닫기 ✕
+              </button>
+            </div>
+            
+            <form onSubmit={handleSaveSettings} className="space-y-5 pt-4 overflow-y-auto max-h-[70vh] pr-2 scrollbar-thin">
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-[#1D1D1F]">기본 AI 제공자</label>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setAiProvider("local")} className={`flex-1 py-2 rounded-xl text-xs font-semibold border transition-colors ${aiProvider === "local" ? "bg-indigo-50 border-indigo-200 text-indigo-700" : "bg-white border-[#EAE6DF] text-[#5C5B57] hover:bg-[#FAF9F6]"}`}>
+                    LM Studio (로컬)
+                  </button>
+                  <button type="button" onClick={() => setAiProvider("openai")} className={`flex-1 py-2 rounded-xl text-xs font-semibold border transition-colors ${aiProvider === "openai" ? "bg-indigo-50 border-indigo-200 text-indigo-700" : "bg-white border-[#EAE6DF] text-[#5C5B57] hover:bg-[#FAF9F6]"}`}>
+                    OpenAI (클라우드)
+                  </button>
+                </div>
+              </div>
+
+              {aiProvider === "openai" && (
+                <div className="space-y-2 animate-fade-in">
+                  <label className="text-xs font-bold text-[#1D1D1F]">OpenAI API Key</label>
+                  <input type="password" value={openaiApiKey} onChange={e => setOpenaiApiKey(e.target.value)} className="w-full p-3 bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl text-xs font-mono focus:border-indigo-400 focus:outline-none" placeholder="sk-..." />
                 </div>
               )}
 
-              {/* Action Buttons */}
-              <div className="pt-3 border-t border-[#FAF9F6] flex justify-between gap-4">
-                <button
-                  id="modal-test-conn-btn"
-                  type="button"
-                  disabled={testingConnection}
-                  onClick={handleTestSettingsConnection}
-                  className="py-2 px-4 bg-white border border-[#EAE6DF] text-[#5C5B57] rounded-xl font-medium cursor-pointer transition-all hover:bg-[#FAF9F6] flex items-center gap-1.5"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${testingConnection ? "animate-spin" : ""}`} />
-                  <span>서버 연동 신호 테스트</span>
-                </button>
-
-                <button
-                  id="modal-save-settings-btn"
-                  type="submit"
-                  className="py-2 px-6 bg-[#2A2927] hover:bg-[#9C282C] text-white rounded-xl font-medium cursor-pointer transition-all hover:scale-[1.01]"
-                >
-                  설정 저장 및 적용
-                </button>
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-[#1D1D1F]">LM Studio URL</label>
+                <input type="text" value={lmStudioUrl} onChange={e => setLmStudioUrl(e.target.value)} className="w-full p-3 bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl text-xs font-mono focus:border-indigo-400 focus:outline-none" placeholder="http://192.168.0.93:1234" />
               </div>
 
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-[#1D1D1F]">모델 식별자 (Model Name)</label>
+                <input type="text" value={modelName} onChange={e => setModelName(e.target.value)} className="w-full p-3 bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl text-xs focus:border-indigo-400 focus:outline-none" placeholder="llama-3-korean-bllossom-8b" />
+              </div>
+
+              <div className="flex items-center justify-between p-3 border border-[#EAE6DF] rounded-xl bg-[#FAF9F6]">
+                <div className="space-y-0.5">
+                  <p className="text-xs font-bold text-[#1D1D1F]">가상 에뮬레이터 모드 (Fallback)</p>
+                  <p className="text-[10px] text-[#86868B]">엔진 오프라인 시 임시 더미 응답으로 대체합니다.</p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input type="checkbox" checked={fallbackMode} onChange={e => setFallbackMode(e.target.checked)} className="sr-only peer" />
+                  <div className="w-9 h-5 bg-[#EAE6DF] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-500"></div>
+                </label>
+              </div>
+
+              <div className="space-y-3 pt-4 border-t border-[#EAE6DF] border-dashed">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-bold text-[#1D1D1F]">하이브리드 라우팅 모드 (비용 절감)</p>
+                    <p className="text-[10px] text-[#86868B]">매일 첫 접속 몇 번은 GPT로, 이후엔 로컬 모델로 자동 전환합니다.</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" checked={hybridModeEnabled} onChange={e => setHybridModeEnabled(e.target.checked)} className="sr-only peer" />
+                    <div className="w-9 h-5 bg-[#EAE6DF] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500"></div>
+                  </label>
+                </div>
+
+                {hybridModeEnabled && (
+                  <div className="space-y-2 animate-fade-in pl-2 border-l-2 border-emerald-500">
+                    <label className="text-xs font-bold text-[#1D1D1F]">하루 무료 제공 GPT 횟수 (Daily Quota)</label>
+                    <input type="number" min="0" value={dailyGptQuota} onChange={e => setDailyGptQuota(parseInt(e.target.value))} className="w-full p-2 bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl text-xs focus:border-emerald-400 focus:outline-none" />
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-between items-center pt-2">
+                <button type="button" onClick={handleTestSettingsConnection} disabled={testingConnection} className="px-4 py-2 bg-white border border-[#EAE6DF] hover:bg-[#FAF9F6] rounded-xl text-xs font-semibold text-[#5C5B57] transition-colors">
+                  {testingConnection ? "연결 테스트 중..." : "연결 테스트"}
+                </button>
+                <button type="submit" className="px-5 py-2 bg-[#1D1D1F] hover:bg-black text-white rounded-xl text-xs font-semibold transition-colors shadow-md">
+                  설정 저장
+                </button>
+              </div>
+              {testMessage && <p className="text-[10px] text-indigo-600 font-mono mt-2">{testMessage}</p>}
             </form>
           </div>
         </div>

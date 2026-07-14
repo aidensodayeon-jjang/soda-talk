@@ -57,7 +57,7 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
           <div className="inline-flex items-center justify-center w-14 h-14 bg-[#FAF9F6] border border-[#EAE6DF] rounded-2xl mb-4 text-[#9C282C] shadow-sm">
             <Sparkles className="w-6 h-6" />
           </div>
-          <h1 className="text-2xl font-semibold tracking-tight text-[#1D1D1F]">MUJI AI Studio Chat</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-[#1D1D1F]">SODA TALK</h1>
           <p className="text-sm text-[#86868B] mt-1.5 font-mono">대화형 프롬프트 워크스페이스</p>
         </div>
 
@@ -172,7 +172,7 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
       </div>
 
       <div className="mt-8 text-center text-xs text-[#B0ACA5] font-mono max-w-xs leading-relaxed">
-        무인양품의 비움의 미학, Notion의 정갈함, Apple의 유려함을 한데 빚어낸 챗GPT 스타일의 고품격 AI 대화 공간입니다.
+        당신의 모든 생각과 질문을 담아내는 깔끔한 대화 공간입니다.
       </div>
     </div>
   );
