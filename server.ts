@@ -427,8 +427,12 @@ app.get("/api/admin/chats", requireAdmin, (req, res) => {
       username: user ? user.displayName : "알 수 없는 유저"
     };
   });
-  // Sort by latest created first
-  chatsWithUsers.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  // Sort by latest message timestamp, fallback to chat creation time
+  chatsWithUsers.sort((a, b) => {
+    const timeA = a.messages.length > 0 ? new Date(a.messages[a.messages.length - 1].timestamp).getTime() : new Date(a.createdAt).getTime();
+    const timeB = b.messages.length > 0 ? new Date(b.messages[b.messages.length - 1].timestamp).getTime() : new Date(b.createdAt).getTime();
+    return timeB - timeA;
+  });
   res.json(chatsWithUsers);
 });
 
@@ -826,11 +830,13 @@ app.post("/api/chats/:id/messages", async (req, res) => {
     sodabotPersona = `${sodabotPersona}\n\n[특별 지시사항: 사용자에 맞게 다음 페르소나를 반드시 적용할 것]\n${userRecord.persona}`;
   }
 
+  const actualModel = settings.modelName || "llama-3-korean-bllossom-8b";
+
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 300000); // 300s timeout for local LLM
 
-    const targetUrl = "http://192.168.0.93:1234";
+    const targetUrl = settings.lmStudioUrl || "http://192.168.0.93:1234";
     
     const lmResponse = await fetch(`${targetUrl}/v1/chat/completions`, {
       method: "POST",
@@ -839,7 +845,7 @@ app.post("/api/chats/:id/messages", async (req, res) => {
         "Authorization": "Bearer lm-studio" // Dummy key to bypass API key checks
       },
       body: JSON.stringify({
-        model: "llama-3-korean-bllossom-8b",
+        model: actualModel,
         messages: [
           { role: "system", content: sodabotPersona },
           ...conversationHistory
@@ -864,11 +870,12 @@ app.post("/api/chats/:id/messages", async (req, res) => {
   }
 
   // 4. Save Assistant Message
-  const assistantMsg: Message = {
+  const assistantMsg: any = {
     id: "msg-" + Date.now() + "-assistant",
     sender: "assistant",
     text: assistantOutput,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    modelUsed: actualModel
   };
   chat.messages.push(assistantMsg);
   writeDB(db);

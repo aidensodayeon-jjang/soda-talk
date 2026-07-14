@@ -18,6 +18,7 @@ import {
   MessageSquare,
   BookOpen,
   ArrowRight,
+  X,
   Info,
   Sun,
   ChevronDown,
@@ -62,6 +63,7 @@ export default function App() {
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [adminUsers, setAdminUsers] = useState<any[]>([]);
   const [adminChats, setAdminChats] = useState<any[]>([]);
+  const [monitoringChatId, setMonitoringChatId] = useState<string | null>(null);
   const [adminSelectedUserId, setAdminSelectedUserId] = useState<string | null>(null);
   const [adminSelectedUserStatsId, setAdminSelectedUserStatsId] = useState<string | null>(null);
   const [adminUserStats, setAdminUserStats] = useState<any>(null);
@@ -133,6 +135,18 @@ export default function App() {
       fetchAdminChats();
     }
   }, [showAdminPanel]);
+
+  // 5초마다 실시간 대화 피드 갱신
+  useEffect(() => {
+    let interval;
+    if (user?.username === "admin") {
+      fetchAdminChats(); // 최초 1회 실행
+      interval = setInterval(() => {
+        fetchAdminChats();
+      }, 5000);
+    }
+    return () => clearInterval(interval);
+  }, [user]);
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -844,6 +858,61 @@ export default function App() {
                 </table>
               </div>
             </div>
+            {/* Live Chat Monitoring Feed */}
+            <div className="space-y-3 pt-6 border-t border-[#EAE6DF]">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-bold text-[#1D1D1F] flex items-center gap-2">
+                    <span className="relative flex h-2.5 w-2.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500"></span>
+                    </span>
+                    실시간 대화 모니터링
+                  </h3>
+                  <p className="text-[10px] text-[#86868B] mt-0.5">새로고침 없이 5초마다 최신 대화가 자동으로 업데이트됩니다.</p>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {adminChats.slice(0, 9).map(chat => {
+                  const lastMsg = chat.messages?.length > 0 ? chat.messages[chat.messages.length - 1] : null;
+                  return (
+                    <div 
+                      key={chat.id} 
+                      onClick={() => setMonitoringChatId(chat.id)}
+                      className="bg-white border border-[#EAE6DF] hover:border-[#9C282C] rounded-2xl p-4 shadow-sm hover:shadow-[0_4px_16px_rgba(156,40,44,0.03)] transition-all cursor-pointer group flex flex-col justify-between"
+                    >
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-[10px] font-bold px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-full truncate max-w-[50%]">
+                            @{chat.username}
+                          </span>
+                          <span className="text-[10px] text-[#86868B] font-mono">
+                            {lastMsg ? new Date(lastMsg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "대화 없음"}
+                          </span>
+                        </div>
+                        <h4 className="text-xs font-semibold text-[#1D1D1F] truncate mb-2">{chat.title}</h4>
+                        <div className="text-[11px] text-[#5C5B57] line-clamp-2 leading-relaxed bg-[#FAF9F6] p-2 rounded-xl">
+                          {lastMsg ? (
+                            <span className={lastMsg.sender === "user" ? "font-semibold" : ""}>
+                              {lastMsg.sender === "user" ? "U: " : "A: "}{lastMsg.text}
+                            </span>
+                          ) : (
+                            <span className="italic text-[#86868B]">아직 메시지가 없습니다.</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+              {adminChats.length === 0 && (
+                <div className="text-center py-10 text-xs text-[#86868B] bg-[#FAF9F6] rounded-2xl border border-[#EAE6DF] border-dashed">
+                  진행 중인 대화가 없습니다.
+                </div>
+              )}
+            </div>
+
           </div>
         </main>
 
@@ -996,6 +1065,42 @@ export default function App() {
                 </div>
                 {testMessage && <p className="text-[10px] text-indigo-600">{testMessage}</p>}
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* Monitoring Chat Detail Modal */}
+        {monitoringChatId && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col border border-[#EAE6DF] overflow-hidden">
+              <div className="flex items-center justify-between p-5 border-b border-[#EAE6DF] bg-[#FAF9F6]">
+                <div>
+                  <h3 className="text-lg font-bold text-[#1D1D1F]">대화 상세 내역</h3>
+                  <p className="text-xs text-[#86868B]">실시간 모니터링 중입니다.</p>
+                </div>
+                <button onClick={() => setMonitoringChatId(null)} className="p-2 text-[#86868B] hover:text-[#1D1D1F] hover:bg-[#EAE6DF] rounded-xl transition-colors">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-white">
+                {adminChats.find(c => c.id === monitoringChatId)?.messages.map((msg: any) => (
+                  <div key={msg.id} className={`flex ${msg.sender === "user" ? "justify-end" : "justify-start"}`}>
+                    <div className={`max-w-[80%] rounded-2xl p-4 text-xs leading-relaxed ${
+                      msg.sender === "user" 
+                        ? "bg-[#2A2927] text-white rounded-tr-sm" 
+                        : "bg-[#FAF9F6] border border-[#EAE6DF] text-[#1D1D1F] rounded-tl-sm"
+                    }`}>
+                      <div className="whitespace-pre-wrap">{msg.text}</div>
+                      <div className={`text-[9px] mt-2 font-mono ${msg.sender === "user" ? "text-gray-400" : "text-[#86868B]"}`}>
+                        {new Date(msg.timestamp).toLocaleString()}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {adminChats.find(c => c.id === monitoringChatId)?.messages.length === 0 && (
+                  <div className="text-center text-xs text-[#86868B] py-10">메시지가 없습니다.</div>
+                )}
+              </div>
             </div>
           </div>
         )}
