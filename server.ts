@@ -22,6 +22,7 @@ interface Message {
   sender: "user" | "assistant";
   text: string;
   timestamp: string;
+  modelUsed?: string;
 }
 
 interface ChatRoom {
@@ -73,7 +74,7 @@ function initDB() {
         { id: "user-2", username: "muji", displayName: "무인양품", passwordHash: "muji123" }
       ],
       settings: {
-        lmStudioUrl: "http://192.168.0.93:1234",
+        lmStudioUrl: "https://granular-kindly-morally.ngrok-free.dev",
         modelName: "llama-3-korean-bllossom-8b",
         fallbackMode: true,
         hybridModeEnabled: false,
@@ -168,7 +169,10 @@ app.post('/v1/chat/completions', express.json(), async (req, res) => {
         "Content-Type": "application/json",
         "Authorization": routeConfig.auth
       },
-      body: JSON.stringify(req.body)
+      body: JSON.stringify({
+        ...req.body,
+        model: routeConfig.routedToGpt ? req.body.model : db.settings.modelName
+      })
     });
 
     const data = await openaiRes.json();
@@ -176,6 +180,7 @@ app.post('/v1/chat/completions', express.json(), async (req, res) => {
     // Log to DB
     const promptMessage = req.body.messages?.[req.body.messages.length - 1]?.content || "No prompt";
     const replyMessage = data.choices?.[0]?.message?.content || "No reply";
+    const modelUsed = data.model || (routeConfig.routedToGpt ? req.body.model : db.settings.modelName) || "Unknown Model";
 
     let chat = db.chats.find(c => c.userId === user.id && c.title === "아두이노 소다봇 대화");
     if (!chat) {
@@ -199,7 +204,8 @@ app.post('/v1/chat/completions', express.json(), async (req, res) => {
       id: "msg-" + Date.now() + "2",
       sender: "assistant",
       text: replyMessage,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      modelUsed: modelUsed
     });
     writeDB(db);
 
@@ -534,10 +540,12 @@ app.post("/api/lmstudio/stream", async (req, res) => {
   let fetchUrl = `${db.settings.lmStudioUrl}/v1/chat/completions`;
   let authHeaderValue = "Bearer lm-studio";
 
+  let routedToGpt = false;
   if (user) {
     const routeConfig = checkHybridQuotaAndRoute(user, db);
     fetchUrl = routeConfig.url;
     authHeaderValue = routeConfig.auth;
+    routedToGpt = routeConfig.routedToGpt;
     writeDB(db);
   }
 
@@ -579,7 +587,10 @@ app.post("/api/lmstudio/stream", async (req, res) => {
         "Authorization": authHeaderValue,
         "ngrok-skip-browser-warning": "true"
       },
-      body: JSON.stringify(req.body),
+      body: JSON.stringify({
+        ...req.body,
+        model: routedToGpt ? "gpt-4o-mini" : req.body.model
+      }),
       signal: controller.signal
     });
     clearTimeout(timeoutId);
@@ -732,7 +743,7 @@ ${textHistory}
 요약:`;
 
     // Local LLM 
-    const targetUrl = settings.lmStudioUrl || "http://192.168.0.93:1234";
+    const targetUrl = settings.lmStudioUrl || "https://granular-kindly-morally.ngrok-free.dev";
     const lmResponse = await fetch(`${targetUrl}/v1/chat/completions`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": "Bearer lm-studio" },
@@ -836,7 +847,7 @@ app.post("/api/chats/:id/messages", async (req, res) => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 300000); // 300s timeout for local LLM
 
-    const targetUrl = settings.lmStudioUrl || "http://192.168.0.93:1234";
+    const targetUrl = settings.lmStudioUrl || "https://granular-kindly-morally.ngrok-free.dev";
     
     const lmResponse = await fetch(`${targetUrl}/v1/chat/completions`, {
       method: "POST",

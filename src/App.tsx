@@ -1,20 +1,20 @@
 import React, { useState, useEffect, useRef } from "react";
 import AuthScreen from "./components/AuthScreen";
-import { 
-  Sparkles, 
-  Plus, 
-  Trash2, 
-  Settings, 
-  LogOut, 
-  Send, 
-  Terminal, 
-  User, 
-  Cpu, 
-  Wifi, 
-  WifiOff, 
-  Check, 
-  RefreshCw, 
-  Compass, 
+import {
+  Sparkles,
+  Plus,
+  Trash2,
+  Settings,
+  LogOut,
+  Send,
+  Terminal,
+  User,
+  Cpu,
+  Wifi,
+  WifiOff,
+  Check,
+  RefreshCw,
+  Compass,
   MessageSquare,
   BookOpen,
   ArrowRight,
@@ -64,6 +64,7 @@ export default function App() {
   const [adminUsers, setAdminUsers] = useState<any[]>([]);
   const [adminChats, setAdminChats] = useState<any[]>([]);
   const [monitoringChatId, setMonitoringChatId] = useState<string | null>(null);
+  const [monitoringTab, setMonitoringTab] = useState<"rooms" | "messages">("rooms");
   const [adminSelectedUserId, setAdminSelectedUserId] = useState<string | null>(null);
   const [adminSelectedUserStatsId, setAdminSelectedUserStatsId] = useState<string | null>(null);
   const [adminUserStats, setAdminUserStats] = useState<any>(null);
@@ -188,9 +189,9 @@ export default function App() {
     try {
       await fetch(`/api/admin/users/${userId}/persona`, {
         method: "PUT",
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}` 
+          Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({ persona: newPersona })
       });
@@ -275,7 +276,7 @@ export default function App() {
       const res = await fetch("/api/lmstudio/config");
       const data = await res.json();
       if (res.ok) {
-        if (data.aiProvider)        setAiProvider(data.aiProvider || "local");
+        if (data.aiProvider) setAiProvider(data.aiProvider || "local");
         setOpenaiApiKey(data.openaiApiKey || "");
         if (data.lmStudioUrl) setLmStudioUrl(data.lmStudioUrl);
         if (data.modelName) setModelName(data.modelName);
@@ -366,7 +367,7 @@ export default function App() {
       try {
         const res = await fetch("/api/chats", {
           method: "POST",
-          headers: { 
+          headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`
           },
@@ -417,9 +418,9 @@ export default function App() {
       console.error("Failed to sync user message", err);
     }
 
-    // 2. Prepare for Assistant Message stream
     const assistantMsgId = "msg-" + Date.now() + "-assistant";
     let assistantMsgText = "";
+    let usedModelName = "";
 
     setChats(prev => prev.map(c => {
       if (c.id === targetChatId) {
@@ -436,7 +437,7 @@ export default function App() {
       const previousMessages = currentChat ? currentChat.messages : [];
       const cleanMessages = previousMessages.filter(m => !m.text.includes("로컬 엔진이 잠시 쉬고 있어"));
       const windowedMessages = [...cleanMessages, userMsg].slice(-20);
-      
+
       const conversationHistory = windowedMessages.map(m => ({
         role: m.sender === "user" ? "user" : "assistant",
         content: m.text
@@ -446,8 +447,8 @@ export default function App() {
 
       const res = await fetch(`/api/lmstudio/stream`, {
         method: "POST",
-        headers: { 
-          "Content-Type": "application/json", 
+        headers: {
+          "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`
         },
         body: JSON.stringify({
@@ -483,25 +484,26 @@ export default function App() {
           buffer += decoder.decode(value, { stream: true });
           const lines = buffer.split("\n");
           buffer = lines.pop() || ""; // Keep the last incomplete line in buffer
-          
+
           for (let line of lines) {
             line = line.trim();
             if (line.startsWith("data:") && !line.includes("[DONE]")) {
               try {
                 const payload = line.replace(/^data:\s*/, "");
                 const parsed = JSON.parse(payload);
+                if (parsed.model) usedModelName = parsed.model;
                 const tokenContent = parsed.choices?.[0]?.delta?.content || "";
-                
+
                 if (tokenContent) {
                   assistantMsgText += tokenContent;
                   console.log("Received token:", tokenContent, "Total text so far:", assistantMsgText);
-                  
+
                   setChats(prev => prev.map(c => {
                     if (c.id === targetChatId) {
                       return {
                         ...c,
-                        messages: c.messages.map(m => 
-                          m.id === assistantMsgId ? { ...m, text: assistantMsgText } : m
+                        messages: c.messages.map(m =>
+                          m.id === assistantMsgId ? { ...m, text: assistantMsgText, modelUsed: usedModelName || m.modelUsed } : m
                         )
                       };
                     }
@@ -537,9 +539,10 @@ export default function App() {
         id: assistantMsgId,
         sender: "assistant",
         text: assistantMsgText,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        modelUsed: usedModelName || "Unknown Model"
       };
-      
+
       try {
         await fetch(`/api/chats/${targetChatId}/sync`, {
           method: "POST",
@@ -549,7 +552,7 @@ export default function App() {
       } catch (err) {
         console.error("Failed to sync assistant message", err);
       }
-      
+
       setSending(false);
     }
   };
@@ -654,7 +657,7 @@ export default function App() {
   const memFreeGB = systemStatus?.memoryUsage ? (systemStatus.memoryUsage.free / 1024 / 1024 / 1024).toFixed(1) : "1.8";
   const memUsedGB = (parseFloat(memTotalGB) - parseFloat(memFreeGB)).toFixed(1);
   const memPercent = Math.min(100, Math.max(0, (parseFloat(memUsedGB) / parseFloat(memTotalGB)) * 100));
-  
+
   const openaiUsed = systemStatus?.openaiUsage?.used || 3240;
   const openaiLimit = systemStatus?.openaiUsage?.limit || 10000;
   const openaiPercent = Math.min(100, Math.max(0, (openaiUsed / openaiLimit) * 100));
@@ -671,7 +674,7 @@ export default function App() {
               Admin Console
             </h1>
           </div>
-          
+
           <div className="flex-1 overflow-y-auto px-3 py-4 space-y-4">
             <div className="space-y-1">
               <div className="text-[10px] font-bold text-[#86868B] px-2 mb-2 uppercase tracking-wider">시스템 관리</div>
@@ -685,11 +688,11 @@ export default function App() {
                 <Settings className="w-4 h-4" /> 서버 설정
               </button>
             </div>
-            
+
             <div className="space-y-1 pt-4 border-t border-[#EAE6DF]">
               <div className="flex items-center justify-between px-2 mb-2">
                 <div className="text-[10px] font-bold text-[#86868B] uppercase tracking-wider">미니 대화 기록</div>
-                <button 
+                <button
                   onClick={handleCreateNewChat}
                   className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold transition-colors"
                 >
@@ -708,7 +711,7 @@ export default function App() {
               ))}
             </div>
           </div>
-          
+
           <div className="p-3 border-t border-[#EAE6DF] bg-white">
             <div className="flex items-center gap-2 p-1.5 rounded-lg bg-[#FAF9F6] border border-[#EAE6DF] mb-2">
               <div className="w-7 h-7 rounded-full bg-[#FAF9F6] border border-[#EAE6DF] flex items-center justify-center text-[#5C5B57] font-mono text-[11px] font-bold">A</div>
@@ -745,7 +748,7 @@ export default function App() {
               <div className="p-5 bg-white border border-[#EAE6DF] rounded-3xl shadow-sm">
                 <MessageSquare className="w-6 h-6 mb-3 text-blue-500" />
                 <p className="text-xs font-medium text-[#86868B]">총 대화방 수</p>
-                <p className="text-lg font-bold text-[#1D1D1F]">{globalStats?.users?.reduce((acc:any, u:any) => acc + u.totalChats, 0) || 0} 개</p>
+                <p className="text-lg font-bold text-[#1D1D1F]">{globalStats?.users?.reduce((acc: any, u: any) => acc + u.totalChats, 0) || 0} 개</p>
               </div>
             </div>
 
@@ -757,9 +760,9 @@ export default function App() {
                 </div>
                 <div className="flex items-center gap-3">
                   <label className="relative inline-flex items-center cursor-pointer">
-                    <input 
-                      type="checkbox" 
-                      checked={hybridModeEnabled} 
+                    <input
+                      type="checkbox"
+                      checked={hybridModeEnabled}
                       onChange={async (e) => {
                         const checked = e.target.checked;
                         setHybridModeEnabled(checked);
@@ -770,19 +773,19 @@ export default function App() {
                             body: JSON.stringify({ hybridModeEnabled: checked, dailyGptQuota })
                           });
                           fetchGlobalStats();
-                        } catch (err) {}
-                      }} 
-                      className="sr-only peer" 
+                        } catch (err) { }
+                      }}
+                      className="sr-only peer"
                     />
                     <div className="w-11 h-6 bg-[#EAE6DF] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
                   </label>
                   <div className="flex items-center gap-2">
-                    <input 
-                      type="number" min="0" value={dailyGptQuota} 
+                    <input
+                      type="number" min="0" value={dailyGptQuota}
                       onChange={(e) => setDailyGptQuota(parseInt(e.target.value))}
-                      className="w-20 p-2 bg-white border border-[#EAE6DF] rounded-xl text-sm text-center font-mono focus:border-emerald-400 focus:outline-none" 
+                      className="w-20 p-2 bg-white border border-[#EAE6DF] rounded-xl text-sm text-center font-mono focus:border-emerald-400 focus:outline-none"
                     />
-                    <button 
+                    <button
                       onClick={async () => {
                         try {
                           await fetch("/api/lmstudio/config", {
@@ -792,7 +795,7 @@ export default function App() {
                           });
                           alert("저장되었습니다!");
                           fetchGlobalStats();
-                        } catch (err) {}
+                        } catch (err) { }
                       }}
                       className="px-4 py-2 bg-[#1D1D1F] hover:bg-black text-white rounded-xl text-xs font-semibold transition-colors shadow-sm"
                     >
@@ -841,8 +844,8 @@ export default function App() {
                                   </span>
                                 </div>
                                 <div className="h-2 w-full bg-[#EAE6DF] rounded-full overflow-hidden">
-                                  <div 
-                                    className={`h-full transition-all duration-1000 ${isExhausted ? 'bg-rose-500' : 'bg-gradient-to-r from-emerald-400 to-emerald-500'}`} 
+                                  <div
+                                    className={`h-full transition-all duration-1000 ${isExhausted ? 'bg-rose-500' : 'bg-gradient-to-r from-emerald-400 to-emerald-500'}`}
                                     style={{ width: `${percentage}%` }}
                                   />
                                 </div>
@@ -871,44 +874,144 @@ export default function App() {
                   </h3>
                   <p className="text-[10px] text-[#86868B] mt-0.5">새로고침 없이 5초마다 최신 대화가 자동으로 업데이트됩니다.</p>
                 </div>
+                <div className="flex bg-[#EAE6DF] p-1 rounded-xl shadow-inner">
+                  <button onClick={() => setMonitoringTab("rooms")} className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${monitoringTab === "rooms" ? "bg-white shadow-sm text-[#1D1D1F]" : "text-[#86868B] hover:text-[#5C5B57]"}`}>대화방 뷰</button>
+                  <button onClick={() => setMonitoringTab("messages")} className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${monitoringTab === "messages" ? "bg-white shadow-sm text-[#1D1D1F]" : "text-[#86868B] hover:text-[#5C5B57]"}`}>메시지 뷰</button>
+                </div>
               </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {adminChats.slice(0, 9).map(chat => {
-                  const lastMsg = chat.messages?.length > 0 ? chat.messages[chat.messages.length - 1] : null;
-                  return (
-                    <div 
-                      key={chat.id} 
-                      onClick={() => setMonitoringChatId(chat.id)}
-                      className="bg-white border border-[#EAE6DF] hover:border-[#9C282C] rounded-2xl p-4 shadow-sm hover:shadow-[0_4px_16px_rgba(156,40,44,0.03)] transition-all cursor-pointer group flex flex-col justify-between"
-                    >
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-[10px] font-bold px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-full truncate max-w-[50%]">
-                            @{chat.username}
-                          </span>
-                          <span className="text-[10px] text-[#86868B] font-mono">
-                            {lastMsg ? new Date(lastMsg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "대화 없음"}
-                          </span>
-                        </div>
-                        <h4 className="text-xs font-semibold text-[#1D1D1F] truncate mb-2">{chat.title}</h4>
-                        <div className="text-[11px] text-[#5C5B57] line-clamp-2 leading-relaxed bg-[#FAF9F6] p-2 rounded-xl">
-                          {lastMsg ? (
-                            <span className={lastMsg.sender === "user" ? "font-semibold" : ""}>
-                              {lastMsg.sender === "user" ? "U: " : "A: "}{lastMsg.text}
-                            </span>
-                          ) : (
-                            <span className="italic text-[#86868B]">아직 메시지가 없습니다.</span>
-                          )}
+
+              {monitoringTab === "rooms" ? (
+                <>
+                  <div className="space-y-8">
+                    {Object.entries(
+                      adminChats.reduce((acc: any, chat) => {
+                        const lastMsgTime = chat.messages?.length > 0 ? chat.messages[chat.messages.length - 1].timestamp : chat.createdAt;
+                        const date = new Date(lastMsgTime).toLocaleDateString();
+                        if (!acc[date]) acc[date] = [];
+                        acc[date].push(chat);
+                        return acc;
+                      }, {})
+                    )
+                    .sort((a: any, b: any) => new Date(b[0]).getTime() - new Date(a[0]).getTime())
+                    .map(([date, chatsArr]: any) => (
+                      <div key={date} className="space-y-4">
+                        <h4 className="text-sm font-bold text-indigo-700 bg-indigo-50 px-3 py-1.5 rounded-lg inline-block">{date}</h4>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                          {chatsArr
+                            .sort((a: any, b: any) => {
+                              const aTime = a.messages?.length > 0 ? a.messages[a.messages.length - 1].timestamp : a.createdAt;
+                              const bTime = b.messages?.length > 0 ? b.messages[b.messages.length - 1].timestamp : b.createdAt;
+                              return new Date(bTime).getTime() - new Date(aTime).getTime();
+                            })
+                            .map((chat: any) => {
+                            const lastMsg = chat.messages?.length > 0 ? chat.messages[chat.messages.length - 1] : null;
+                            const isApi = chat.title === "아두이노 소다봇 대화";
+                            return (
+                              <div 
+                                key={chat.id} 
+                                onClick={() => setMonitoringChatId(chat.id)}
+                                className="bg-white border border-[#EAE6DF] hover:border-[#9C282C] rounded-2xl p-4 shadow-sm hover:shadow-[0_4px_16px_rgba(156,40,44,0.03)] transition-all cursor-pointer group flex flex-col justify-between"
+                              >
+                                <div>
+                                  <div className="flex items-center justify-between mb-2">
+                                    <div className="flex items-center gap-1.5 truncate max-w-[60%]">
+                                      <span className="text-[10px] font-bold px-2 py-0.5 bg-gray-100 text-gray-700 rounded-full truncate shrink-0">
+                                        @{chat.username}
+                                      </span>
+                                      {isApi ? (
+                                        <span className="px-1.5 py-0.5 bg-orange-100 text-orange-700 text-[9px] font-bold rounded-md shrink-0">API</span>
+                                      ) : (
+                                        <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-[9px] font-bold rounded-md shrink-0">WEB</span>
+                                      )}
+                                    </div>
+                                    <span className="text-[10px] text-[#86868B] font-mono shrink-0">
+                                      {lastMsg ? new Date(lastMsg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ""}
+                                    </span>
+                                  </div>
+                                  <h4 className="text-xs font-semibold text-[#1D1D1F] truncate pr-2 mb-2">{chat.title}</h4>
+                                  <div className="text-[11px] text-[#5C5B57] line-clamp-3 leading-relaxed bg-[#FAF9F6] p-2 rounded-xl">
+                                    {lastMsg ? (
+                                      <div className="flex flex-col gap-1">
+                                        <span className={lastMsg.sender === "user" ? "font-semibold" : ""}>
+                                          {lastMsg.sender === "user" ? "U: " : "A: "}{lastMsg.text}
+                                        </span>
+                                        {lastMsg.modelUsed && <span className="text-[9px] text-emerald-600 bg-emerald-50 px-1 py-0.5 rounded self-start truncate max-w-full">🤖 {lastMsg.modelUsed}</span>}
+                                      </div>
+                                    ) : (
+                                      <span className="italic text-[#86868B]">아직 메시지가 없습니다.</span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            )
+                          })}
                         </div>
                       </div>
+                    ))}
+                  </div>
+                  {adminChats.length === 0 && (
+                    <div className="text-center py-10 text-xs text-[#86868B] bg-[#FAF9F6] rounded-2xl border border-[#EAE6DF] border-dashed">
+                      진행 중인 대화가 없습니다.
                     </div>
-                  )
-                })}
-              </div>
-              {adminChats.length === 0 && (
-                <div className="text-center py-10 text-xs text-[#86868B] bg-[#FAF9F6] rounded-2xl border border-[#EAE6DF] border-dashed">
-                  진행 중인 대화가 없습니다.
+                  )}
+                </>
+              ) : (
+                <div className="bg-white border border-[#EAE6DF] rounded-2xl shadow-sm h-[600px] overflow-y-auto flex flex-col">
+                  {(() => {
+                    const allMessages = adminChats.flatMap((chat: any) => 
+                      (chat.messages || []).map((msg: any, index: number) => ({
+                        ...msg,
+                        chatId: chat.id,
+                        chatTitle: chat.title,
+                        username: chat.username,
+                        isApi: chat.title === "아두이노 소다봇 대화",
+                        msgIndex: index
+                      }))
+                    ).sort((a: any, b: any) => {
+                      const timeDiff = new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+                      if (timeDiff !== 0) return timeDiff;
+                      return b.msgIndex - a.msgIndex;
+                    });
+
+                    if (allMessages.length === 0) {
+                      return (
+                        <div className="m-auto text-center py-10 text-xs text-[#86868B]">
+                          진행 중인 메시지가 없습니다.
+                        </div>
+                      )
+                    }
+
+                    return (
+                      <div className="flex flex-col">
+                        {allMessages.map((msg: any) => (
+                          <div key={`${msg.chatId}-${msg.id}`} onClick={() => setMonitoringChatId(msg.chatId)} className="flex gap-4 p-4 hover:bg-[#FAF9F6] transition-colors border-b border-[#EAE6DF] cursor-pointer group">
+                            <div className="shrink-0 w-12 text-center space-y-1">
+                              <div className="text-[10px] font-bold text-gray-700 bg-gray-100 rounded-md py-0.5 px-1 truncate">@{msg.username}</div>
+                              {msg.isApi ? (
+                                <div className="text-[9px] font-bold text-orange-700 bg-orange-100 rounded">API</div>
+                              ) : (
+                                <div className="text-[9px] font-bold text-blue-700 bg-blue-100 rounded">WEB</div>
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1.5">
+                                <span className={`text-xs font-bold ${msg.sender === "user" ? "text-[#1D1D1F]" : "text-[#9C282C]"}`}>
+                                  {msg.sender === "user" ? "User" : "AI"}
+                                </span>
+                                <span className="text-[10px] text-[#86868B] font-mono group-hover:text-indigo-600 transition-colors">
+                                  {new Date(msg.timestamp).toLocaleString()}
+                                </span>
+                                {msg.modelUsed && <span className="text-[9px] text-emerald-600 bg-emerald-50 px-1 py-0.5 rounded ml-auto shrink-0">🤖 {msg.modelUsed}</span>}
+                              </div>
+                              <div className={`text-xs leading-relaxed whitespace-pre-wrap ${msg.sender === "user" ? "text-[#1D1D1F] font-medium" : "text-[#5C5B57]"}`}>
+                                {msg.text}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  })()}
                 </div>
               )}
             </div>
@@ -925,7 +1028,7 @@ export default function App() {
               {lmStudioConnected ? "Connected" : "Offline"}
             </div>
           </header>
-          
+
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
             {(!activeChat || activeChat.messages.length === 0) ? (
               <div className="text-center py-10 opacity-50">
@@ -1009,7 +1112,7 @@ export default function App() {
                           </td>
                           <td className="p-3">
                             <div className="flex flex-col gap-2">
-                              <textarea 
+                              <textarea
                                 defaultValue={u.persona || ""}
                                 onBlur={(e) => {
                                   if (e.target.value !== u.persona) {
@@ -1058,7 +1161,7 @@ export default function App() {
                 )}
                 <input type="text" value={lmStudioUrl} onChange={e => setLmStudioUrl(e.target.value)} className="w-full p-3 bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl text-xs" placeholder="LM Studio URL" />
                 <input type="text" value={modelName} onChange={e => setModelName(e.target.value)} className="w-full p-3 bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl text-xs" placeholder="모델명" />
-                
+
                 <div className="flex justify-between pt-2">
                   <button type="button" onClick={handleTestSettingsConnection} className="px-4 py-2 border rounded-xl text-xs">{testingConnection ? "테스트 중..." : "테스트"}</button>
                   <button type="submit" className="px-4 py-2 bg-black text-white rounded-xl text-xs">저장</button>
@@ -1085,14 +1188,14 @@ export default function App() {
               <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-white">
                 {adminChats.find(c => c.id === monitoringChatId)?.messages.map((msg: any) => (
                   <div key={msg.id} className={`flex ${msg.sender === "user" ? "justify-end" : "justify-start"}`}>
-                    <div className={`max-w-[80%] rounded-2xl p-4 text-xs leading-relaxed ${
-                      msg.sender === "user" 
-                        ? "bg-[#2A2927] text-white rounded-tr-sm" 
+                    <div className={`max-w-[80%] rounded-2xl p-4 text-xs leading-relaxed ${msg.sender === "user"
+                        ? "bg-[#2A2927] text-white rounded-tr-sm"
                         : "bg-[#FAF9F6] border border-[#EAE6DF] text-[#1D1D1F] rounded-tl-sm"
-                    }`}>
+                      }`}>
                       <div className="whitespace-pre-wrap">{msg.text}</div>
-                      <div className={`text-[9px] mt-2 font-mono ${msg.sender === "user" ? "text-gray-400" : "text-[#86868B]"}`}>
-                        {new Date(msg.timestamp).toLocaleString()}
+                      <div className={`flex items-center justify-between text-[9px] mt-2 font-mono ${msg.sender === "user" ? "text-gray-400" : "text-[#86868B]"}`}>
+                        <span>{new Date(msg.timestamp).toLocaleString()}</span>
+                        {msg.modelUsed && <span className="text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded ml-2 truncate max-w-[120px]">🤖 {msg.modelUsed}</span>}
                       </div>
                     </div>
                   </div>
@@ -1112,10 +1215,10 @@ export default function App() {
   // ===== NORMAL USER LAYOUT =====
   return (
     <div className="flex h-screen bg-[#FAF9F6] text-[#2A2927] overflow-hidden font-sans selection:bg-[#9C282C]/10 selection:text-[#9C282C]">
-      
+
       {/* 1. Sidebar Panel (Apple/Notion Vibe Left Section) */}
       <aside className="w-64 border-r border-[#EAE6DF] bg-[#FAF9F6] flex flex-col justify-between shrink-0 h-screen select-none z-30">
-        
+
         {/* Top Header */}
         <div className="p-4 flex flex-col gap-4">
           <div className="flex items-center gap-2 px-1">
@@ -1124,7 +1227,7 @@ export default function App() {
             </div>
             <div>
               <h2 className="text-sm font-semibold text-[#1D1D1F] tracking-tight">SODA TALK</h2>
-              <button 
+              <button
                 onClick={handleToggleProvider}
                 className="flex items-center gap-1 text-[10px] text-[#86868B] hover:text-[#9C282C] font-mono tracking-wider transition-colors"
                 title="클릭하여 AI 모드 전환 (Local / Cloud)"
@@ -1177,17 +1280,16 @@ export default function App() {
                   key={chat.id}
                   id={`chat-item-${chat.id}`}
                   onClick={() => setActiveChatId(chat.id)}
-                  className={`group flex items-center justify-between p-2.5 rounded-xl text-xs cursor-pointer transition-all ${
-                    isActive 
-                      ? "bg-white border border-[#EAE6DF] text-[#1D1D1F] font-semibold shadow-sm" 
+                  className={`group flex items-center justify-between p-2.5 rounded-xl text-xs cursor-pointer transition-all ${isActive
+                      ? "bg-white border border-[#EAE6DF] text-[#1D1D1F] font-semibold shadow-sm"
                       : "text-[#5C5B57] hover:bg-[#EAE6DF]/40 hover:text-[#1D1D1F]"
-                  }`}
+                    }`}
                 >
                   <div className="flex items-center gap-2 truncate min-w-0 flex-1">
                     <MessageSquare className={`w-3.5 h-3.5 shrink-0 ${isActive ? "text-[#9C282C]" : "text-[#86868B]"}`} />
                     <span className="truncate">{chat.title}</span>
                   </div>
-                  
+
                   {/* Delete Button */}
                   <button
                     id={`delete-chat-btn-${chat.id}`}
@@ -1215,41 +1317,7 @@ export default function App() {
               <p className="text-[10px] text-[#86868B] font-mono truncate">@{user.username}</p>
             </div>
           </div>
-
-          <div className="grid grid-cols-2 gap-1.5 pt-0.5">
-            {/* Settings toggler */}
-            <button
-              id="open-settings-panel-btn"
-              onClick={() => setShowSettings(true)}
-              className="py-1.5 px-2 bg-[#FAF9F6] hover:bg-[#EAE6DF]/50 border border-[#EAE6DF] rounded-lg text-[10px] font-medium text-[#5C5B57] flex items-center justify-center gap-1 cursor-pointer transition-colors"
-            >
-              <Settings className="w-3 h-3" />
-              서버 설정
-            </button>
-
-            
-            {user.username === "admin" && (
-              <>
-                <button
-                  onClick={() => setShowAdminPanel(true)}
-                  className="col-span-2 mb-1 py-1.5 px-2 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg text-[10px] font-medium text-indigo-700 flex items-center justify-center gap-1 cursor-pointer transition-colors"
-                >
-                  <Users className="w-3 h-3" />
-                  운영자 유저 관리
-                </button>
-                <button
-                  onClick={() => {
-                    fetchGlobalStats();
-                    setShowGlobalDashboard(true);
-                  }}
-                  className="col-span-2 mb-1 py-1.5 px-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg text-[10px] font-medium text-emerald-700 flex items-center justify-center gap-1 cursor-pointer transition-colors"
-                >
-                  <Activity className="w-3 h-3" />
-                  통합 대시보드
-                </button>
-              </>
-            )}
-            {/* Logout button */}
+          <div className="grid grid-cols-1 gap-1.5 pt-0.5">
             <button
               id="sidebar-logout-btn"
               onClick={handleLogout}
@@ -1281,11 +1349,10 @@ export default function App() {
 
           {/* Fallback Mode indicator */}
           <div className="flex items-center gap-2">
-            <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-medium ${
-              fallbackMode 
-                ? "bg-amber-50 border border-amber-100 text-amber-700" 
+            <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-medium ${fallbackMode
+                ? "bg-amber-50 border border-amber-100 text-amber-700"
                 : "bg-emerald-50 border border-emerald-100 text-emerald-700"
-            }`}>
+              }`}>
               {fallbackMode ? "에뮬레이터 대기 상태" : "로컬 Direct 접속 전용"}
             </span>
           </div>
@@ -1293,16 +1360,16 @@ export default function App() {
 
         {/* Scrollable Conversation Arena */}
         <div className="flex-1 overflow-y-auto px-6 py-8 bg-[#FAF9F6]/50 relative">
-          
+
           {/* Subtle elegant grid background lines */}
           <div className="absolute inset-0 bg-[linear-gradient(to_right,#EAE6DF_1px,transparent_1px),linear-gradient(to_bottom,#EAE6DF_1px,transparent_1px)] bg-[size:5rem_5rem] opacity-20 pointer-events-none" />
 
           <div className="max-w-3xl mx-auto space-y-6 relative z-10 pb-8">
-            
+
             {/* A. If no active chat or chat message is completely empty, render a beautifully designed welcome screen (Muji + Apple) */}
             {(!activeChat || activeChat.messages.length === 0) ? (
               <div className="py-12 space-y-8 animate-fade-in">
-                
+
                 {/* Visual Accent Title */}
                 <div className="text-center space-y-3 max-w-lg mx-auto">
                   <div className="inline-flex items-center justify-center w-12 h-12 bg-white border border-[#EAE6DF] rounded-2xl text-[#9C282C] shadow-sm mb-1">
@@ -1339,7 +1406,7 @@ export default function App() {
                   <div>
                     <span className="font-semibold text-[#1D1D1F]">안정적인 연동 지능 제공</span>
                     <p className="text-[11px] text-[#86868B] mt-0.5">
-                      로컬 AI 엔진이 꺼져 있거나 접근 불가능할 시, 
+                      로컬 AI 엔진이 꺼져 있거나 접근 불가능할 시,
                       <strong>Gemini가 고도로 훈련된 Llama-3 가상 코어로 즉각 스왑</strong>되어 대화를 안전하게 완수합니다. 안심하고 사용하세요.
                     </p>
                   </div>
@@ -1347,7 +1414,7 @@ export default function App() {
 
               </div>
             ) : (
-              
+
               /* B. Render actual message timeline */
               <div className="space-y-6 animate-fade-in">
                 {activeChat.messages.map((msg) => {
@@ -1365,20 +1432,20 @@ export default function App() {
                       )}
 
                       {/* Message Box */}
-                      <div className={`max-w-[80%] rounded-2xl p-4 text-xs leading-relaxed ${
-                        isUser
+                      <div className={`max-w-[80%] rounded-2xl p-4 text-xs leading-relaxed ${isUser
                           ? "bg-[#2A2927] text-white rounded-tr-sm shadow-sm"
                           : "bg-white border border-[#EAE6DF] text-[#2A2927] rounded-tl-sm shadow-sm space-y-2"
-                      }`}>
-                        
+                        }`}>
+
                         {/* Message Text */}
                         <div className="whitespace-pre-wrap font-sans break-words antialiased">
                           {msg.text}
                         </div>
 
-                        {/* Timestamp */}
+                        {/* Timestamp & Model */}
                         <div className="flex items-center justify-between text-[10px] text-[#86868B] font-mono border-t border-[#FAF9F6] pt-1.5 mt-2">
                           <span>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                          {msg.modelUsed && <span className="text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded ml-2 truncate max-w-[120px]">🤖 {msg.modelUsed}</span>}
                         </div>
                       </div>
 
@@ -1415,7 +1482,7 @@ export default function App() {
         {/* C. Bottom Input Area (ChatGPT Style Bar) */}
         <div className="p-4 border-t border-[#EAE6DF] bg-white z-10">
           <div className="max-w-3xl mx-auto space-y-2">
-            
+
             <form onSubmit={handleSendMessage} className="relative flex items-center">
               <input
                 id="main-chat-input"
@@ -1427,7 +1494,7 @@ export default function App() {
                 placeholder={sending ? "AI 응답을 안전하게 기다리고 있습니다..." : "비서에게 질문을 남겨보세요... (Shift + Enter 줄바꿈)"}
                 className="w-full pl-4 pr-12 py-3.5 bg-[#FAF9F6] border border-[#EAE6DF] focus:border-[#2A2927] rounded-2xl text-xs font-sans focus:outline-none transition-all placeholder:text-[#B0ACA5] shadow-inner"
               />
-              
+
               <button
                 id="send-message-btn"
                 type="submit"
@@ -1450,7 +1517,7 @@ export default function App() {
 
       {/* 3. Right Dashboard Panel */}
       <aside className="w-[320px] border-l border-[#EAE6DF] bg-white p-5 flex flex-col gap-6 overflow-y-auto shrink-0 select-none scrollbar-thin">
-        
+
         {/* Header: AI 엔진 선택 */}
         <div className="space-y-1">
           <div className="flex justify-between items-center">
@@ -1468,9 +1535,9 @@ export default function App() {
         {/* 현재 사용 엔진 카드 */}
         <div className="space-y-3">
           <h3 className="text-xs font-bold text-[#1D1D1F]">현재 사용 엔진</h3>
-          
+
           <div className="p-4 bg-white border border-[#EAE6DF] rounded-2xl shadow-sm space-y-4">
-            
+
             {/* Local Engine */}
             <div className="space-y-2">
               <div className="flex justify-between items-center">
@@ -1488,15 +1555,15 @@ export default function App() {
                   <span className={`text-[10px] font-semibold ${lmStudioConnected ? 'text-emerald-600' : 'text-rose-600'}`}>{lmStudioConnected ? '실행 중' : '오프라인'}</span>
                 </div>
               </div>
-              
+
               <div className="space-y-1">
                 <div className="flex justify-between text-[10px] text-[#86868B]">
                   <span>메모리 사용량</span>
                   <span>{memUsedGB}GB / {memTotalGB}GB</span>
                 </div>
                 <div className="h-1.5 w-full bg-[#FAF9F6] rounded-full overflow-hidden">
-                  <div 
-                    className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 transition-all duration-1000" 
+                  <div
+                    className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 transition-all duration-1000"
                     style={{ width: `${memPercent}%` }}
                   />
                 </div>
@@ -1529,8 +1596,8 @@ export default function App() {
                   <span>{openaiUsed.toLocaleString()} / {openaiLimit.toLocaleString()}</span>
                 </div>
                 <div className="h-1.5 w-full bg-[#FAF9F6] rounded-full overflow-hidden">
-                  <div 
-                    className="h-full bg-gradient-to-r from-blue-400 to-indigo-400 transition-all duration-1000" 
+                  <div
+                    className="h-full bg-gradient-to-r from-blue-400 to-indigo-400 transition-all duration-1000"
                     style={{ width: `${openaiPercent}%` }}
                   />
                 </div>
@@ -1544,13 +1611,13 @@ export default function App() {
         <div className="space-y-3 pt-2">
           <h3 className="text-xs font-bold text-[#1D1D1F]">대화 설정</h3>
           <div className="p-4 bg-[#FAF9F6]/50 border border-[#EAE6DF] rounded-2xl space-y-4">
-            
+
             <div className="flex justify-between items-center gap-4">
               <span className="text-[11px] font-medium text-[#5C5B57] shrink-0">응답 창의성</span>
               <div className="flex items-center gap-2 flex-1">
-                <input 
-                  type="range" 
-                  min="0" max="1" step="0.1" 
+                <input
+                  type="range"
+                  min="0" max="1" step="0.1"
                   value={temperature}
                   onChange={(e) => {
                     setTemperature(parseFloat(e.target.value));
@@ -1564,7 +1631,7 @@ export default function App() {
 
             <div className="flex justify-between items-center gap-4">
               <span className="text-[11px] font-medium text-[#5C5B57] shrink-0">최대 응답 길이</span>
-              <select 
+              <select
                 value={maxTokens}
                 onChange={(e) => setMaxTokens(parseInt(e.target.value))}
                 className="bg-white border border-[#EAE6DF] rounded-lg text-[11px] px-2 py-1.5 focus:outline-none flex-1 text-[#1D1D1F]"
@@ -1577,7 +1644,7 @@ export default function App() {
 
             <div className="flex justify-between items-center gap-4">
               <span className="text-[11px] font-medium text-[#5C5B57] shrink-0">언어</span>
-              <select 
+              <select
                 value={language}
                 onChange={(e) => setLanguage(e.target.value)}
                 className="bg-white border border-[#EAE6DF] rounded-lg text-[11px] px-2 py-1.5 focus:outline-none flex-1 text-[#1D1D1F]"
@@ -1618,7 +1685,7 @@ export default function App() {
       {showAdminPanel && (
         <div className="fixed inset-0 bg-[#1D1D1F]/40 backdrop-blur-sm flex justify-center items-center z-50 animate-fade-in p-4">
           <div className="bg-white border border-[#EAE6DF] rounded-3xl w-full max-w-4xl shadow-2xl p-6 relative overflow-hidden flex flex-col max-h-[90vh]">
-            
+
             {/* Header */}
             <div className="flex items-center justify-between pb-4 border-b border-[#FAF9F6] shrink-0">
               <div className="flex items-center gap-2">
@@ -1634,7 +1701,7 @@ export default function App() {
             </div>
 
             <div className="flex-1 overflow-y-auto py-4 space-y-6 scrollbar-thin pr-2">
-              
+
               {adminSelectedUserStatsId && adminUserStats ? (
                 <div className="space-y-4">
                   <div className="flex items-center gap-2 mb-4">
@@ -1645,7 +1712,7 @@ export default function App() {
                       {adminUserStats.user.displayName} (@{adminUserStats.user.username}) 대시보드
                     </h4>
                   </div>
-                  
+
                   <div className="grid grid-cols-2 gap-4">
                     <div className="p-4 bg-[#FAF9F6] border border-[#EAE6DF] rounded-2xl flex flex-col items-center justify-center gap-1">
                       <span className="text-xs font-bold text-[#86868B]">총 대화방 수</span>
@@ -1666,8 +1733,8 @@ export default function App() {
                           <span>{adminUserStats.user.gptUsageCount} / {adminUserStats.settings.dailyGptQuota} 회</span>
                         </div>
                         <div className="h-2 w-full bg-[#FAF9F6] rounded-full overflow-hidden">
-                          <div 
-                            className="h-full bg-gradient-to-r from-emerald-400 to-emerald-500 transition-all duration-1000" 
+                          <div
+                            className="h-full bg-gradient-to-r from-emerald-400 to-emerald-500 transition-all duration-1000"
                             style={{ width: `${Math.min((adminUserStats.user.gptUsageCount / adminUserStats.settings.dailyGptQuota) * 100, 100)}%` }}
                           />
                         </div>
@@ -1719,111 +1786,111 @@ export default function App() {
                 </div>
               ) : (
                 <>
-              {/* User List Table */}
-              <div className="space-y-3">
-                <h4 className="text-sm font-bold text-[#1D1D1F]">등록된 사용자 목록</h4>
-                <div className="border border-[#EAE6DF] rounded-2xl overflow-hidden shadow-sm">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-[#FAF9F6] text-[#86868B] border-b border-[#EAE6DF]">
-                      <tr>
-                        <th className="p-3 font-semibold">ID (계정)</th>
-                        <th className="p-3 font-semibold">이름</th>
-                        <th className="p-3 font-semibold">API Key</th>
-                        <th className="p-3 font-semibold text-right">관리 액션</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[#EAE6DF] text-[#1D1D1F]">
-                      {adminUsers.map(u => (
-                        <tr key={u.id} className="hover:bg-indigo-50/30 transition-colors">
-                          <td className="p-3 font-mono text-[11px] font-semibold">{u.username}</td>
-                          <td className="p-3 font-medium">{u.displayName}</td>
-                          <td className="p-3 font-mono text-[10px] text-[#5C5B57]">
-                            {u.personalApiKey ? (
-                              <div className="flex items-center gap-2">
-                                <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-md select-all">
-                                  {u.personalApiKey}
-                                </span>
-                              </div>
-                            ) : (
-                              <span className="text-[#B0ACA5]">발급 안됨</span>
-                            )}
-                          </td>
-                          <td className="p-3 text-right space-x-2">
-                            <button
-                              onClick={() => handleGenerateApiKey(u.id)}
-                              className="px-2.5 py-1.5 bg-white border border-[#EAE6DF] hover:border-indigo-300 hover:text-indigo-600 rounded-lg text-[10px] font-medium transition-colors inline-flex items-center gap-1 cursor-pointer"
-                            >
-                              <Key className="w-3 h-3" /> Key 재발급
-                            </button>
-                            <button
-                              onClick={() => fetchUserStats(u.id)}
-                              className="px-2.5 py-1.5 bg-white border border-[#EAE6DF] hover:border-emerald-300 hover:text-emerald-600 text-emerald-600 rounded-lg text-[10px] font-medium transition-colors inline-flex items-center gap-1 cursor-pointer"
-                            >
-                              <Activity className="w-3 h-3" /> 대시보드
-                            </button>
-                            <button
-                              onClick={() => setAdminSelectedUserId(u.id)}
-                              className="px-2.5 py-1.5 bg-white border border-[#EAE6DF] hover:border-blue-300 hover:text-blue-600 text-blue-500 rounded-lg text-[10px] font-medium transition-colors inline-flex items-center gap-1 cursor-pointer"
-                            >
-                              대화 보기
-                            </button>
-                            {u.id !== "user-1" && (
-                              <button
-                                onClick={() => handleDeleteUser(u.id)}
-                                className="px-2.5 py-1.5 bg-white border border-[#EAE6DF] hover:border-rose-300 hover:text-rose-600 text-rose-500 rounded-lg text-[10px] font-medium transition-colors inline-flex items-center gap-1 cursor-pointer"
-                              >
-                                <Trash2 className="w-3 h-3" /> 삭제
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* Create User Form */}
-              <div className="space-y-3 pt-4 border-t border-[#EAE6DF] border-dashed">
-                <h4 className="text-sm font-bold text-[#1D1D1F] flex items-center gap-1.5">
-                  <PlusCircle className="w-4 h-4 text-indigo-500" /> 신규 사용자 강제 생성
-                </h4>
-                
-                <form onSubmit={handleCreateUser} className="bg-[#FAF9F6] p-4 rounded-2xl border border-[#EAE6DF] space-y-4">
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="text-[11px] font-semibold text-[#5C5B57]">로그인 ID</label>
-                      <input 
-                        required value={newUsername} onChange={e => setNewUsername(e.target.value)}
-                        className="w-full px-3 py-2 text-xs border border-[#EAE6DF] rounded-xl focus:outline-none focus:border-indigo-400 font-mono" placeholder="예: aiden" 
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-[11px] font-semibold text-[#5C5B57]">표시 이름</label>
-                      <input 
-                        required value={newDisplayName} onChange={e => setNewDisplayName(e.target.value)}
-                        className="w-full px-3 py-2 text-xs border border-[#EAE6DF] rounded-xl focus:outline-none focus:border-indigo-400" placeholder="예: 에이든" 
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-[11px] font-semibold text-[#5C5B57]">초기 비밀번호</label>
-                      <input 
-                        type="text" required value={newPassword} onChange={e => setNewPassword(e.target.value)}
-                        className="w-full px-3 py-2 text-xs border border-[#EAE6DF] rounded-xl focus:outline-none focus:border-indigo-400 font-mono" placeholder="password123" 
-                      />
+                  {/* User List Table */}
+                  <div className="space-y-3">
+                    <h4 className="text-sm font-bold text-[#1D1D1F]">등록된 사용자 목록</h4>
+                    <div className="border border-[#EAE6DF] rounded-2xl overflow-hidden shadow-sm">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-[#FAF9F6] text-[#86868B] border-b border-[#EAE6DF]">
+                          <tr>
+                            <th className="p-3 font-semibold">ID (계정)</th>
+                            <th className="p-3 font-semibold">이름</th>
+                            <th className="p-3 font-semibold">API Key</th>
+                            <th className="p-3 font-semibold text-right">관리 액션</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#EAE6DF] text-[#1D1D1F]">
+                          {adminUsers.map(u => (
+                            <tr key={u.id} className="hover:bg-indigo-50/30 transition-colors">
+                              <td className="p-3 font-mono text-[11px] font-semibold">{u.username}</td>
+                              <td className="p-3 font-medium">{u.displayName}</td>
+                              <td className="p-3 font-mono text-[10px] text-[#5C5B57]">
+                                {u.personalApiKey ? (
+                                  <div className="flex items-center gap-2">
+                                    <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-md select-all">
+                                      {u.personalApiKey}
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <span className="text-[#B0ACA5]">발급 안됨</span>
+                                )}
+                              </td>
+                              <td className="p-3 text-right space-x-2">
+                                <button
+                                  onClick={() => handleGenerateApiKey(u.id)}
+                                  className="px-2.5 py-1.5 bg-white border border-[#EAE6DF] hover:border-indigo-300 hover:text-indigo-600 rounded-lg text-[10px] font-medium transition-colors inline-flex items-center gap-1 cursor-pointer"
+                                >
+                                  <Key className="w-3 h-3" /> Key 재발급
+                                </button>
+                                <button
+                                  onClick={() => fetchUserStats(u.id)}
+                                  className="px-2.5 py-1.5 bg-white border border-[#EAE6DF] hover:border-emerald-300 hover:text-emerald-600 text-emerald-600 rounded-lg text-[10px] font-medium transition-colors inline-flex items-center gap-1 cursor-pointer"
+                                >
+                                  <Activity className="w-3 h-3" /> 대시보드
+                                </button>
+                                <button
+                                  onClick={() => setAdminSelectedUserId(u.id)}
+                                  className="px-2.5 py-1.5 bg-white border border-[#EAE6DF] hover:border-blue-300 hover:text-blue-600 text-blue-500 rounded-lg text-[10px] font-medium transition-colors inline-flex items-center gap-1 cursor-pointer"
+                                >
+                                  대화 보기
+                                </button>
+                                {u.id !== "user-1" && (
+                                  <button
+                                    onClick={() => handleDeleteUser(u.id)}
+                                    className="px-2.5 py-1.5 bg-white border border-[#EAE6DF] hover:border-rose-300 hover:text-rose-600 text-rose-500 rounded-lg text-[10px] font-medium transition-colors inline-flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <Trash2 className="w-3 h-3" /> 삭제
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
 
-                  {adminError && <p className="text-xs text-rose-500 font-medium">{adminError}</p>}
-                  
-                  <div className="flex justify-end">
-                    <button type="submit" className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold transition-colors shadow-sm cursor-pointer">
-                      사용자 등록
-                    </button>
+                  {/* Create User Form */}
+                  <div className="space-y-3 pt-4 border-t border-[#EAE6DF] border-dashed">
+                    <h4 className="text-sm font-bold text-[#1D1D1F] flex items-center gap-1.5">
+                      <PlusCircle className="w-4 h-4 text-indigo-500" /> 신규 사용자 강제 생성
+                    </h4>
+
+                    <form onSubmit={handleCreateUser} className="bg-[#FAF9F6] p-4 rounded-2xl border border-[#EAE6DF] space-y-4">
+                      <div className="grid grid-cols-3 gap-4">
+                        <div className="space-y-1.5">
+                          <label className="text-[11px] font-semibold text-[#5C5B57]">로그인 ID</label>
+                          <input
+                            required value={newUsername} onChange={e => setNewUsername(e.target.value)}
+                            className="w-full px-3 py-2 text-xs border border-[#EAE6DF] rounded-xl focus:outline-none focus:border-indigo-400 font-mono" placeholder="예: aiden"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-[11px] font-semibold text-[#5C5B57]">표시 이름</label>
+                          <input
+                            required value={newDisplayName} onChange={e => setNewDisplayName(e.target.value)}
+                            className="w-full px-3 py-2 text-xs border border-[#EAE6DF] rounded-xl focus:outline-none focus:border-indigo-400" placeholder="예: 에이든"
+                          />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-[11px] font-semibold text-[#5C5B57]">초기 비밀번호</label>
+                          <input
+                            type="text" required value={newPassword} onChange={e => setNewPassword(e.target.value)}
+                            className="w-full px-3 py-2 text-xs border border-[#EAE6DF] rounded-xl focus:outline-none focus:border-indigo-400 font-mono" placeholder="password123"
+                          />
+                        </div>
+                      </div>
+
+                      {adminError && <p className="text-xs text-rose-500 font-medium">{adminError}</p>}
+
+                      <div className="flex justify-end">
+                        <button type="submit" className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold transition-colors shadow-sm cursor-pointer">
+                          사용자 등록
+                        </button>
+                      </div>
+                    </form>
                   </div>
-                </form>
-              </div>
-              </>
+                </>
               )}
             </div>
           </div>
@@ -1847,7 +1914,7 @@ export default function App() {
                 닫기 ✕
               </button>
             </div>
-            
+
             <form onSubmit={handleSaveSettings} className="space-y-5 pt-4 overflow-y-auto max-h-[70vh] pr-2 scrollbar-thin">
               <div className="space-y-2">
                 <label className="text-xs font-bold text-[#1D1D1F]">기본 AI 제공자</label>
@@ -1870,7 +1937,7 @@ export default function App() {
 
               <div className="space-y-2">
                 <label className="text-xs font-bold text-[#1D1D1F]">LM Studio URL</label>
-                <input type="text" value={lmStudioUrl} onChange={e => setLmStudioUrl(e.target.value)} className="w-full p-3 bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl text-xs font-mono focus:border-indigo-400 focus:outline-none" placeholder="http://192.168.0.93:1234" />
+                <input type="text" value={lmStudioUrl} onChange={e => setLmStudioUrl(e.target.value)} className="w-full p-3 bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl text-xs font-mono focus:border-indigo-400 focus:outline-none" placeholder="https://granular-kindly-morally.ngrok-free.dev" />
               </div>
 
               <div className="space-y-2">
