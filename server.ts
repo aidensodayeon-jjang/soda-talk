@@ -6,6 +6,12 @@ import crypto from "crypto";
 import { createProxyMiddleware } from "http-proxy-middleware";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
+import multer from "multer";
+import wavefilePkg from "wavefile";
+const { WaveFile } = wavefilePkg;
+import { pipeline, env } from "@xenova/transformers";
+
+env.allowLocalModels = false;
 
 dotenv.config();
 
@@ -211,6 +217,120 @@ app.post('/v1/chat/completions', express.json(), async (req, res) => {
 
     res.json(data);
   } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+const upload = multer({ storage: multer.memoryStorage() });
+
+let transcriber: any = null;
+async function getTranscriber() {
+  if (!transcriber) {
+    transcriber = await pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny', {
+      // you can configure options if needed
+    });
+  }
+  return transcriber;
+}
+
+app.post('/api/hw/audio-chat', upload.single('file'), async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
+
+  const token = authHeader.replace("Bearer ", "");
+  const db = readDB();
+  const user = db.users.find(u => u.personalApiKey === token);
+  if (!user) return res.status(403).json({ error: "Invalid SODA API Key" });
+
+  if (!req.file) return res.status(400).json({ error: "No audio file provided" });
+
+  try {
+    // 1. STT (Audio to Text) using OpenAI Whisper API
+    const formData = new FormData();
+    const blob = new Blob([new Uint8Array(req.file.buffer)], { type: 'audio/wav' });
+    formData.append('file', blob, 'audio.wav');
+    formData.append('model', 'whisper-1');
+    formData.append('language', 'ko');
+    formData.append('prompt', '소다봇에게 말하는 내용입니다.');
+
+    const whisperRes = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${db.settings.openaiApiKey || ""}`
+      },
+      body: formData as any
+    });
+
+    if (!whisperRes.ok) {
+      const errText = await whisperRes.text();
+      console.error("Whisper API error:", errText);
+      throw new Error(`Whisper API failed: ${whisperRes.status}`);
+    }
+
+    const output = await whisperRes.json();
+    let transcript = output.text;
+    if (Array.isArray(transcript)) transcript = transcript.join(" ");
+    transcript = transcript.trim();
+
+    if (!transcript || transcript.length === 0) {
+      return res.json({ text: "", reply: "음성을 인식하지 못했어요." });
+    }
+
+    // 2. LLM (Text to Text)
+    const routeConfig = checkHybridQuotaAndRoute(user, db);
+    writeDB(db);
+
+    const openaiRes = await fetch(routeConfig.url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": routeConfig.auth
+      },
+      body: JSON.stringify({
+        model: routeConfig.routedToGpt ? "gpt-4o-mini" : db.settings.modelName,
+        messages: [
+          { role: "system", content: "너는 초등학생이 만든 AI 반려봇 소다봇이야. 한국어로 아주 짧고 귀엽게 말해." },
+          { role: "user", content: transcript }
+        ],
+        max_tokens: 80
+      })
+    });
+
+    const data = await openaiRes.json();
+    const replyMessage = data.choices?.[0]?.message?.content || "앗, 오류가 났어요.";
+
+    // 3. Save to DB
+    let chat = db.chats.find(c => c.userId === user.id && c.title === "아두이노 소다봇 대화");
+    if (!chat) {
+      chat = {
+        id: "chat-hw-" + Date.now(),
+        userId: user.id,
+        title: "아두이노 소다봇 대화",
+        createdAt: new Date().toISOString(),
+        messages: []
+      };
+      db.chats.push(chat);
+    }
+    
+    chat.messages.push({
+      id: "msg-" + Date.now() + "1",
+      sender: "user",
+      text: transcript,
+      timestamp: new Date().toISOString()
+    });
+    chat.messages.push({
+      id: "msg-" + Date.now() + "2",
+      sender: "assistant",
+      text: replyMessage,
+      timestamp: new Date().toISOString(),
+      modelUsed: data.model || "Unknown Model"
+    });
+    writeDB(db);
+
+    // 4. Return result
+    res.json({ text: transcript, reply: replyMessage });
+  } catch (err: any) {
+    console.error("Audio-chat error:", err);
     res.status(500).json({ error: err.message });
   }
 });
