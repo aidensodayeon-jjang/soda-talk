@@ -139,11 +139,13 @@ export default function App() {
 
   // 5초마다 실시간 대화 피드 갱신
   useEffect(() => {
-    let interval;
+    let interval: any;
     if (user?.username === "admin") {
       fetchAdminChats(); // 최초 1회 실행
+      fetchGlobalStats(); // 대시보드 통계 최초 1회 실행
       interval = setInterval(() => {
         fetchAdminChats();
+        fetchGlobalStats();
       }, 5000);
     }
     return () => clearInterval(interval);
