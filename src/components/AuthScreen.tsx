@@ -7,9 +7,9 @@ interface AuthScreenProps {
 
 export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
   const [isLogin, setIsLogin] = useState(true);
-  const [username, setUsername] = useState("");
+  const [username, setUsername] = useState(localStorage.getItem("savedUsername") || "");
   const [displayName, setDisplayName] = useState("");
-  const [password, setPassword] = useState("");
+  const [password, setPassword] = useState(localStorage.getItem("savedPassword") || "");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -35,6 +35,9 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
         throw new Error(data.error || "인증에 실패했습니다.");
       }
 
+      localStorage.setItem("savedUsername", username);
+      localStorage.setItem("savedPassword", password);
+
       onLoginSuccess(data.sessionId, data.user);
     } catch (err: any) {
       setError(err.message || "서버와 연결할 수 없습니다.");
@@ -53,23 +56,12 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
 
       <div className="w-full max-w-md bg-white border border-[#EAE6DF] rounded-2xl shadow-[0_4px_24px_rgba(42,41,39,0.04)] px-8 py-10 relative z-10">
         {/* Notion / Apple style header */}
-        <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center w-14 h-14 bg-[#FAF9F6] border border-[#EAE6DF] rounded-2xl mb-4 text-[#9C282C] shadow-sm">
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-14 h-14 bg-[#FAF9F6] border border-[#EAE6DF] rounded-2xl mb-4 text-emerald-600 shadow-sm">
             <Sparkles className="w-6 h-6" />
           </div>
-          <h1 className="text-2xl font-semibold tracking-tight text-[#1D1D1F]">SODA TALK</h1>
-          <p className="text-sm text-[#86868B] mt-1.5 font-mono">대화형 프롬프트 워크스페이스</p>
-        </div>
-
-        {/* Demo Account Callout */}
-        <div className="mb-6 p-4 bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl text-xs text-[#5C5B57] leading-relaxed space-y-1">
-          <div className="flex items-center gap-1.5 font-semibold text-[#1D1D1F] mb-1">
-            <Info className="w-3.5 h-3.5 text-[#9C282C]" />
-            <span>즉시 로그인 가능한 간편 계정</span>
-          </div>
-          <p>• 아이디: <code className="bg-[#EAE6DF] px-1 rounded text-[#9C282C] font-mono font-medium">admin</code> &nbsp;/&nbsp; 비밀번호: <code className="bg-[#EAE6DF] px-1 rounded text-[#9C282C] font-mono font-medium">admin123</code></p>
-          <p>• 아이디: <code className="bg-[#EAE6DF] px-1 rounded text-[#9C282C] font-mono font-medium">muji</code> &nbsp;/&nbsp; 비밀번호: <code className="bg-[#EAE6DF] px-1 rounded text-[#9C282C] font-mono font-medium">muji123</code></p>
-          <p className="text-[10px] text-[#86868B] mt-1.5 pt-1.5 border-t border-[#EAE6DF]/60">새로운 계정으로 즉시 회원가입 후 로그인도 언제든 지원됩니다.</p>
+          <h1 className="text-2xl font-bold tracking-tight text-[#1D1D1F]">SODABOT</h1>
+          <p className="text-xs text-[#86868B] mt-1.5 font-mono">소다봇 스마트 플랫폼</p>
         </div>
 
         {error && (
@@ -92,7 +84,7 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
                 id="username-input"
                 type="text"
                 required
-                placeholder="아이디를 입력해 주세요 (예: admin)"
+                placeholder="아이디"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 className="w-full pl-10 pr-4 py-2.5 bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl text-sm focus:outline-none focus:border-[#2A2927] focus:ring-1 focus:ring-[#2A2927] transition-all placeholder:text-[#B0ACA5]"
@@ -113,7 +105,7 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
                   id="display-name-input"
                   type="text"
                   required
-                  placeholder="대화방에서 불려질 별명"
+                  placeholder="대화방 별명"
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
                   className="w-full pl-10 pr-4 py-2.5 bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl text-sm focus:outline-none focus:border-[#2A2927] focus:ring-1 focus:ring-[#2A2927] transition-all placeholder:text-[#B0ACA5]"
@@ -134,7 +126,7 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
                 id="password-input"
                 type="password"
                 required
-                placeholder="비밀번호를 입력해 주세요 (예: admin123)"
+                placeholder="비밀번호"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full pl-10 pr-4 py-2.5 bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl text-sm focus:outline-none focus:border-[#2A2927] focus:ring-1 focus:ring-[#2A2927] transition-all placeholder:text-[#B0ACA5]"

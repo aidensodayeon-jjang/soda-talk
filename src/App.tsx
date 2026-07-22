@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import AuthScreen from "./components/AuthScreen";
+import SodabotConnectScreen from "./components/SodabotConnectScreen";
+import SodabotSettingsScreen from "./components/SodabotSettingsScreen";
 import {
   Sparkles,
   Plus,
@@ -27,7 +29,9 @@ import {
   Users,
   Key,
   PlusCircle,
-  Activity
+  Activity,
+  Bluetooth,
+  Smile
 } from "lucide-react";
 import { ChatRoom, Message, LMStudioConfig } from "./types";
 
@@ -38,6 +42,7 @@ export default function App() {
   // Core Data States
   const [chats, setChats] = useState<ChatRoom[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
+  const [currentView, setCurrentView] = useState<'chat' | 'sodabot' | 'settings'>('chat');
   const [inputText, setInputText] = useState("");
   const [sending, setSending] = useState(false);
 
@@ -1228,22 +1233,26 @@ export default function App() {
               <Sparkles className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-sm font-semibold text-[#1D1D1F] tracking-tight">SODA TALK</h2>
-              <button
-                onClick={handleToggleProvider}
-                className="flex items-center gap-1 text-[10px] text-[#86868B] hover:text-[#9C282C] font-mono tracking-wider transition-colors"
-                title="클릭하여 AI 모드 전환 (Local / Cloud)"
-              >
-                {aiProvider === "openai" ? "☁️ CLOUD AI CORE" : "🖥️ LOCAL AI CORE"}
-                <svg className="w-2.5 h-2.5 opacity-70" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
-              </button>
+              <h2 className="text-sm font-bold text-[#1D1D1F] tracking-tight">SODABOT</h2>
+              {user?.username === 'admin' ? (
+                <button
+                  onClick={handleToggleProvider}
+                  className="flex items-center gap-1 text-[10px] text-[#86868B] hover:text-emerald-600 font-mono tracking-wider transition-colors"
+                  title="클릭하여 AI 모드 전환 (Local / Cloud)"
+                >
+                  {aiProvider === "openai" ? "☁️ CLOUD AI CORE" : "🖥️ LOCAL AI CORE"}
+                  <svg className="w-2.5 h-2.5 opacity-70" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </button>
+              ) : (
+                <p className="text-[10px] text-[#86868B] font-mono">소다봇 인공지능</p>
+              )}
             </div>
           </div>
 
           {/* New Chat Button (Notion dotted style) */}
           <button
             id="new-chat-sidebar-btn"
-            onClick={() => handleCreateNewChat()}
+            onClick={() => { handleCreateNewChat(); setCurrentView('chat'); }}
             className="w-full py-2 px-3 border border-dashed border-[#CFC9BF] hover:border-[#9C282C] bg-white rounded-xl text-xs font-medium text-[#5C5B57] hover:text-[#9C282C] flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-[0_1px_3px_rgba(0,0,0,0.02)] active:scale-[0.98]"
           >
             <Plus className="w-3.5 h-3.5" />
@@ -1253,7 +1262,7 @@ export default function App() {
 
         {/* Categories (New UI) */}
         <div className="px-3 pb-2 space-y-0.5">
-          <button className="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold bg-[#EAE6DF]/40 text-[#1D1D1F] flex items-center gap-2">
+          <button onClick={() => setCurrentView('chat')} className={`w-full text-left px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-colors ${currentView === 'chat' ? 'bg-[#EAE6DF]/40 text-[#1D1D1F]' : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20'}`}>
             <MessageSquare className="w-3.5 h-3.5" /> 대화
           </button>
           <button className="w-full text-left px-3 py-2 rounded-xl text-xs font-medium text-[#5C5B57] hover:bg-[#EAE6DF]/20 flex items-center gap-2">
@@ -1262,6 +1271,51 @@ export default function App() {
           <button className="w-full text-left px-3 py-2 rounded-xl text-xs font-medium text-[#5C5B57] hover:bg-[#EAE6DF]/20 flex items-center gap-2">
             <Cpu className="w-3.5 h-3.5" /> 코드 & 분석
           </button>
+        </div>
+
+        {/* Sodabot Management & Status Widget (Left Sidebar) */}
+        <div className="px-3 py-2 space-y-1.5 border-t border-[#EAE6DF] mt-1">
+          <div className="flex items-center justify-between px-3 py-1 text-[10px] font-semibold text-[#86868B] uppercase tracking-wider font-mono">
+            <span>소다봇 관리</span>
+            <span className={`w-1.5 h-1.5 rounded-full ${localStorage.getItem("sodabot_robot_ip") ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400'}`}></span>
+          </div>
+
+          <button onClick={() => setCurrentView('sodabot')} className={`w-full text-left px-3 py-2 rounded-xl text-xs font-medium flex items-center justify-between transition-colors ${currentView === 'sodabot' ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20'}`}>
+            <div className="flex items-center gap-2">
+              <Bluetooth className="w-3.5 h-3.5 text-indigo-600" /> 
+              <span>소다봇 연결</span>
+            </div>
+            {localStorage.getItem("sodabot_robot_ip") ? (
+              <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-full">
+                연결됨
+              </span>
+            ) : (
+              <span className="text-[9px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full">
+                대기 중
+              </span>
+            )}
+          </button>
+
+          <button onClick={() => setCurrentView('settings')} className={`w-full text-left px-3 py-2 rounded-xl text-xs font-medium flex items-center gap-2 transition-colors ${currentView === 'settings' ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20'}`}>
+            <Settings className="w-3.5 h-3.5" /> 상태 & 설정
+          </button>
+
+          {/* Sodabot Connection Status Mini Widget */}
+          <div 
+            onClick={() => setCurrentView('sodabot')}
+            className="mx-0.5 p-2.5 bg-[#FAF9F6] hover:bg-white border border-[#EAE6DF] hover:border-indigo-200 rounded-2xl cursor-pointer transition-all space-y-1 group shadow-2xs"
+          >
+            <div className="flex items-center justify-between text-[10px] font-bold">
+              <span className="text-[#1D1D1F] flex items-center gap-1">🤖 소다봇 상태</span>
+              <span className={localStorage.getItem("sodabot_robot_ip") ? "text-emerald-600 font-mono" : "text-amber-600 font-mono"}>
+                {localStorage.getItem("sodabot_robot_ip") ? "⚡ 연결됨" : "🔌 미연결"}
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-[10px] text-[#86868B] font-mono pt-0.5">
+              <span className="truncate">{localStorage.getItem("sodabot_robot_ip") || "IP 미할당"}</span>
+              <span className="font-semibold text-emerald-600 shrink-0">🔋 85%</span>
+            </div>
+          </div>
         </div>
 
         {/* Chat History List */}
@@ -1281,7 +1335,7 @@ export default function App() {
                 <div
                   key={chat.id}
                   id={`chat-item-${chat.id}`}
-                  onClick={() => setActiveChatId(chat.id)}
+                  onClick={() => { setActiveChatId(chat.id); setCurrentView('chat'); }}
                   className={`group flex items-center justify-between p-2.5 rounded-xl text-xs cursor-pointer transition-all ${isActive
                       ? "bg-white border border-[#EAE6DF] text-[#1D1D1F] font-semibold shadow-sm"
                       : "text-[#5C5B57] hover:bg-[#EAE6DF]/40 hover:text-[#1D1D1F]"
@@ -1334,30 +1388,38 @@ export default function App() {
 
       {/* 2. Main Conversational Panel (Right Section) */}
       <main className="flex-1 flex flex-col h-screen overflow-hidden bg-white relative">
-        {/* Apple style Minimal Header */}
-        <header className="h-14 border-b border-[#EAE6DF] bg-white flex items-center justify-between px-6 shrink-0 z-10 select-none">
+        {currentView === 'chat' ? (
+          <>
+            {/* Apple style Minimal Header */}
+            <header className="h-14 border-b border-[#EAE6DF] bg-white flex items-center justify-between px-6 shrink-0 z-10 select-none">
           <div className="flex items-center gap-3">
             <span className="text-xs font-semibold text-[#1D1D1F] tracking-tight font-mono">
               {activeChat ? activeChat.title : "새로운 대화"}
             </span>
-            <span className="text-[#EAE6DF] text-sm">/</span>
-            <div className="flex items-center gap-1.5 text-xs text-[#86868B]">
-              <span className={`w-1.5 h-1.5 rounded-full ${lmStudioConnected ? "bg-emerald-500" : "bg-amber-500"}`} />
-              <span className="font-mono text-[11px] text-[#5C5B57]">
-                {lmStudioConnected ? "AI Engine Connected" : "AI Engine Standby"}
-              </span>
-            </div>
+            {user?.username === 'admin' && (
+              <>
+                <span className="text-[#EAE6DF] text-sm">/</span>
+                <div className="flex items-center gap-1.5 text-xs text-[#86868B]">
+                  <span className={`w-1.5 h-1.5 rounded-full ${lmStudioConnected ? "bg-emerald-500" : "bg-amber-500"}`} />
+                  <span className="font-mono text-[11px] text-[#5C5B57]">
+                    {lmStudioConnected ? "AI Engine Connected" : "AI Engine Standby"}
+                  </span>
+                </div>
+              </>
+            )}
           </div>
 
-          {/* Fallback Mode indicator */}
-          <div className="flex items-center gap-2">
-            <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-medium ${fallbackMode
-                ? "bg-amber-50 border border-amber-100 text-amber-700"
-                : "bg-emerald-50 border border-emerald-100 text-emerald-700"
-              }`}>
-              {fallbackMode ? "에뮬레이터 대기 상태" : "로컬 Direct 접속 전용"}
-            </span>
-          </div>
+          {/* Fallback Mode indicator (Admin only) */}
+          {user?.username === 'admin' && (
+            <div className="flex items-center gap-2">
+              <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-medium ${fallbackMode
+                  ? "bg-amber-50 border border-amber-100 text-amber-700"
+                  : "bg-emerald-50 border border-emerald-100 text-emerald-700"
+                }`}>
+                {fallbackMode ? "에뮬레이터 대기 상태" : "로컬 Direct 접속 전용"}
+              </span>
+            </div>
+          )}
         </header>
 
         {/* Scrollable Conversation Arena */}
@@ -1447,7 +1509,7 @@ export default function App() {
                         {/* Timestamp & Model */}
                         <div className="flex items-center justify-between text-[10px] text-[#86868B] font-mono border-t border-[#FAF9F6] pt-1.5 mt-2">
                           <span>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                          {msg.modelUsed && <span className="text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded ml-2 truncate max-w-[120px]">🤖 {msg.modelUsed}</span>}
+                          {user?.username === 'admin' && msg.modelUsed && <span className="text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded ml-2 truncate max-w-[120px]">🤖 {msg.modelUsed}</span>}
                         </div>
                       </div>
 
@@ -1515,172 +1577,15 @@ export default function App() {
             </div>
           </div>
         </div>
+          </>
+        ) : currentView === 'sodabot' ? (
+          <SodabotConnectScreen />
+        ) : (
+          <SodabotSettingsScreen />
+        )}
       </main>
 
-      {/* 3. Right Dashboard Panel */}
-      <aside className="w-[320px] border-l border-[#EAE6DF] bg-white p-5 flex flex-col gap-6 overflow-y-auto shrink-0 select-none scrollbar-thin">
 
-        {/* Header: AI 엔진 선택 */}
-        <div className="space-y-1">
-          <div className="flex justify-between items-center">
-            <span className="text-[10px] text-[#86868B] font-semibold">AI 엔진 선택</span>
-            <button className="w-6 h-6 flex items-center justify-center rounded-full border border-[#EAE6DF] hover:bg-[#FAF9F6] text-[#5C5B57] transition-colors">
-              <Sun className="w-3.5 h-3.5" />
-            </button>
-          </div>
-          <div className="flex items-center gap-1 cursor-pointer">
-            <span className="text-sm font-bold text-[#1D1D1F]">자동 (로컬 우선)</span>
-            <ChevronDown className="w-4 h-4 text-[#86868B]" />
-          </div>
-        </div>
-
-        {/* 현재 사용 엔진 카드 */}
-        <div className="space-y-3">
-          <h3 className="text-xs font-bold text-[#1D1D1F]">현재 사용 엔진</h3>
-
-          <div className="p-4 bg-white border border-[#EAE6DF] rounded-2xl shadow-sm space-y-4">
-
-            {/* Local Engine */}
-            <div className="space-y-2">
-              <div className="flex justify-between items-center">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg bg-[#FAF9F6] border border-[#EAE6DF] flex items-center justify-center text-[#1D1D1F]">
-                    <Cpu className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <div className="text-xs font-bold text-[#1D1D1F]">로컬 엔진 {aiProvider === 'local' ? '(메인)' : '(백업)'}</div>
-                    <div className="text-[10px] text-[#86868B]">모델: {modelName || "Qwen 4B (GGUF)"}</div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1">
-                  <span className={`w-1.5 h-1.5 rounded-full ${lmStudioConnected ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`}></span>
-                  <span className={`text-[10px] font-semibold ${lmStudioConnected ? 'text-emerald-600' : 'text-rose-600'}`}>{lmStudioConnected ? '실행 중' : '오프라인'}</span>
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <div className="flex justify-between text-[10px] text-[#86868B]">
-                  <span>메모리 사용량</span>
-                  <span>{memUsedGB}GB / {memTotalGB}GB</span>
-                </div>
-                <div className="h-1.5 w-full bg-[#FAF9F6] rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 transition-all duration-1000"
-                    style={{ width: `${memPercent}%` }}
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="border-t border-[#EAE6DF] border-dashed pt-4" />
-
-            {/* OpenAI Cloud */}
-            <div className={`space-y-2 transition-opacity ${aiProvider === 'openai' || hybridModeEnabled ? 'opacity-100' : 'opacity-60 hover:opacity-100'}`}>
-              <div className="flex justify-between items-center">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg bg-[#FAF9F6] border border-[#EAE6DF] flex items-center justify-center text-[#1D1D1F]">
-                    <Sparkles className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <div className="text-xs font-bold text-[#1D1D1F]">OpenAI API {aiProvider === 'openai' ? '(메인)' : hybridModeEnabled ? '(하이브리드)' : '(백업)'}</div>
-                    <div className="text-[10px] text-[#86868B]">모델: gpt-4o-mini</div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                  <span className="text-[10px] font-semibold text-emerald-600">연결됨</span>
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <div className="flex justify-between text-[10px] text-[#86868B]">
-                  <span>요청 한도</span>
-                  <span>{openaiUsed.toLocaleString()} / {openaiLimit.toLocaleString()}</span>
-                </div>
-                <div className="h-1.5 w-full bg-[#FAF9F6] rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-blue-400 to-indigo-400 transition-all duration-1000"
-                    style={{ width: `${openaiPercent}%` }}
-                  />
-                </div>
-              </div>
-            </div>
-
-          </div>
-        </div>
-
-        {/* 대화 설정 */}
-        <div className="space-y-3 pt-2">
-          <h3 className="text-xs font-bold text-[#1D1D1F]">대화 설정</h3>
-          <div className="p-4 bg-[#FAF9F6]/50 border border-[#EAE6DF] rounded-2xl space-y-4">
-
-            <div className="flex justify-between items-center gap-4">
-              <span className="text-[11px] font-medium text-[#5C5B57] shrink-0">응답 창의성</span>
-              <div className="flex items-center gap-2 flex-1">
-                <input
-                  type="range"
-                  min="0" max="1" step="0.1"
-                  value={temperature}
-                  onChange={(e) => {
-                    setTemperature(parseFloat(e.target.value));
-                    // Optional: save on blur or debounce
-                  }}
-                  className="w-full h-1.5 bg-[#EAE6DF] rounded-lg appearance-none cursor-pointer accent-indigo-500"
-                />
-                <span className="text-[11px] font-mono text-[#1D1D1F] w-4">{temperature}</span>
-              </div>
-            </div>
-
-            <div className="flex justify-between items-center gap-4">
-              <span className="text-[11px] font-medium text-[#5C5B57] shrink-0">최대 응답 길이</span>
-              <select
-                value={maxTokens}
-                onChange={(e) => setMaxTokens(parseInt(e.target.value))}
-                className="bg-white border border-[#EAE6DF] rounded-lg text-[11px] px-2 py-1.5 focus:outline-none flex-1 text-[#1D1D1F]"
-              >
-                <option value={512}>512 토큰</option>
-                <option value={1024}>1024 토큰</option>
-                <option value={2048}>2048 토큰</option>
-              </select>
-            </div>
-
-            <div className="flex justify-between items-center gap-4">
-              <span className="text-[11px] font-medium text-[#5C5B57] shrink-0">언어</span>
-              <select
-                value={language}
-                onChange={(e) => setLanguage(e.target.value)}
-                className="bg-white border border-[#EAE6DF] rounded-lg text-[11px] px-2 py-1.5 focus:outline-none flex-1 text-[#1D1D1F]"
-              >
-                <option value="Korean">한국어</option>
-                <option value="English">English</option>
-              </select>
-            </div>
-
-          </div>
-        </div>
-
-        {/* 추천 프롬프트 */}
-        <div className="space-y-3 pt-2 pb-4">
-          <div className="flex justify-between items-center">
-            <h3 className="text-xs font-bold text-[#1D1D1F]">추천 프롬프트</h3>
-            <RefreshCw className="w-3.5 h-3.5 text-[#86868B] cursor-pointer hover:text-[#1D1D1F]" />
-          </div>
-          <div className="space-y-1.5">
-            {[
-              { icon: FileText, text: "이 문서 요약해줘" },
-              { icon: Sparkles, text: "더 나은 제목을 제안해줘" },
-              { icon: Cpu, text: "코드 오류를 찾아줘" },
-              { icon: Zap, text: "마케팅 아이디어 5가지 제안해줘" },
-            ].map((p, i) => (
-              <div key={i} onClick={() => setInputText(p.text)} className="flex items-center gap-2 text-[11px] text-[#5C5B57] p-2 rounded-lg hover:bg-[#FAF9F6] cursor-pointer transition-colors border border-transparent hover:border-[#EAE6DF]">
-                <p.icon className="w-3.5 h-3.5 opacity-70" />
-                <span>{p.text}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-      </aside>
 
 
       {/* 4. Admin User Management Drawer/Modal */}
