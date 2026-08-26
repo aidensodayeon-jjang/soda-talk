@@ -2,6 +2,9 @@ import React, { useState, useEffect, useRef } from "react";
 import AuthScreen from "./components/AuthScreen";
 import SodabotConnectScreen from "./components/SodabotConnectScreen";
 import SodabotSettingsScreen from "./components/SodabotSettingsScreen";
+import SodaAiLabScreen from "./components/SodaAiLabScreen";
+import DevCodeHubScreen from "./components/DevCodeHubScreen";
+import AdminCourseManagerModal from "./components/AdminCourseManagerModal";
 import {
   Sparkles,
   Plus,
@@ -31,18 +34,53 @@ import {
   PlusCircle,
   Activity,
   Bluetooth,
-  Smile
+  Smile,
+  Lock,
+  Unlock,
+  ShieldCheck,
+  ShieldAlert,
+  Image as ImageIcon,
+  Library,
+  Usb,
+  Folder,
+  FolderOpen,
+  FolderCode,
+  FileCode
 } from "lucide-react";
-import { ChatRoom, Message, LMStudioConfig } from "./types";
+import { ChatRoom, Message, LMStudioConfig, CourseContent } from "./types";
 
 export default function App() {
   const [token, setToken] = useState<string | null>(localStorage.getItem("authSessionId"));
-  const [user, setUser] = useState<{ id: string; username: string; displayName: string } | null>(null);
+  const [user, setUser] = useState<{ id: string; username: string; displayName: string; role?: string; canAccessChat?: boolean } | null>(null);
+
+  // Main Navigation Tab: 'dev' (수업 & 펌웨어 개발실) vs 'chat' (소다봇 제어 & AI 코딩)
+  const [mainNavTab, setMainNavTab] = useState<'dev' | 'chat'>('dev');
+
+  // Dev Code Hub Tree States
+  const [courseContents, setCourseContents] = useState<CourseContent[]>([]);
+  const [expandedWeeks, setExpandedWeeks] = useState<number[]>([1]);
+  const [selectedDevCodeId, setSelectedDevCodeId] = useState<string>("content-week-1-sound");
+
+  // Load course contents on mount
+  useEffect(() => {
+    fetch("/api/course-contents")
+      .then(res => res.json())
+      .then(data => {
+        if (data.contents && data.contents.length > 0) {
+          setCourseContents(data.contents);
+          setSelectedDevCodeId(data.contents[0].id);
+        }
+      })
+      .catch(console.error);
+  }, []);
+
+  // Admin Course Manager Modal State
+  const [showCourseManager, setShowCourseManager] = useState(false);
 
   // Core Data States
   const [chats, setChats] = useState<ChatRoom[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
-  const [currentView, setCurrentView] = useState<'chat' | 'sodabot' | 'settings'>('chat');
+  const [currentView, setCurrentView] = useState<'chat' | 'sodabot' | 'settings' | 'sodabot_builder'>('chat');
   const [inputText, setInputText] = useState("");
   const [sending, setSending] = useState(false);
 
@@ -79,6 +117,36 @@ export default function App() {
   const [newDisplayName, setNewDisplayName] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [adminError, setAdminError] = useState("");
+
+  const handleToggleChatPermission = async (userId: string, currentStatus: boolean) => {
+    try {
+      const res = await fetch(`/api/admin/users/${userId}/permission`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ canAccessChat: !currentStatus })
+      });
+      if (res.ok) {
+        fetchAdminUsers();
+      }
+    } catch (err) {
+      console.error("Failed to update permission", err);
+    }
+  };
+
+  const handleBatchToggleChatPermission = async (canAccessChat: boolean) => {
+    try {
+      const res = await fetch("/api/admin/users/batch-permission", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ canAccessChat })
+      });
+      if (res.ok) {
+        fetchAdminUsers();
+      }
+    } catch (err) {
+      console.error("Failed to batch update permissions", err);
+    }
+  };
 
   const fetchAdminUsers = async () => {
     try {
@@ -230,16 +298,26 @@ export default function App() {
   useEffect(() => {
     if (token) {
       verifySession(token);
+      // 일반 학생 유저의 경우 선생님이 권한을 부여했을 때 실시간 반영을 위해 주기적 동기화
+      const interval = setInterval(() => {
+        verifySession(token);
+      }, 3000);
+      return () => clearInterval(interval);
     }
   }, [token]);
 
   // 2. Fetch data once logged in
   useEffect(() => {
     if (user) {
+      if (user.username === "admin") {
+        setMainNavTab("chat");
+      } else if (!user.canAccessChat) {
+        setMainNavTab("dev");
+      }
       fetchChats();
       fetchLMStudioConfig();
     }
-  }, [user]);
+  }, [user?.id]);
 
   // 3. Auto-scroll chat history to bottom
   useEffect(() => {
@@ -685,14 +763,33 @@ export default function App() {
           <div className="flex-1 overflow-y-auto px-3 py-4 space-y-4">
             <div className="space-y-1">
               <div className="text-[10px] font-bold text-[#86868B] px-2 mb-2 uppercase tracking-wider">시스템 관리</div>
-              <button onClick={() => { fetchGlobalStats(); setShowGlobalDashboard(true); }} className="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 flex items-center gap-2 transition-colors">
+              <button onClick={() => { setMainNavTab("chat"); fetchGlobalStats(); setShowGlobalDashboard(true); }} className="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 flex items-center gap-2 transition-colors cursor-pointer">
                 <Activity className="w-4 h-4" /> 통합 모니터링
               </button>
-              <button onClick={() => setShowAdminPanel(true)} className="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-indigo-700 hover:bg-indigo-50 border border-transparent hover:border-indigo-200 flex items-center gap-2 transition-colors">
-                <Users className="w-4 h-4" /> 유저 관리
+              <button onClick={() => setShowAdminPanel(true)} className="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-indigo-700 hover:bg-indigo-50 border border-transparent hover:border-indigo-200 flex items-center gap-2 transition-colors cursor-pointer">
+                <Users className="w-4 h-4" /> 유저 및 권한 관리
               </button>
-              <button onClick={() => setShowSettings(true)} className="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-[#5C5B57] hover:bg-white border border-transparent hover:border-[#EAE6DF] flex items-center gap-2 transition-colors">
+              <button onClick={() => setShowCourseManager(true)} className="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-blue-700 hover:bg-blue-50 border border-transparent hover:border-blue-200 flex items-center gap-2 transition-colors cursor-pointer">
+                <FolderCode className="w-4 h-4 text-blue-600" /> 주차별 컨텐츠 관리
+              </button>
+              <button onClick={() => setShowSettings(true)} className="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-[#5C5B57] hover:bg-white border border-transparent hover:border-[#EAE6DF] flex items-center gap-2 transition-colors cursor-pointer">
                 <Settings className="w-4 h-4" /> 서버 설정
+              </button>
+            </div>
+
+            <div className="space-y-1 pt-4 border-t border-[#EAE6DF]">
+              <div className="text-[10px] font-bold text-[#86868B] px-2 mb-2 uppercase tracking-wider">개발 & 하드웨어 도구</div>
+              <button
+                onClick={() => { setMainNavTab("ide"); }}
+                className="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-indigo-700 hover:bg-indigo-50 border border-transparent hover:border-indigo-200 flex items-center gap-2 transition-colors cursor-pointer"
+              >
+                <Zap className="w-4 h-4 text-amber-500" /> Web Arduino IDE
+              </button>
+              <button
+                onClick={() => { setMainNavTab("dev"); }}
+                className="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-[#5C5B57] hover:bg-white border border-transparent hover:border-[#EAE6DF] flex items-center gap-2 transition-colors cursor-pointer"
+              >
+                <Library className="w-4 h-4 text-indigo-500" /> 수업 자료실 뷰
               </button>
             </div>
 
@@ -733,13 +830,18 @@ export default function App() {
           </div>
         </aside>
 
-        {/* 2. Admin Center Main (Global Dashboard Inline) */}
-        <main className="flex-1 flex flex-col h-screen overflow-y-auto bg-white border-r border-[#EAE6DF] p-6 relative">
-          <div className="max-w-4xl mx-auto w-full space-y-6">
-            <div className="space-y-1">
-              <h2 className="text-2xl font-bold text-[#1D1D1F]">시스템 통합 모니터링</h2>
-              <p className="text-sm text-[#86868B]">모든 사용자의 대화 통계 및 AI 리소스 사용 현황을 실시간으로 파악합니다.</p>
-            </div>
+        {/* 2. Admin Center Main (Global Dashboard or Dev Hub) */}
+        {mainNavTab === "dev" ? (
+          <div className="flex-1 flex flex-col h-screen overflow-hidden">
+            <DevCodeHubScreen />
+          </div>
+        ) : (
+          <main className="flex-1 flex flex-col h-screen overflow-y-auto bg-white border-r border-[#EAE6DF] p-6 relative">
+            <div className="max-w-4xl mx-auto w-full space-y-6">
+              <div className="space-y-1">
+                <h2 className="text-2xl font-bold text-[#1D1D1F]">시스템 통합 모니터링</h2>
+                <p className="text-sm text-[#86868B]">모든 사용자의 대화 통계 및 AI 리소스 사용 현황을 실시간으로 파악합니다.</p>
+              </div>
 
             <div className="grid grid-cols-3 gap-4">
               <div className="p-5 bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-3xl text-white shadow-lg shadow-indigo-200">
@@ -1025,6 +1127,7 @@ export default function App() {
 
           </div>
         </main>
+        )}
 
         {/* 3. Admin Right Sidebar (Mini Chat) */}
         <aside className="w-[340px] bg-[#FAF9F6] flex flex-col shrink-0 select-none">
@@ -1090,56 +1193,113 @@ export default function App() {
         {showAdminPanel && (
           <div className="fixed inset-0 bg-[#1D1D1F]/40 backdrop-blur-sm flex justify-center items-center z-50 animate-fade-in p-4">
             <div className="bg-white border border-[#EAE6DF] rounded-3xl w-full max-w-4xl shadow-2xl p-6 relative overflow-hidden flex flex-col max-h-[90vh]">
-              {/* This points to the existing Admin Management Modal code */}
+              {/* Header */}
               <div className="flex items-center justify-between pb-4 border-b border-[#FAF9F6] shrink-0">
                 <div className="space-y-1">
-                  <h3 className="text-base font-bold text-[#1D1D1F]">운영자 유저 관리</h3>
-                  <p className="text-xs text-[#86868B]">플랫폼의 모든 사용자를 관리하고 대화 기록을 조회합니다.</p>
+                  <h3 className="text-base font-bold text-[#1D1D1F] flex items-center gap-2">
+                    <Users className="w-5 h-5 text-indigo-600" />
+                    운영자 유저 및 실시간 대화 권한 관리
+                  </h3>
+                  <p className="text-xs text-[#86868B]">수업 진행 시 학생들의 대화 탭 잠금을 해제하거나 개별 권한을 부여할 수 있습니다.</p>
                 </div>
-                <button onClick={() => setShowAdminPanel(false)} className="text-xs text-[#86868B] hover:text-[#1D1D1F] bg-[#FAF9F6] px-3 py-1.5 rounded-full">닫기 ✕</button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleBatchToggleChatPermission(true)}
+                    className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    전체 대화 오픈 (ON)
+                  </button>
+                  <button
+                    onClick={() => handleBatchToggleChatPermission(false)}
+                    className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                  >
+                    <ShieldAlert className="w-3.5 h-3.5" />
+                    전체 대화 잠금 (OFF)
+                  </button>
+                  <button onClick={() => setShowAdminPanel(false)} className="text-xs text-[#86868B] hover:text-[#1D1D1F] bg-[#FAF9F6] px-3 py-1.5 rounded-full cursor-pointer">닫기 ✕</button>
+                </div>
               </div>
               <div className="flex-1 overflow-y-auto py-4 space-y-6">
-                {/* User Table (Simplified from existing) */}
+                {/* User Table */}
                 <div className="border border-[#EAE6DF] rounded-2xl overflow-hidden shadow-sm">
                   <table className="w-full text-left text-xs">
                     <thead className="bg-[#FAF9F6] text-[#86868B] border-b border-[#EAE6DF]">
                       <tr>
                         <th className="p-3 font-semibold">사용자 정보</th>
+                        <th className="p-3 font-semibold text-center">대화 권한 (수업 제어)</th>
                         <th className="p-3 font-semibold">맞춤형 페르소나 설정 (System Prompt)</th>
                         <th className="p-3 font-semibold text-right">관리</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#EAE6DF]">
-                      {adminUsers.map(u => (
-                        <tr key={u.id} className="hover:bg-indigo-50/30 transition-colors align-top">
-                          <td className="p-3">
-                            <div className="font-medium text-[#1D1D1F]">{u.displayName}</div>
-                            <div className="font-mono text-[11px] text-[#86868B]">@{u.username}</div>
-                            <div className="font-mono text-[10px] text-[#5C5B57] mt-1 pt-1 border-t border-[#EAE6DF] w-fit">Key: {u.personalApiKey || "발급 안됨"}</div>
-                          </td>
-                          <td className="p-3">
-                            <div className="flex flex-col gap-2">
-                              <textarea
-                                defaultValue={u.persona || ""}
-                                onBlur={(e) => {
-                                  if (e.target.value !== u.persona) {
-                                    handleUpdatePersona(u.id, e.target.value);
-                                  }
-                                }}
-                                placeholder="예: 이 유저에게는 초등학생 말투로 설명하세요."
-                                className="w-full h-20 p-2 bg-white border border-[#EAE6DF] rounded-xl text-[11px] focus:outline-none focus:border-indigo-400 resize-none"
-                              />
-                              <div className="text-[9px] text-[#86868B]">입력 후 영역 바깥을 클릭(포커스 해제)하면 자동 저장됩니다.</div>
-                            </div>
-                          </td>
-                          <td className="p-3 text-right space-x-2 whitespace-nowrap">
-                            <button onClick={() => handleGenerateApiKey(u.id)} className="px-2 py-1 bg-white border border-[#EAE6DF] hover:border-indigo-300 rounded-lg text-[10px]">Key 재발급</button>
-                            {u.id !== "user-1" && (
-                              <button onClick={() => handleDeleteUser(u.id)} className="px-2 py-1 bg-white border border-[#EAE6DF] text-rose-500 rounded-lg text-[10px]">삭제</button>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
+                      {adminUsers.map(u => {
+                        const isUserAdmin = u.username === "admin" || u.role === "admin";
+                        const hasChatAccess = isUserAdmin || Boolean(u.canAccessChat);
+                        return (
+                          <tr key={u.id} className="hover:bg-indigo-50/30 transition-colors align-top">
+                            <td className="p-3">
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-medium text-[#1D1D1F]">{u.displayName}</span>
+                                {isUserAdmin && (
+                                  <span className="text-[9px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">관리자</span>
+                                )}
+                              </div>
+                              <div className="font-mono text-[11px] text-[#86868B]">@{u.username}</div>
+                              <div className="font-mono text-[10px] text-[#5C5B57] mt-1 pt-1 border-t border-[#EAE6DF] w-fit">Key: {u.personalApiKey || "발급 안됨"}</div>
+                            </td>
+                            <td className="p-3 text-center">
+                              {isUserAdmin ? (
+                                <span className="text-[11px] font-semibold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-lg">
+                                  항상 허용됨
+                                </span>
+                              ) : (
+                                <button
+                                  onClick={() => handleToggleChatPermission(u.id, Boolean(u.canAccessChat))}
+                                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 mx-auto ${
+                                    hasChatAccess
+                                      ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs"
+                                      : "bg-gray-100 hover:bg-gray-200 text-[#5C5B57] border border-[#EAE6DF]"
+                                  }`}
+                                >
+                                  {hasChatAccess ? (
+                                    <>
+                                      <Unlock className="w-3 h-3" />
+                                      대화 허용됨 (ON)
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Lock className="w-3 h-3 text-gray-500" />
+                                      잠김 (OFF)
+                                    </>
+                                  )}
+                                </button>
+                              )}
+                            </td>
+                            <td className="p-3">
+                              <div className="flex flex-col gap-2">
+                                <textarea
+                                  defaultValue={u.persona || ""}
+                                  onBlur={(e) => {
+                                    if (e.target.value !== u.persona) {
+                                      handleUpdatePersona(u.id, e.target.value);
+                                    }
+                                  }}
+                                  placeholder="예: 이 유저에게는 초등학생 말투로 설명하세요."
+                                  className="w-full h-20 p-2 bg-white border border-[#EAE6DF] rounded-xl text-[11px] focus:outline-none focus:border-indigo-400 resize-none"
+                                />
+                                <div className="text-[9px] text-[#86868B]">입력 후 포커스를 해제하면 자동 저장됩니다.</div>
+                              </div>
+                            </td>
+                            <td className="p-3 text-right space-x-2 whitespace-nowrap">
+                              <button onClick={() => handleGenerateApiKey(u.id)} className="px-2 py-1 bg-white border border-[#EAE6DF] hover:border-indigo-300 rounded-lg text-[10px] cursor-pointer">Key 재발급</button>
+                              {u.id !== "user-1" && (
+                                <button onClick={() => handleDeleteUser(u.id)} className="px-2 py-1 bg-white border border-[#EAE6DF] text-rose-500 rounded-lg text-[10px] cursor-pointer">삭제</button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -1215,6 +1375,14 @@ export default function App() {
           </div>
         )}
 
+        {/* Admin Course Contents Manager Modal */}
+        {showCourseManager && (
+          <AdminCourseManagerModal
+            token={token}
+            onClose={() => setShowCourseManager(false)}
+          />
+        )}
+
       </div>
     );
   }
@@ -1224,146 +1392,355 @@ export default function App() {
     <div className="flex h-screen bg-[#FAF9F6] text-[#2A2927] overflow-hidden font-sans selection:bg-[#9C282C]/10 selection:text-[#9C282C]">
 
       {/* 1. Sidebar Panel (Apple/Notion Vibe Left Section) */}
-      <aside className="w-64 border-r border-[#EAE6DF] bg-[#FAF9F6] flex flex-col justify-between shrink-0 h-screen select-none z-30">
+      <aside className="w-80 lg:w-[340px] border-r border-[#EAE6DF] bg-[#FAF9F6] flex flex-col justify-between shrink-0 h-screen select-none z-30">
 
-        {/* Top Header */}
-        <div className="p-4 flex flex-col gap-4">
+        {/* Top Header & Main Navigation Tabs */}
+        <div className="p-4 flex flex-col gap-3">
           <div className="flex items-center gap-2 px-1">
-            <div className="w-8 h-8 rounded-xl bg-[#FAF9F6] border border-[#EAE6DF] flex items-center justify-center text-[#9C282C] shadow-sm">
-              <Sparkles className="w-4 h-4" />
+            <div className="w-8 h-8 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-sm">
+              <Cpu className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-sm font-bold text-[#1D1D1F] tracking-tight">SODABOT</h2>
-              {user?.username === 'admin' ? (
-                <button
-                  onClick={handleToggleProvider}
-                  className="flex items-center gap-1 text-[10px] text-[#86868B] hover:text-emerald-600 font-mono tracking-wider transition-colors"
-                  title="클릭하여 AI 모드 전환 (Local / Cloud)"
-                >
-                  {aiProvider === "openai" ? "☁️ CLOUD AI CORE" : "🖥️ LOCAL AI CORE"}
-                  <svg className="w-2.5 h-2.5 opacity-70" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
-                </button>
+              <h2 className="text-sm font-black text-[#1D1D1F] tracking-tight">SODABOT STUDIO</h2>
+              <p className="text-[10px] text-[#86868B] font-medium">로봇 제작 & AI 코딩 스튜디오</p>
+            </div>
+          </div>
+
+          {/* Primary Top Tab Switcher (수업/펌웨어 개발실 vs 소다봇 제어 & AI 코딩) */}
+          <div className="bg-[#EAE6DF]/70 p-1 rounded-2xl flex flex-col gap-1 shadow-inner mt-1">
+            <button
+              id="tab-btn-dev-code"
+              onClick={() => setMainNavTab("dev")}
+              className={`w-full py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-between transition-all cursor-pointer ${
+                mainNavTab === "dev"
+                  ? "bg-white text-indigo-700 shadow-sm ring-1 ring-black/5"
+                  : "text-[#5C5B57] hover:text-[#1D1D1F] hover:bg-white/50"
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <FolderCode className="w-4 h-4 text-indigo-600" />
+                <span>수업 & 펌웨어 개발실</span>
+              </div>
+              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600 font-extrabold">
+                자료실
+              </span>
+            </button>
+
+            <button
+              id="tab-btn-chat-connect"
+              onClick={() => setMainNavTab("chat")}
+              className={`w-full py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-between transition-all cursor-pointer ${
+                mainNavTab === "chat"
+                  ? "bg-white text-[#1D1D1F] shadow-sm ring-1 ring-black/5"
+                  : "text-[#5C5B57] hover:text-[#1D1D1F] hover:bg-white/50"
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Smile className="w-4 h-4 text-emerald-600" />
+                <span>소다봇 제어 & AI 코딩</span>
+              </div>
+              {user.canAccessChat ? (
+                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 font-extrabold flex items-center gap-0.5">
+                  <Unlock className="w-2.5 h-2.5" />
+                  연동 활성
+                </span>
               ) : (
-                <p className="text-[10px] text-[#86868B] font-mono">소다봇 인공지능</p>
+                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 font-extrabold flex items-center gap-0.5 border border-amber-200">
+                  <Lock className="w-2.5 h-2.5" />
+                  승인 대기
+                </span>
               )}
-            </div>
+            </button>
           </div>
 
-          {/* New Chat Button (Notion dotted style) */}
-          <button
-            id="new-chat-sidebar-btn"
-            onClick={() => { handleCreateNewChat(); setCurrentView('chat'); }}
-            className="w-full py-2 px-3 border border-dashed border-[#CFC9BF] hover:border-[#9C282C] bg-white rounded-xl text-xs font-medium text-[#5C5B57] hover:text-[#9C282C] flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-[0_1px_3px_rgba(0,0,0,0.02)] active:scale-[0.98]"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            새로운 대화 시작하기
-          </button>
-        </div>
-
-        {/* Categories (New UI) */}
-        <div className="px-3 pb-2 space-y-0.5">
-          <button onClick={() => setCurrentView('chat')} className={`w-full text-left px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-colors ${currentView === 'chat' ? 'bg-[#EAE6DF]/40 text-[#1D1D1F]' : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20'}`}>
-            <MessageSquare className="w-3.5 h-3.5" /> 대화
-          </button>
-          <button className="w-full text-left px-3 py-2 rounded-xl text-xs font-medium text-[#5C5B57] hover:bg-[#EAE6DF]/20 flex items-center gap-2">
-            <Sparkles className="w-3.5 h-3.5" /> 아이디어
-          </button>
-          <button className="w-full text-left px-3 py-2 rounded-xl text-xs font-medium text-[#5C5B57] hover:bg-[#EAE6DF]/20 flex items-center gap-2">
-            <Cpu className="w-3.5 h-3.5" /> 코드 & 분석
-          </button>
-        </div>
-
-        {/* Sodabot Management & Status Widget (Left Sidebar) */}
-        <div className="px-3 py-2 space-y-1.5 border-t border-[#EAE6DF] mt-1">
-          <div className="flex items-center justify-between px-3 py-1 text-[10px] font-semibold text-[#86868B] uppercase tracking-wider font-mono">
-            <span>소다봇 관리</span>
-            <span className={`w-1.5 h-1.5 rounded-full ${localStorage.getItem("sodabot_robot_ip") ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400'}`}></span>
-          </div>
-
-          <button onClick={() => setCurrentView('sodabot')} className={`w-full text-left px-3 py-2 rounded-xl text-xs font-medium flex items-center justify-between transition-colors ${currentView === 'sodabot' ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20'}`}>
-            <div className="flex items-center gap-2">
-              <Bluetooth className="w-3.5 h-3.5 text-indigo-600" /> 
-              <span>소다봇 연결</span>
-            </div>
-            {localStorage.getItem("sodabot_robot_ip") ? (
-              <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-full">
-                연결됨
-              </span>
-            ) : (
-              <span className="text-[9px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full">
-                대기 중
-              </span>
-            )}
-          </button>
-
-          <button onClick={() => setCurrentView('settings')} className={`w-full text-left px-3 py-2 rounded-xl text-xs font-medium flex items-center gap-2 transition-colors ${currentView === 'settings' ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20'}`}>
-            <Settings className="w-3.5 h-3.5" /> 상태 & 설정
-          </button>
-
-          {/* Sodabot Connection Status Mini Widget */}
-          <div 
-            onClick={() => setCurrentView('sodabot')}
-            className="mx-0.5 p-2.5 bg-[#FAF9F6] hover:bg-white border border-[#EAE6DF] hover:border-indigo-200 rounded-2xl cursor-pointer transition-all space-y-1 group shadow-2xs"
-          >
-            <div className="flex items-center justify-between text-[10px] font-bold">
-              <span className="text-[#1D1D1F] flex items-center gap-1">🤖 소다봇 상태</span>
-              <span className={localStorage.getItem("sodabot_robot_ip") ? "text-emerald-600 font-mono" : "text-amber-600 font-mono"}>
-                {localStorage.getItem("sodabot_robot_ip") ? "⚡ 연결됨" : "🔌 미연결"}
-              </span>
-            </div>
-            <div className="flex items-center justify-between text-[10px] text-[#86868B] font-mono pt-0.5">
-              <span className="truncate">{localStorage.getItem("sodabot_robot_ip") || "IP 미할당"}</span>
-              <span className="font-semibold text-emerald-600 shrink-0">🔋 85%</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Chat History List */}
-        <div className="flex-1 overflow-y-auto px-2 space-y-1 py-1 scrollbar-thin border-t border-[#EAE6DF] pt-3 mt-1">
-          <div className="px-3 py-1 text-[10px] font-semibold text-[#86868B] uppercase tracking-wider font-mono">
-            최근 대화 ({chats.length})
-          </div>
-
-          {chats.length === 0 ? (
-            <div className="p-4 text-center text-[11px] text-[#B0ACA5] font-mono leading-relaxed">
-              작성된 대화가 없습니다.<br />새 대화를 기동해 보세요.
-            </div>
-          ) : (
-            chats.map((chat) => {
-              const isActive = chat.id === activeChatId;
-              return (
-                <div
-                  key={chat.id}
-                  id={`chat-item-${chat.id}`}
-                  onClick={() => { setActiveChatId(chat.id); setCurrentView('chat'); }}
-                  className={`group flex items-center justify-between p-2.5 rounded-xl text-xs cursor-pointer transition-all ${isActive
-                      ? "bg-white border border-[#EAE6DF] text-[#1D1D1F] font-semibold shadow-sm"
-                      : "text-[#5C5B57] hover:bg-[#EAE6DF]/40 hover:text-[#1D1D1F]"
-                    }`}
-                >
-                  <div className="flex items-center gap-2 truncate min-w-0 flex-1">
-                    <MessageSquare className={`w-3.5 h-3.5 shrink-0 ${isActive ? "text-[#9C282C]" : "text-[#86868B]"}`} />
-                    <span className="truncate">{chat.title}</span>
-                  </div>
-
-                  {/* Delete Button */}
-                  <button
-                    id={`delete-chat-btn-${chat.id}`}
-                    onClick={(e) => handleDeleteChat(e, chat.id)}
-                    className="opacity-0 group-hover:opacity-100 p-1 hover:text-[#9C282C] transition-opacity cursor-pointer rounded"
-                    title="대화방 삭제"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
-                </div>
-              );
-            })
+          {/* Sub Menu when Chat Tab is Active */}
+          {mainNavTab === "chat" && user.canAccessChat && (
+            <button
+              id="new-chat-sidebar-btn"
+              onClick={() => { handleCreateNewChat(); setCurrentView('chat'); }}
+              className="w-full py-2 px-3 border border-dashed border-[#CFC9BF] hover:border-indigo-600 bg-white rounded-xl text-xs font-bold text-[#5C5B57] hover:text-indigo-600 flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-[0_1px_3px_rgba(0,0,0,0.02)] active:scale-[0.98]"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              새 코딩 & 제어 세션 시작
+            </button>
           )}
         </div>
 
+        {/* Sidebar Middle Section */}
+        {mainNavTab === "dev" ? (
+          <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1.5 scrollbar-thin">
+            {/* Tree View Header */}
+            <div className="flex items-center justify-between px-2 py-1.5 text-[10px] font-bold text-[#86868B] uppercase tracking-wider font-mono border-b border-[#EAE6DF] mb-1">
+              <span className="flex items-center gap-1.5">
+                <FolderCode className="w-3.5 h-3.5 text-indigo-600" />
+                주차별 실습 코드 목록
+              </span>
+              <button
+                onClick={() => {
+                  const allWeeks = Array.from(new Set(courseContents.map(c => c.week)));
+                  if (expandedWeeks.length === allWeeks.length) {
+                    setExpandedWeeks([]);
+                  } else {
+                    setExpandedWeeks(allWeeks);
+                  }
+                }}
+                className="text-[9px] text-[#86868B] hover:text-indigo-600 transition-colors cursor-pointer"
+              >
+                {expandedWeeks.length > 0 ? "모두 접기" : "모두 펼치기"}
+              </button>
+            </div>
+
+            {/* Tree View Grouped by Week */}
+            {Array.from(new Set(courseContents.map(c => Number(c.week))))
+              .sort((a, b) => Number(a) - Number(b))
+              .map(weekNum => {
+                const weekCodes = courseContents.filter(c => c.week === weekNum);
+                const isExpanded = expandedWeeks.includes(weekNum);
+
+                return (
+                  <div key={weekNum} className="space-y-0.5">
+                    {/* Folder Header Row */}
+                    <button
+                      onClick={() => {
+                        setExpandedWeeks(prev =>
+                          prev.includes(weekNum) ? prev.filter(w => w !== weekNum) : [...prev, weekNum]
+                        );
+                      }}
+                      className="w-full text-left px-2 py-1.5 rounded-xl text-xs font-bold flex items-center justify-between text-[#1D1D1F] hover:bg-[#EAE6DF]/40 transition-colors cursor-pointer group"
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <ChevronDown className={`w-3.5 h-3.5 text-[#86868B] transition-transform ${isExpanded ? '' : '-rotate-90'}`} />
+                        {isExpanded ? (
+                          <FolderOpen className="w-4 h-4 text-amber-500 fill-amber-100" />
+                        ) : (
+                          <Folder className="w-4 h-4 text-amber-500 fill-amber-100" />
+                        )}
+                        <span>{weekNum === 1 ? "1-2주차 실습" : `${weekNum}주차 실습`}</span>
+                      </div>
+                      <span className="text-[10px] text-[#86868B] font-mono px-1.5 py-0.5 bg-[#FAF9F6] border border-[#EAE6DF] rounded-full">
+                        {weekCodes.length}
+                      </span>
+                    </button>
+
+                    {/* Files List Under This Week */}
+                    {isExpanded && (
+                      <div className="pl-3.5 pr-0.5 space-y-0.5 border-l-2 border-indigo-100 ml-3.5 my-0.5">
+                        {weekCodes.map(codeItem => {
+                          const isSelected = selectedDevCodeId === codeItem.id;
+                          const isCircuit = codeItem.contentType === "circuit" || codeItem.title.includes("배선도");
+                          const ext = isCircuit ? "회로도" : (codeItem.filename.split(".").pop()?.toUpperCase() || "INO");
+
+                          return (
+                            <button
+                              key={codeItem.id}
+                              onClick={() => {
+                                setSelectedDevCodeId(codeItem.id);
+                              }}
+                              className={`w-full text-left px-2 py-1.5 rounded-lg text-xs transition-all flex items-center justify-between gap-1.5 cursor-pointer ${
+                                isSelected
+                                  ? isCircuit
+                                    ? "bg-emerald-50 text-emerald-800 font-bold border border-emerald-200 shadow-2xs"
+                                    : "bg-indigo-50 text-indigo-700 font-bold border border-indigo-200 shadow-2xs"
+                                  : "text-[#5C5B57] hover:text-[#1D1D1F] hover:bg-[#EAE6DF]/30"
+                              }`}
+                              title={`${codeItem.title} (${codeItem.filename})`}
+                            >
+                              <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                {isCircuit ? (
+                                  <ImageIcon className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-emerald-600' : 'text-emerald-500'}`} />
+                                ) : (
+                                  <FileCode className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-indigo-600' : 'text-[#86868B]'}`} />
+                                )}
+                                <span className="truncate text-xs font-semibold">{codeItem.title}</span>
+                              </div>
+                              <span className={`text-[8px] px-1.5 py-0.5 rounded font-mono shrink-0 ${
+                                isSelected
+                                  ? isCircuit
+                                    ? 'bg-emerald-100 text-emerald-800 font-extrabold'
+                                    : 'bg-indigo-100 text-indigo-800 font-extrabold'
+                                  : isCircuit
+                                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/60'
+                                    : 'bg-[#EAE6DF]/60 text-[#86868B]'
+                              }`}>
+                                {ext}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+          </div>
+        ) : (
+          <>
+            {user.canAccessChat ? (
+              <>
+                {/* Categories */}
+                <div className="px-3 pb-2 space-y-0.5">
+                  <button onClick={() => setCurrentView('chat')} className={`w-full text-left px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-colors ${currentView === 'chat' ? 'bg-[#EAE6DF]/40 text-[#1D1D1F]' : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20'}`}>
+                    <MessageSquare className="w-3.5 h-3.5 text-indigo-600" /> AI 코딩 & 인터랙션
+                  </button>
+                  <button onClick={() => setCurrentView('sodabot_builder')} className={`w-full text-left px-3 py-2 rounded-xl text-xs font-medium text-[#5C5B57] hover:bg-[#EAE6DF]/20 flex items-center gap-2`}>
+                    <Sparkles className="w-3.5 h-3.5 text-amber-500" /> 소다봇빌더 (6주차)
+                  </button>
+                </div>
+
+                {/* Sodabot Management & Status Widget */}
+                <div className="px-3 py-2 space-y-1.5 border-t border-[#EAE6DF] mt-1">
+                  <div className="flex items-center justify-between px-3 py-1 text-[10px] font-semibold text-[#86868B] uppercase tracking-wider font-mono">
+                    <span>소다봇 관리</span>
+                    <span className={`w-1.5 h-1.5 rounded-full ${localStorage.getItem("sodabot_robot_ip") ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400'}`}></span>
+                  </div>
+
+                  <button onClick={() => setCurrentView('sodabot')} className={`w-full text-left px-3 py-2 rounded-xl text-xs font-medium flex items-center justify-between transition-colors ${currentView === 'sodabot' ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20'}`}>
+                    <div className="flex items-center gap-2">
+                      <Bluetooth className="w-3.5 h-3.5 text-indigo-600" /> 
+                      <span>소다봇 연결</span>
+                    </div>
+                    {localStorage.getItem("sodabot_robot_ip") ? (
+                      <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-full">
+                        연결됨
+                      </span>
+                    ) : (
+                      <span className="text-[9px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full">
+                        대기 중
+                      </span>
+                    )}
+                  </button>
+
+                  <button onClick={() => setCurrentView('settings')} className={`w-full text-left px-3 py-2 rounded-xl text-xs font-medium flex items-center gap-2 transition-colors ${currentView === 'settings' ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20'}`}>
+                    <Settings className="w-3.5 h-3.5" /> 상태 & 설정
+                  </button>
+
+                  <button onClick={() => setCurrentView('sodabot_builder')} className={`w-full text-left px-3 py-2 rounded-xl text-xs font-medium flex items-center justify-between transition-colors ${currentView === 'sodabot_builder' ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20'}`}>
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>소다봇빌더</span>
+                    </div>
+                    <span className="text-[9px] font-extrabold text-indigo-600 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded-full">
+                      6주차
+                    </span>
+                  </button>
+                </div>
+
+                {/* Chat History List */}
+                <div className="flex-1 overflow-y-auto px-2 space-y-1 py-1 scrollbar-thin border-t border-[#EAE6DF] pt-3 mt-1">
+                  <div className="px-3 py-1 text-[10px] font-semibold text-[#86868B] uppercase tracking-wider font-mono">
+                    최근 대화 ({chats.length})
+                  </div>
+
+                  {chats.length === 0 ? (
+                    <div className="p-4 text-center text-[11px] text-[#B0ACA5] font-mono leading-relaxed">
+                      작성된 대화가 없습니다.<br />새 대화를 시작해 보세요.
+                    </div>
+                  ) : (
+                    chats.map((chat) => {
+                      const isActive = chat.id === activeChatId;
+                      return (
+                        <div
+                          key={chat.id}
+                          id={`chat-item-${chat.id}`}
+                          onClick={() => { setActiveChatId(chat.id); setCurrentView('chat'); }}
+                          className={`group flex items-center justify-between p-2.5 rounded-xl text-xs cursor-pointer transition-all ${isActive
+                              ? "bg-white border border-[#EAE6DF] text-[#1D1D1F] font-semibold shadow-sm"
+                              : "text-[#5C5B57] hover:bg-[#EAE6DF]/40 hover:text-[#1D1D1F]"
+                            }`}
+                        >
+                          <div className="flex items-center gap-2 truncate min-w-0 flex-1">
+                            <MessageSquare className={`w-3.5 h-3.5 shrink-0 ${isActive ? "text-[#9C282C]" : "text-[#86868B]"}`} />
+                            <span className="truncate">{chat.title}</span>
+                          </div>
+
+                          <button
+                            id={`delete-chat-btn-${chat.id}`}
+                            onClick={(e) => handleDeleteChat(e, chat.id)}
+                            className="opacity-0 group-hover:opacity-100 p-1 hover:text-[#9C282C] transition-opacity cursor-pointer rounded"
+                            title="대화방 삭제"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="flex-1 p-4 flex flex-col justify-center items-center text-center space-y-3">
+                <div className="w-12 h-12 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600 shadow-sm">
+                  <Lock className="w-6 h-6" />
+                </div>
+                <div className="space-y-1">
+                  <h4 className="text-xs font-bold text-[#1D1D1F]">대화 기능 권한 대기 중</h4>
+                  <p className="text-[10px] text-[#86868B] leading-relaxed">
+                    선생님이 승인하면 자동으로 대화 목록과 연결 기능이 활성화됩니다.
+                  </p>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Fixed Bottom Guide Card for Dev Tab */}
+        {mainNavTab === "dev" && (
+          <div className="px-3 pb-2 shrink-0">
+            <div className="p-3 bg-white border-2 border-indigo-200/90 rounded-2xl space-y-2 shadow-xs">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs font-black text-[#1D1D1F]">
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>아두이노 IDE 업로드 3단계</span>
+                </div>
+                <span className="px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 text-[9px] font-black font-mono">
+                  필독 💡
+                </span>
+              </div>
+
+              {/* 3 Step List with High Contrast Colorful Badges */}
+              <div className="space-y-1.5 text-xs">
+                {/* Step 1 */}
+                <div className="flex items-center gap-2 p-1.5 rounded-xl bg-blue-50/80 border border-blue-200/80">
+                  <span className="w-5 h-5 rounded-lg bg-blue-600 text-white flex items-center justify-center text-[10px] font-black shrink-0">
+                    1
+                  </span>
+                  <span className="text-[11px] font-bold text-blue-900 truncate">
+                    💾 [파일 저장] 또는 [코드 복사]
+                  </span>
+                </div>
+
+                {/* Step 2 */}
+                <div className="flex items-center gap-2 p-1.5 rounded-xl bg-purple-50/80 border border-purple-200/80">
+                  <span className="w-5 h-5 rounded-lg bg-purple-600 text-white flex items-center justify-center text-[10px] font-black shrink-0">
+                    2
+                  </span>
+                  <span className="text-[11px] font-bold text-purple-900 truncate">
+                    💻 아두이노 IDE에 붙여넣기
+                  </span>
+                </div>
+
+                {/* Step 3 (Highlight) */}
+                <div className="flex items-center gap-2 p-1.5 rounded-xl bg-emerald-50 border-2 border-emerald-300 shadow-2xs">
+                  <span className="w-5 h-5 rounded-lg bg-emerald-600 text-white flex items-center justify-center text-[10px] font-black shrink-0 animate-pulse">
+                    3
+                  </span>
+                  <span className="text-[11px] font-black text-emerald-900 truncate">
+                    ⚡ [ ➔ ] 업로드 버튼 누르기!
+                  </span>
+                </div>
+              </div>
+
+              {/* Bottom Tip Badge */}
+              <div className="text-[10px] text-[#5C5B57] font-medium flex items-center gap-1 bg-[#FAF9F6] p-1.5 rounded-lg border border-[#EAE6DF]">
+                <span>🤖</span>
+                <span className="leading-tight">업로드 완료 후 소다봇 스피커에서 소리가 납니다!</span>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* User Info & Quick Control Footer */}
         <div className="p-3 border-t border-[#EAE6DF] bg-white space-y-2">
-          {/* User badge */}
           <div className="flex items-center gap-2 p-1.5 rounded-lg bg-[#FAF9F6] border border-[#EAE6DF]">
             <div className="w-7 h-7 rounded-full bg-[#FAF9F6] border border-[#EAE6DF] flex items-center justify-center text-[#5C5B57] font-mono text-[11px] font-bold">
               {user.displayName.substring(0, 1)}
@@ -1386,16 +1763,78 @@ export default function App() {
         </div>
       </aside>
 
-      {/* 2. Main Conversational Panel (Right Section) */}
-      <main className="flex-1 flex flex-col h-screen overflow-hidden bg-white relative">
-        {currentView === 'chat' ? (
-          <>
-            {/* Apple style Minimal Header */}
-            <header className="h-14 border-b border-[#EAE6DF] bg-white flex items-center justify-between px-6 shrink-0 z-10 select-none">
-          <div className="flex items-center gap-3">
-            <span className="text-xs font-semibold text-[#1D1D1F] tracking-tight font-mono">
-              {activeChat ? activeChat.title : "새로운 대화"}
-            </span>
+      {/* 2. Main Body Area: Renders DevCodeHub or Chat/Connect View */}
+      {mainNavTab === "dev" ? (
+        <DevCodeHubScreen
+          selectedCodeId={selectedDevCodeId}
+          onSelectCode={setSelectedDevCodeId}
+        />
+      ) : !user.canAccessChat ? (
+        /* Locked Chat Splash View */
+        <main className="flex-1 flex flex-col items-center justify-center h-screen bg-[#FAF9F6] p-6 text-center select-none relative overflow-hidden">
+          <div className="absolute inset-0 bg-[linear-gradient(to_right,#EAE6DF_1px,transparent_1px),linear-gradient(to_bottom,#EAE6DF_1px,transparent_1px)] bg-[size:5rem_5rem] opacity-25 pointer-events-none" />
+
+          <div className="max-w-md w-full bg-white border border-[#EAE6DF] rounded-3xl p-8 shadow-xl space-y-6 relative z-10 animate-fade-in">
+            <div className="w-16 h-16 rounded-3xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600 mx-auto shadow-sm">
+              <Lock className="w-8 h-8" />
+            </div>
+
+            <div className="space-y-2">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-50 border border-amber-200 text-amber-700 rounded-full text-xs font-bold">
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                선생님(관리자) 승인 대기 중
+              </div>
+              <h2 className="text-xl font-extrabold text-[#1D1D1F] tracking-tight">
+                소다봇 제어 & AI 코딩 탭이 대기 중입니다
+              </h2>
+              <p className="text-xs text-[#5C5B57] leading-relaxed">
+                현재 수업 커리큘럼에 따라 <strong>수업 & 펌웨어 개발실</strong>이 기본 오픈되어 있습니다.
+                회로 조립과 코드를 먼저 학습해 주세요. 선생님이 권한을 승인하면 소다봇 연동 및 코딩 제어가 실시간으로 열립니다.
+              </p>
+            </div>
+
+            <div className="p-4 bg-[#FAF9F6] border border-[#EAE6DF] rounded-2xl text-left space-y-2">
+              <div className="flex items-center justify-between text-xs font-bold text-[#1D1D1F]">
+                <span>실시간 권한 감지 중</span>
+                <span className="text-[10px] text-emerald-600 font-mono flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
+                  동기화 활성
+                </span>
+              </div>
+              <p className="text-[11px] text-[#86868B]">
+                선생님이 관리자 화면에서 연동 권한을 승인하면 새로고침 없이 즉시 소다봇 제어가 활성화됩니다.
+              </p>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-2.5 pt-2">
+              <button
+                onClick={() => setMainNavTab("dev")}
+                className="flex-1 py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 active:scale-98 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <FolderCode className="w-4 h-4" />
+                수업 & 펌웨어 제작실로 이동
+              </button>
+              <button
+                onClick={() => token && verifySession(token)}
+                className="py-2.5 px-4 bg-white hover:bg-[#FAF9F6] border border-[#EAE6DF] text-[#1D1D1F] rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <RefreshCw className="w-3.5 h-3.5 text-[#86868B]" />
+                연동 상태 확인
+              </button>
+            </div>
+          </div>
+        </main>
+      ) : (
+        /* Normal Chat / Sodabot Connect / Builder View */
+        <main className="flex-1 flex flex-col h-screen overflow-hidden bg-white relative">
+          {currentView === 'chat' ? (
+            <>
+              {/* Apple style Minimal Header */}
+              <header className="h-14 border-b border-[#EAE6DF] bg-white flex items-center justify-between px-6 shrink-0 z-10 select-none">
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-semibold text-[#1D1D1F] tracking-tight font-mono">
+                {activeChat ? activeChat.title : "새로운 대화"}
+              </span>
             {user?.username === 'admin' && (
               <>
                 <span className="text-[#EAE6DF] text-sm">/</span>
@@ -1580,10 +2019,13 @@ export default function App() {
           </>
         ) : currentView === 'sodabot' ? (
           <SodabotConnectScreen />
+        ) : currentView === 'sodabot_builder' ? (
+          <SodaAiLabScreen />
         ) : (
           <SodabotSettingsScreen />
         )}
       </main>
+      )}
 
 
 
@@ -1695,63 +2137,122 @@ export default function App() {
                 <>
                   {/* User List Table */}
                   <div className="space-y-3">
-                    <h4 className="text-sm font-bold text-[#1D1D1F]">등록된 사용자 목록</h4>
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-bold text-[#1D1D1F]">등록된 사용자 목록</h4>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleBatchToggleChatPermission(true)}
+                          className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer"
+                        >
+                          <ShieldCheck className="w-3 h-3" />
+                          전체 대화 오픈 (ON)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleBatchToggleChatPermission(false)}
+                          className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer"
+                        >
+                          <ShieldAlert className="w-3 h-3" />
+                          전체 대화 잠금 (OFF)
+                        </button>
+                      </div>
+                    </div>
                     <div className="border border-[#EAE6DF] rounded-2xl overflow-hidden shadow-sm">
                       <table className="w-full text-left text-xs">
                         <thead className="bg-[#FAF9F6] text-[#86868B] border-b border-[#EAE6DF]">
                           <tr>
                             <th className="p-3 font-semibold">ID (계정)</th>
                             <th className="p-3 font-semibold">이름</th>
+                            <th className="p-3 font-semibold text-center">대화 권한 (수업 제어)</th>
                             <th className="p-3 font-semibold">API Key</th>
                             <th className="p-3 font-semibold text-right">관리 액션</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-[#EAE6DF] text-[#1D1D1F]">
-                          {adminUsers.map(u => (
-                            <tr key={u.id} className="hover:bg-indigo-50/30 transition-colors">
-                              <td className="p-3 font-mono text-[11px] font-semibold">{u.username}</td>
-                              <td className="p-3 font-medium">{u.displayName}</td>
-                              <td className="p-3 font-mono text-[10px] text-[#5C5B57]">
-                                {u.personalApiKey ? (
-                                  <div className="flex items-center gap-2">
-                                    <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-md select-all">
-                                      {u.personalApiKey}
+                          {adminUsers.map(u => {
+                            const isUserAdmin = u.username === "admin" || u.role === "admin";
+                            const hasChatAccess = isUserAdmin || Boolean(u.canAccessChat);
+                            return (
+                              <tr key={u.id} className="hover:bg-indigo-50/30 transition-colors">
+                                <td className="p-3 font-mono text-[11px] font-semibold">
+                                  {u.username}
+                                  {isUserAdmin && (
+                                    <span className="ml-1.5 text-[9px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">관리자</span>
+                                  )}
+                                </td>
+                                <td className="p-3 font-medium">{u.displayName}</td>
+                                <td className="p-3 text-center">
+                                  {isUserAdmin ? (
+                                    <span className="text-[10px] font-semibold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-lg">
+                                      항상 허용
                                     </span>
-                                  </div>
-                                ) : (
-                                  <span className="text-[#B0ACA5]">발급 안됨</span>
-                                )}
-                              </td>
-                              <td className="p-3 text-right space-x-2">
-                                <button
-                                  onClick={() => handleGenerateApiKey(u.id)}
-                                  className="px-2.5 py-1.5 bg-white border border-[#EAE6DF] hover:border-indigo-300 hover:text-indigo-600 rounded-lg text-[10px] font-medium transition-colors inline-flex items-center gap-1 cursor-pointer"
-                                >
-                                  <Key className="w-3 h-3" /> Key 재발급
-                                </button>
-                                <button
-                                  onClick={() => fetchUserStats(u.id)}
-                                  className="px-2.5 py-1.5 bg-white border border-[#EAE6DF] hover:border-emerald-300 hover:text-emerald-600 text-emerald-600 rounded-lg text-[10px] font-medium transition-colors inline-flex items-center gap-1 cursor-pointer"
-                                >
-                                  <Activity className="w-3 h-3" /> 대시보드
-                                </button>
-                                <button
-                                  onClick={() => setAdminSelectedUserId(u.id)}
-                                  className="px-2.5 py-1.5 bg-white border border-[#EAE6DF] hover:border-blue-300 hover:text-blue-600 text-blue-500 rounded-lg text-[10px] font-medium transition-colors inline-flex items-center gap-1 cursor-pointer"
-                                >
-                                  대화 보기
-                                </button>
-                                {u.id !== "user-1" && (
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleToggleChatPermission(u.id, Boolean(u.canAccessChat))}
+                                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer inline-flex items-center gap-1 ${
+                                        hasChatAccess
+                                          ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs"
+                                          : "bg-gray-100 hover:bg-gray-200 text-[#5C5B57] border border-[#EAE6DF]"
+                                      }`}
+                                    >
+                                      {hasChatAccess ? (
+                                        <>
+                                          <Unlock className="w-2.5 h-2.5" />
+                                          허용됨 (ON)
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Lock className="w-2.5 h-2.5 text-gray-500" />
+                                          잠김 (OFF)
+                                        </>
+                                      )}
+                                    </button>
+                                  )}
+                                </td>
+                                <td className="p-3 font-mono text-[10px] text-[#5C5B57]">
+                                  {u.personalApiKey ? (
+                                    <div className="flex items-center gap-2">
+                                      <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded-md select-all">
+                                        {u.personalApiKey}
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <span className="text-[#B0ACA5]">발급 안됨</span>
+                                  )}
+                                </td>
+                                <td className="p-3 text-right space-x-2">
                                   <button
-                                    onClick={() => handleDeleteUser(u.id)}
-                                    className="px-2.5 py-1.5 bg-white border border-[#EAE6DF] hover:border-rose-300 hover:text-rose-600 text-rose-500 rounded-lg text-[10px] font-medium transition-colors inline-flex items-center gap-1 cursor-pointer"
+                                    onClick={() => handleGenerateApiKey(u.id)}
+                                    className="px-2.5 py-1.5 bg-white border border-[#EAE6DF] hover:border-indigo-300 hover:text-indigo-600 rounded-lg text-[10px] font-medium transition-colors inline-flex items-center gap-1 cursor-pointer"
                                   >
-                                    <Trash2 className="w-3 h-3" /> 삭제
+                                    <Key className="w-3 h-3" /> Key 재발급
                                   </button>
-                                )}
-                              </td>
-                            </tr>
-                          ))}
+                                  <button
+                                    onClick={() => fetchUserStats(u.id)}
+                                    className="px-2.5 py-1.5 bg-white border border-[#EAE6DF] hover:border-emerald-300 hover:text-emerald-600 text-emerald-600 rounded-lg text-[10px] font-medium transition-colors inline-flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <Activity className="w-3 h-3" /> 대시보드
+                                  </button>
+                                  <button
+                                    onClick={() => setAdminSelectedUserId(u.id)}
+                                    className="px-2.5 py-1.5 bg-white border border-[#EAE6DF] hover:border-blue-300 hover:text-blue-600 text-blue-500 rounded-lg text-[10px] font-medium transition-colors inline-flex items-center gap-1 cursor-pointer"
+                                  >
+                                    대화 보기
+                                  </button>
+                                  {u.id !== "user-1" && (
+                                    <button
+                                      onClick={() => handleDeleteUser(u.id)}
+                                      className="px-2.5 py-1.5 bg-white border border-[#EAE6DF] hover:border-rose-300 hover:text-rose-600 text-rose-500 rounded-lg text-[10px] font-medium transition-colors inline-flex items-center gap-1 cursor-pointer"
+                                    >
+                                      <Trash2 className="w-3 h-3" /> 삭제
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>

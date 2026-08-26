@@ -2,6 +2,8 @@ export interface User {
   id: string;
   username: string;
   displayName: string;
+  role?: "admin" | "student" | "user";
+  canAccessChat?: boolean;
 }
 
 export interface Message {
@@ -25,3 +27,19 @@ export interface LMStudioConfig {
   modelName: string;
   fallbackMode: boolean;
 }
+
+export interface CourseContent {
+  id: string;
+  week: number;
+  title: string;
+  description: string;
+  filename: string;
+  language: "arduino" | "python" | "cpp" | "json";
+  tags: string[];
+  pinMap?: string;
+  code: string;
+  contentType?: "code" | "circuit" | "doc";
+  imageUrl?: string;
+  updatedAt?: string;
+}
+

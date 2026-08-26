@@ -4,7 +4,7 @@ import {
   Wifi, Clock, MapPin, Download, Upload, Share2, Link, RefreshCw, 
   Check, Power, Battery, Cpu, HardDrive, Thermometer, Droplets, Sun, 
   ChevronRight, HelpCircle, MessageCircle, FileText, MoveUp, MoveDown,
-  ChevronDown, Layers, ShieldCheck, Zap, Bluetooth
+  ChevronDown, Layers, ShieldCheck, Zap, Bluetooth, Usb
 } from 'lucide-react';
 
 export default function SodabotSettingsScreen() {
@@ -523,6 +523,17 @@ export default function SodabotSettingsScreen() {
                 </div>
               </div>
               <div className="flex items-center gap-2">
+                <button 
+                  onClick={() => {
+                    const btn = document.querySelector('button:has(span:contains("소다봇빌더"))') as HTMLButtonElement;
+                    if (btn) btn.click();
+                    else window.location.hash = "#sodabot_builder";
+                  }}
+                  className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-[#1D1D1F] text-white hover:bg-black transition-all cursor-pointer shadow-xs"
+                >
+                  <Sparkles className="w-3.5 h-3.5 mr-1 text-indigo-400" />
+                  🛠️ 소다봇빌더 (6주차)
+                </button>
                 <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-indigo-50 text-indigo-600 border border-indigo-200">
                   <Bluetooth className="w-3.5 h-3.5 mr-1 text-indigo-500" />
                   BLE / WS 대기중
