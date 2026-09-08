@@ -1,26 +1,31 @@
-import React, { useState, useEffect } from "react";
-import {
-  Code,
-  Download,
-  Copy,
-  Check,
-  FileCode,
-  FolderArchive,
-  Terminal,
-  Cpu,
-  Layers,
-  Sparkles,
-  ExternalLink,
-  ChevronRight,
-  Search,
-  BookOpen,
+import React, { useState, useEffect } from 'react';
+import LcdPixelEditor from './LcdPixelEditor';
+import { 
+  Code2, 
+  Copy, 
+  Check, 
+  Download, 
+  Sparkles, 
+  Cpu, 
+  Search, 
+  Terminal, 
+  BookOpen, 
+  Layers, 
+  ChevronRight, 
+  Zap, 
   Info,
-  CheckCircle2,
+  Sliders,
+  Maximize2,
+  FileCode2,
+  FileCode,
+  Play,
   RotateCcw,
-  Zap,
+  RefreshCw,
+  FolderArchive,
+  ExternalLink,
   ArrowRight,
-  Image as ImageIcon
-} from "lucide-react";
+  Palette
+} from 'lucide-react';
 
 interface CodeItem {
   id: string;
@@ -32,8 +37,9 @@ interface CodeItem {
   tags: string[];
   pinMap?: string;
   code: string;
-  contentType?: "code" | "circuit" | "doc";
+  contentType?: "code" | "circuit" | "doc" | "editor";
   imageUrl?: string;
+  updatedAt?: string;
 }
 
 interface DevCodeHubProps {
@@ -54,6 +60,7 @@ const SAMPLE_CODES: CodeItem[] = [
     imageUrl: "/images/circuit_btn_led_speaker.png",
     tags: ["배선도", "회로도", "ESP32-S3", "MAX98357A", "하드웨어"],
     pinMap: "버튼: GPIO4, LED: GPIO2, BCLK: GPIO5, LRC: GPIO3, DOUT: GPIO44, 전원: 5V, GND(공통)",
+    updatedAt: new Date().toISOString(),
     code: `// [1-2주차] 버튼 + LED + 스피커 하드웨어 연결 요약
 // ===================================================
 // 부품          | ESP32-S3 핀  | 연결 대상
@@ -71,12 +78,13 @@ const SAMPLE_CODES: CodeItem[] = [
   {
     id: "content-week-1-sound",
     week: 1,
-    title: "스피커테스트 도레미파솔라시도",
+    title: "1-1. 스피커테스트 도레미파솔라시도",
     description: "I2S 디지털 앰프/스피커 핀(BCLK:5, LRC:3, DOUT:44)을 초기화하고 도레미파솔라시도 음계를 재생하는 소다봇 사운드 기초 실습입니다.",
-    filename: "soda-2-1.ino",
+    filename: "soda-1-1.ino",
     language: "arduino",
     tags: ["I2S", "스피커", "사운드", "ESP32", "도레미파솔라시도"],
     pinMap: "BCLK: D5, LRC: D3, DOUT: D44",
+    updatedAt: new Date().toISOString(),
     code: `#include <driver/i2s.h>
 #include <math.h>
 
@@ -203,12 +211,13 @@ void loop() {
   {
     id: "content-week-1-btn-led-sound",
     week: 1,
-    title: "버튼 + LED + 스피커",
+    title: "1-2. 버튼 + LED + 스피커",
     description: "버튼(D4)을 누르면 LED(D2)가 켜지며 MAX98357A I2S 앰프 스피커를 통해 도-미-솔 화음 사운드를 출력하는 인터랙션 예제입니다.",
-    filename: "soda-2-2.ino",
+    filename: "soda-1-2.ino",
     language: "arduino",
     tags: ["버튼", "LED", "I2S", "스피커", "ESP32", "사운드"],
     pinMap: "LED: D2, 버튼: D4, 스피커: BCLK: D5, LRC: D3, DOUT: D44",
+    updatedAt: new Date().toISOString(),
     code: `#include <driver/i2s.h>
 #include <math.h>
 
@@ -401,225 +410,396 @@ void playTone(float frequency, int duration_ms) {
 
   // 소리 끄기
   i2s_zero_dma_buffer(I2S_PORT);
-}
-`
+}`
   },
   {
-    id: "week1-led-servo",
-    week: 1,
-    title: "소다봇 기본 하드웨어 및 LED/서보모터 제어",
-    description: "ESP32 보드에서 RGB LED와 서보모터를 초기화하고 표정 및 각도를 제어하는 1주차 기본 펌웨어입니다.",
-    filename: "sodabot_week1_hw_basic.ino",
+    id: "content-week-3-circuit-diagram",
+    week: 3,
+    title: "[배선도] 2.0\" LCD + 버튼 + LED + 스피커 회로 연결도",
+    description: "ESP32-S3 SuperMini 보드와 ST7789 2.0인치 LCD 모듈(SPI), MAX98357A I2S 앰프 스피커, 버튼(GPIO4), LED(GPIO2)의 종합 핀 배선도 및 하드웨어 가이드입니다.",
+    filename: "circuit_lcd_btn_led_speaker.png",
+    language: "json",
+    contentType: "circuit",
+    imageUrl: "/images/circuit_lcd_btn_led_speaker.png",
+    tags: ["배선도", "회로도", "LCD", "ST7789", "ESP32-S3", "I2S", "스피커", "하드웨어"],
+    pinMap: "LCD(DIN:11, CLK:12, CS:13, DC:7, RST:6, BL:5V), I2S(BCLK:5, LRC:3, DIN:44), 버튼:4, LED:2, 전원:5V/GND",
+    updatedAt: new Date().toISOString(),
+    code: `// [3주차] 2.0" ST7789 LCD + 버튼 + LED + I2S 스피커 하드웨어 연결 요약
+// =========================================================================
+// [1] Waveshare 2.0" ST7789 LCD (SPI 통신)
+// 부품 핀 표기  | ESP32-S3 핀  | 설명
+// -------------+-------------+--------------------------------------------
+// VCC          | 5V (또는 3V3)| 디스플레이 구동 전원
+// GND          | GND         | 공통 접지
+// DIN          | GPIO11      | MOSI (마스터 출력 ➔ 디스플레이 입력)
+// CLK          | GPIO12      | SCK (SPI 클럭 신호)
+// CS           | GPIO13      | 칩 셀렉트 (Chip Select)
+// DC           | GPIO7       | Data / Command 제어선
+// RST          | GPIO6       | 하드웨어 리셋 신호
+// BL           | 5V (또는 3V3)| 백라이트 전원
+//
+// [2] MAX98357A I2S 오디오 앰프 & 스피커
+// 부품 핀 표기  | ESP32-S3 핀  | 설명
+// -------------+-------------+--------------------------------------------
+// VDD          | 5V          | 앰프 전원 (5V 권장)
+// GND          | GND         | 공통 접지
+// BCLK         | GPIO5       | 비트 클럭 (Bit Clock)
+// LRC          | GPIO3       | 좌/우 채널 클럭 (Word Select)
+// DIN          | GPIO44      | 디지털 오디오 데이터 입력 (ESP32-S3 RX)
+// OUT+ / OUT-  | 스피커      | 소다봇 미니 스피커 연결 (+ / -)
+//
+// [3] 버튼 & LED 인터랙션 회로
+// 부품         | ESP32-S3 핀  | 설명
+// -------------+-------------+--------------------------------------------
+// BUTTON       | GPIO4       | 버튼 한쪽 ➔ GND (내부 풀업 INPUT_PULLUP)
+// LED          | GPIO2       | 220Ω 저항 ➔ LED(+), LED(-) ➔ GND
+// =========================================================================
+// 동작 원리: 
+// 1. ST7789 LCD 화면에 UI 그래픽 및 카운터가 표시됩니다.
+// 2. 버튼을 누르면 카운터 증가 및 화면 색상 전환!
+// 3. 동시에 LED 점등과 함께 I2S 스피커로 경쾌한 도-미-솔 사운드가 울립니다.`
+  },
+  {
+    id: "content-week-3-lcd-hello",
+    week: 3,
+    title: "3-1. LCD 기본 출력 - Hello SODA!",
+    description: "Waveshare 2.0인치 ST7789 LCD 디스플레이를 초기화하고 화면 중앙에 'Hello SODA!' 글씨를 출력하는 가장 기본적이고 심플한 3주차 첫 실습 코드입니다.",
+    filename: "soda-3-1.ino",
     language: "arduino",
-    tags: ["ESP32", "Arduino", "LED", "서보모터"],
-    pinMap: "RGB LED: D4, 서보모터: D18, 스피커: D5/D3/D44",
-    code: `// [1주차] 소다봇 하드웨어 기본 제어 예제
-#include <ESP32Servo.h>
+    tags: ["ST7789", "LCD", "Hello SODA!", "기본코드", "디스플레이", "ESP32"],
+    pinMap: "LCD(MOSI:11, CLK:12, CS:13, DC:7, RST:6, BL:5V)",
+    updatedAt: new Date().toISOString(),
+    code: `#include <Adafruit_GFX.h>
+#include <Adafruit_ST7789.h>
+#include <SPI.h>
 
-#define PIN_LED_R 4
-#define PIN_LED_G 16
-#define PIN_LED_B 17
-#define PIN_SERVO 18
+// ========================
+// LCD 핀 설정 (하드웨어 SPI)
+// ========================
+#define TFT_MOSI 11  // 보드: DIN
+#define TFT_CLK  12  // 보드: CLK
+#define TFT_CS   13  // 보드: CS
+#define TFT_DC   7   // 보드: DC
+#define TFT_RST  6   // 보드: RST
 
-Servo neckServo;
+SPIClass hspi(HSPI);
+Adafruit_ST7789 tft = Adafruit_ST7789(&hspi, TFT_CS, TFT_DC, TFT_RST);
 
 void setup() {
   Serial.begin(115200);
-  pinMode(PIN_LED_R, OUTPUT);
-  pinMode(PIN_LED_G, OUTPUT);
-  pinMode(PIN_LED_B, OUTPUT);
 
-  neckServo.attach(PIN_SERVO);
-  neckServo.write(90); // 기본 90도 중앙 위치
+  // ---- LCD 초기화 ----
+  hspi.begin(TFT_CLK, -1, TFT_MOSI, TFT_CS);
+  tft.init(240, 320);
+  tft.setSPISpeed(4000000);   // 통신 속도 설정
+  tft.setRotation(3);         // 320x240 가로 화면 모드
+  tft.invertDisplay(true);    // 색상 반전
 
-  Serial.println("🤖 [소다봇 1주차] 하드웨어 초기화 완료!");
-  setLedColor(0, 255, 100); // 에메랄드 그린
+  // ---- 화면 지우기 ----
+  tft.fillScreen(ST77XX_BLACK);
+
+  // ---- 중앙 글씨 출력 ----
+  tft.setTextColor(ST77XX_WHITE);
+  tft.setTextSize(3);
+  tft.setCursor(60, 105);
+  tft.print("Hello SODA!");
 }
 
 void loop() {
-  // 고개 끄덕이기 동작
-  neckServo.write(70);
-  delay(500);
-  neckServo.write(110);
-  delay(500);
-  neckServo.write(90);
-  delay(1000);
-}
-
-void setLedColor(int r, int g, int b) {
-  analogWrite(PIN_LED_R, r);
-  analogWrite(PIN_LED_G, g);
-  analogWrite(PIN_LED_B, b);
-}
-`
+  // 기본 대기
+}`
   },
   {
-    id: "week3-stt-audio",
+    id: "content-week-3-lcd-basic",
     week: 3,
-    title: "소다봇 음성 인식(STT) 및 파이썬 오디오 클라이언트",
-    description: "마이크 입력을 받아 서버의 Whisper STT 엔드포인트로 전송하고 결과를 수신하는 파이썬 스크립트입니다.",
-    filename: "sodabot_week3_audio_client.py",
-    language: "python",
-    tags: ["Python", "STT", "Whisper", "마이크"],
-    pinMap: "USB 마이크 또는 PC 내장 마이크 사용",
-    code: `# [3주차] 파이썬 마이크 음성 녹음 및 STT 전송 클라이언트
-import sounddevice as sd
-import numpy as np
-import scipy.io.wavfile as wav
-import requests
-import io
-
-SERVER_URL = "http://localhost:3000/api/hw/audio-chat"
-SAMPLE_RATE = 16000
-DURATION = 4  # 녹음 초
-
-def record_and_send():
-    print(f"🎙️ {DURATION}초 동안 말씀하세요...")
-    audio_data = sd.rec(int(DURATION * SAMPLE_RATE), samplerate=SAMPLE_RATE, channels=1, dtype='int16')
-    sd.wait()
-    print("✅ 녹음 완료! 서버로 전송 중...")
-
-    # WAV 버퍼 생성
-    wav_io = io.BytesIO()
-    wav.write(wav_io, SAMPLE_RATE, audio_data)
-    wav_io.seek(0)
-
-    files = {'file': ('voice.wav', wav_io, 'audio/wav')}
-    headers = {'Authorization': 'Bearer YOUR_SESSION_TOKEN'}
-
-    try:
-        response = requests.post(SERVER_URL, files=files, headers=headers)
-        if response.status_code == 200:
-            result = response.json()
-            print("📝 인식된 텍스트:", result.get("transcript"))
-            print("🤖 소다봇 답변:", result.get("reply"))
-        else:
-            print("❌ 오류 발생:", response.text)
-    except Exception as e:
-        print("연결 실패:", e)
-
-if __name__ == "__main__":
-    record_and_send()
-`
-  },
-  {
-    id: "week4-llm-api",
-    week: 4,
-    title: "소다봇 AI LLM REST API 연동 스크립트",
-    description: "LM Studio 로컬 LLM 또는 소다봇 대화 API를 호출하여 프롬프트와 페르소나를 전송하는 예제입니다.",
-    filename: "sodabot_week4_llm_test.py",
-    language: "python",
-    tags: ["LLM", "API", "REST", "LM Studio"],
-    code: `# [4주차] 소다봇 LLM 대화 API 호출 예제
-import requests
-import json
-
-API_URL = "http://localhost:3000/api/v1/chat/completions"
-
-headers = {
-    "Content-Type": "application/json",
-    "Authorization": "Bearer YOUR_SESSION_TOKEN"
-}
-
-payload = {
-    "model": "llama-3-korean-bllossom-8b",
-    "messages": [
-        {"role": "system", "content": "너는 디랩 코딩학원의 반려봇 소다봇이야. 친근하게 힌트를 줘."},
-        {"role": "user", "content": "파이썬에서 리스트 뒤집는 법 알려줘!"}
-    ],
-    "temperature": 0.7,
-    "max_tokens": 256
-}
-
-response = requests.post(API_URL, headers=headers, json=payload)
-if response.status_code == 200:
-    data = response.json()
-    reply = data['choices'][0]['message']['content']
-    print("🤖 소다봇의 응답:\n", reply)
-else:
-    print("API 에러:", response.status_code, response.text)
-`
-  },
-  {
-    id: "week5-motion-sequence",
-    week: 5,
-    title: "소다봇 감정 표현 & 모션 시퀀서 코드",
-    description: "행복, 슬픔, 당황 등 감정에 따라 서보모터와 LED가 싱크되어 반응하는 동작 시퀀서 아두이노 코드입니다.",
-    filename: "sodabot_week5_motion_sequencer.ino",
+    title: "3-2. LCD 기본코드 - 메인화면 표시 버튼클릭시 증가표시",
+    description: "ST7789 2.0인치 LCD 화면에 메인 그래픽을 표시하고, 버튼을 누를 때마다 클릭 카운트 증가 화면 및 도-미-솔 사운드를 출력하는 3주차 실습입니다.",
+    filename: "soda-3-2.ino",
     language: "arduino",
-    tags: ["Motion", "서보모터", "감정표현", "C++"],
-    code: `// [5주차] 소다봇 감정 모션 시퀀서
-#include <ESP32Servo.h>
+    tags: ["ST7789", "LCD", "SPI", "버튼", "카운터", "I2S"],
+    pinMap: "LCD(MOSI:11, CLK:12, CS:13, DC:7, RST:6), 버튼:4, LED:2, I2S:5/3/44",
+    updatedAt: new Date().toISOString(),
+    code: `#include <driver/i2s.h>
+#include <math.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_ST7789.h>
+#include <SPI.h>
 
-Servo neckServo;
-#define PIN_SERVO 18
+// ========================
+// 핀 설정
+// ========================
 
-void playEmotion(String emotion) {
-  if (emotion == "HAPPY") {
-    // 기쁨: 빠르게 좌우 흔들기
-    for(int i=0; i<3; i++) {
-      neckServo.write(75); delay(150);
-      neckServo.write(105); delay(150);
+// LED / 버튼
+#define LED_PIN     2
+#define BUTTON_PIN  4
+
+// MAX98357A 앰프
+#define I2S_BCLK    5
+#define I2S_LRC     3
+#define I2S_DOUT    44      // ESP32-S3 SuperMini RX 핀
+
+#define I2S_PORT    I2S_NUM_0
+#define SAMPLE_RATE 44100
+
+// LCD: Waveshare 2inch LCD Module (ST7789V, 240x320), 하드웨어 SPI
+// 보드 실크 표기 순서 그대로:
+//   VCC -> 3V3
+//   GND -> GND
+//   DIN -> GPIO11   (= MOSI, 데이터선)
+//   CLK -> GPIO12   (= SCLK, 클럭)
+//   CS  -> GPIO13   (브레드보드에선 GPIO로 제어)
+//   DC  -> GPIO7
+//   RST -> GPIO6
+//   BL  -> 3V3
+#define TFT_MOSI 11  // 보드: DIN
+#define TFT_CLK  12  // 보드: CLK
+#define TFT_CS   13  // 보드: CS
+#define TFT_DC   7   // 보드: DC
+#define TFT_RST  6   // 보드: RST
+
+SPIClass hspi(HSPI);
+Adafruit_ST7789 tft = Adafruit_ST7789(&hspi, TFT_CS, TFT_DC, TFT_RST);
+// 2.0" ST7789 240x320, setRotation(3) -> 320x240 가로 화면
+
+
+// ========================
+// setup
+// ========================
+
+void setup() {
+
+  Serial.begin(115200);
+
+  pinMode(LED_PIN, OUTPUT);
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+  digitalWrite(LED_PIN, LOW);
+
+  // ---- LCD 초기화 ----
+  hspi.begin(TFT_CLK, -1, TFT_MOSI, TFT_CS);
+  tft.init(240, 320);
+  tft.setSPISpeed(4000000);    // 점퍼선 40cm+ 로 김 -> 4MHz로 안전하게 (느려도 티 안 남)
+  tft.setRotation(3);
+  tft.invertDisplay(true);   // 이 ST7789 패널은 반전 모드에서 색이 정상 표시됨
+  drawTestScreen();
+
+  // ---- I2S 설정 ----
+  i2s_config_t i2s_config = {
+    .mode                 = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX),
+    .sample_rate          = SAMPLE_RATE,
+    .bits_per_sample      = I2S_BITS_PER_SAMPLE_16BIT,
+    .channel_format       = I2S_CHANNEL_FMT_RIGHT_LEFT,
+    .communication_format = I2S_COMM_FORMAT_STAND_I2S,
+    .intr_alloc_flags     = 0,
+    .dma_buf_count        = 8,
+    .dma_buf_len          = 256,
+    .use_apll             = false,
+    .tx_desc_auto_clear   = true,
+    .fixed_mclk           = 0
+  };
+
+  i2s_pin_config_t pin_config = {
+    .bck_io_num   = I2S_BCLK,
+    .ws_io_num    = I2S_LRC,
+    .data_out_num = I2S_DOUT,
+    .data_in_num  = I2S_PIN_NO_CHANGE
+  };
+
+  i2s_driver_install(I2S_PORT, &i2s_config, 0, NULL);
+  i2s_set_pin(I2S_PORT, &pin_config);
+
+  delay(300);
+}
+
+
+// ========================
+// 기본 테스트 화면
+// ========================
+
+void drawTestScreen() {
+  tft.fillScreen(ST77XX_BLACK);
+
+  tft.setTextSize(3);
+  tft.setCursor(20, 140);
+  tft.print("SODABOT Week3");
+
+  tft.setTextSize(2);
+  tft.setCursor(20, 185);
+  tft.setTextColor(ST77XX_YELLOW);
+  tft.print("LCD OK - press BTN");
+}
+
+int pressCount = 0;
+
+// 버튼 누를 때마다 카운트 표시 + 배경색 토글
+void showPress() {
+  pressCount++;
+  uint16_t bg = (pressCount % 2) ? ST77XX_CYAN : ST77XX_MAGENTA;
+  tft.fillScreen(bg);
+  tft.setTextColor(ST77XX_BLACK);
+  tft.setTextSize(4);
+  tft.setCursor(60, 90);
+  tft.print("PRESS #");
+  tft.print(pressCount);
+}
+
+
+// ========================
+// 메인
+// ========================
+
+void loop() {
+
+  if (digitalRead(BUTTON_PIN) == LOW) {
+
+    digitalWrite(LED_PIN, HIGH);
+    showPress();
+
+    playTone(523.25, 180);  // 도
+    delay(40);
+    playTone(659.25, 180);  // 미
+    delay(40);
+    playTone(783.99, 300);  // 솔
+
+    while (digitalRead(BUTTON_PIN) == LOW) {
+      delay(10);
     }
-    neckServo.write(90);
-  } else if (emotion == "NOD") {
-    // 끄덕끄덕: 상하 끄덕임
-    neckServo.write(60); delay(250);
-    neckServo.write(100); delay(250);
-    neckServo.write(90);
-  } else if (emotion == "SURPRISED") {
-    // 깜짝 놀람: 위로 솟구치듯 회전
-    neckServo.write(120); delay(400);
-    neckServo.write(90);
+
+    digitalWrite(LED_PIN, LOW);
+    delay(50);
   }
 }
+
+
+// ========================
+// 사인파 소리 출력
+// ========================
+
+void playTone(float frequency, int duration_ms) {
+
+  const int BUFFER_FRAMES = 256;
+  int16_t buffer[BUFFER_FRAMES * 2];
+
+  float phase = 0;
+  float phaseStep = 2.0 * PI * frequency / SAMPLE_RATE;
+
+  int totalSamples = SAMPLE_RATE * duration_ms / 1000;
+  int generated = 0;
+
+  while (generated < totalSamples) {
+
+    int count = min(BUFFER_FRAMES, totalSamples - generated);
+
+    for (int i = 0; i < count; i++) {
+      int16_t sample = (int16_t)(sin(phase) * 6000);  // 볼륨
+      phase += phaseStep;
+      if (phase >= 2.0 * PI) phase -= 2.0 * PI;
+
+      buffer[i * 2]     = sample;   // 좌
+      buffer[i * 2 + 1] = sample;   // 우
+    }
+
+    size_t bytesWritten;
+    i2s_write(I2S_PORT, buffer, count * 2 * sizeof(int16_t),
+              &bytesWritten, portMAX_DELAY);
+
+    generated += count;
+  }
+
+    i2s_zero_dma_buffer(I2S_PORT);
+  }
 `
   },
   {
-    id: "week6-full-package",
-    week: 6,
-    title: "6주차 종합: AI 소다봇 완성본 통합 펌웨어 (Full Package)",
-    description: "BLE 무선 통신, 웹소켓, LED 감정 표현, 서보모터 반응형 액션이 모두 통합된 소다봇 최종 펌웨어입니다.",
-    filename: "sodabot_week6_final_firmware.ino",
+    id: "content-week-3-lcd-shapes",
+    week: 3,
+    title: "3-3. LCD 다양한 도형 그리기",
+    description: "ST7789 2.0인치 LCD 디스플레이에 선(Line), 사각형(Rect), 원(Circle), 채운 원(FillCircle) 등 다양한 2D 그래픽 도형을 2초 간격으로 순차 렌더링하는 3주차 실습입니다.",
+    filename: "soda-3-3.ino",
     language: "arduino",
-    tags: ["최종본", "Full Package", "BLE", "ESP32", "Arduino"],
-    code: `// [6주차] 소다봇 최종 통합 펌웨어 (BLE + 모션 + LED + 사운드)
-#include <BLEDevice.h>
-#include <BLEServer.h>
-#include <BLEUtils.h>
-#include <BLE2902.h>
-#include <ESP32Servo.h>
+    tags: ["ST7789", "LCD", "도형", "GFX", "drawLine", "drawRect", "drawCircle", "ESP32"],
+    pinMap: "LCD(MOSI:11, CLK:12, CS:13, DC:7, RST:6, BL:5V)",
+    updatedAt: new Date().toISOString(),
+    code: `#include <Adafruit_GFX.h>
+#include <Adafruit_ST7789.h>
+#include <SPI.h>
 
-#define SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
-#define CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
+// LCD 핀
+#define TFT_MOSI 11
+#define TFT_CLK  12
+#define TFT_CS   13
+#define TFT_DC   7
+#define TFT_RST  6
 
-Servo neckServo;
-BLECharacteristic* pCharacteristic = NULL;
-bool deviceConnected = false;
+SPIClass hspi(HSPI);
+Adafruit_ST7789 tft = Adafruit_ST7789(&hspi, TFT_CS, TFT_DC, TFT_RST);
 
 void setup() {
-  Serial.begin(115200);
-  neckServo.attach(18);
-  neckServo.write(90);
 
-  BLEDevice::init("Sodabot-Robot");
-  BLEServer *pServer = BLEDevice::createServer();
-  BLEService *pService = pServer->createService(SERVICE_UUID);
-  pCharacteristic = pService->createCharacteristic(
-    CHARACTERISTIC_UUID,
-    BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE
+  // LCD 시작
+  hspi.begin(TFT_CLK, -1, TFT_MOSI, TFT_CS);
+  tft.init(240, 320);
+  tft.setSPISpeed(4000000);
+  tft.setRotation(3);
+  tft.invertDisplay(true);
+
+  // 화면 지우기
+  tft.fillScreen(ST77XX_BLACK);
+
+
+  // ① 선
+  tft.drawLine(
+    20, 20,       // 시작점 x, y
+    100, 60,      // 끝점 x, y
+    ST77XX_WHITE
   );
-  pService->start();
-  BLEDevice::getAdvertising()->start();
 
-  Serial.println("✨ 소다봇 6주차 통합 펌웨어 준비 완료!");
+  delay(2000);
+
+
+  // ② 사각형
+  tft.drawRect(
+    40, 80,       // 시작점 x, y
+    120, 60,      // width, height
+    ST77XX_YELLOW
+  );
+
+  delay(2000);
+
+
+  // ③ 원
+  tft.drawCircle(
+    220, 60,      // 중심 x, y
+    40,           // radius
+    ST77XX_CYAN
+  );
+
+  delay(2000);
+
+
+  // ④ 채운 원
+  tft.fillCircle(
+    240, 170,     // 중심 x, y
+    35,           // radius
+    ST77XX_RED
+  );
 }
 
 void loop() {
-  // BLE 명령 대기 및 백그라운드 태스크 처리
-  delay(20);
-}
-`
+
+}`
+  },
+  {
+    id: "content-week-3-lcd-editor",
+    week: 3,
+    title: "3-4. 2.0\" LCD 화면편집기 (소다봇 표정 스튜디오)",
+    description: "마우스로 소다봇 표정 및 픽셀 아트를 직접 그리고 2장 표정 전환 애니메이션을 아두이노 C++ 코드로 생성/다운로드하는 3주차 전용 그래픽 도구입니다.",
+    filename: "soda-3-4.ino",
+    language: "arduino",
+    contentType: "editor",
+    tags: ["LCD", "화면편집기", "표정에디터", "비트맵", "애니메이션", "도구"],
+    pinMap: "LCD(MOSI:11, CLK:12, CS:13, DC:7, RST:6), 버튼:4, LED:2, I2S:5/3/44",
+    updatedAt: new Date().toISOString(),
+    code: `// 소다봇 2.0" LCD 화면편집기 / 표정 스튜디오에서 코드를 직접 디자인하고 다운로드하세요!`
   }
 ];
 
@@ -742,45 +922,25 @@ export default function DevCodeHubScreen({ className, selectedCodeId, onSelectCo
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-[#FAF9F6] overflow-hidden">
-      {/* Top Header */}
-      <div className="bg-white border-b border-[#EAE6DF] px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shrink-0 shadow-2xs">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <span className="px-2.5 py-0.5 bg-indigo-50 border border-indigo-200 text-indigo-700 text-[10px] font-bold rounded-full uppercase tracking-wider font-mono">
-              Firmware & Studio Hub
-            </span>
-            <span className="text-xs font-semibold text-[#86868B]">디랩 소다봇 스튜디오</span>
+    <div className="flex-1 flex flex-col h-full bg-[#FAF9F6] overflow-hidden relative">
+      {/* 복사 완료 토스트 알림 */}
+      {copiedId && (
+        <div className="fixed top-20 right-8 z-50 bg-[#181825] text-white px-5 py-3 rounded-2xl shadow-2xl border border-emerald-500/40 flex items-center gap-3 animate-in fade-in slide-in-from-top-4 duration-300">
+          <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold">
+            ✓
           </div>
-          <h1 className="text-xl font-extrabold text-[#1D1D1F] tracking-tight flex items-center gap-2">
-            <Cpu className="w-5 h-5 text-indigo-600" />
-            소다봇 제작 & 주차별 펌웨어 개발실
-          </h1>
-          <p className="text-xs text-[#5C5B57]">
-            1주차 기초 하드웨어부터 6주차 AI 연동까지, 소다봇 제작에 필요한 핵심 펌웨어와 소스코드를 학습하고 다운로드하세요.
-          </p>
+          <div>
+            <p className="text-xs font-black text-emerald-300">클립보드에 코드 복사 완료!</p>
+            <p className="text-[11px] text-[#A6ADC8]">아두이노 IDE 에디터에 <kbd className="px-1 py-0.5 bg-neutral-800 rounded font-mono text-[10px] text-amber-300">Ctrl+V</kbd> 또는 <kbd className="px-1 py-0.5 bg-neutral-800 rounded font-mono text-[10px] text-amber-300">Cmd+V</kbd> 로 붙여넣으세요.</p>
+          </div>
         </div>
+      )}
 
-        <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
-          <button
-            onClick={fetchCourseContents}
-            className="p-2 bg-white hover:bg-gray-100 border border-[#EAE6DF] rounded-xl text-[#5C5B57] text-xs font-semibold transition-all cursor-pointer shadow-2xs"
-            title="자료실 새로고침"
-          >
-            <RotateCcw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          </button>
-          <button
-            onClick={handleDownloadAll}
-            className="px-3.5 py-2 bg-[#1D1D1F] hover:bg-black active:scale-98 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
-          >
-            <FolderArchive className="w-4 h-4" />
-            일괄 다운로드 ({filteredCodes.length}개)
-          </button>
-        </div>
-      </div>
-
-      {/* Main Content Area: Full Width Code Viewer */}
-      <div className="flex-1 flex flex-col h-full bg-[#1E1E2E] overflow-hidden">
+      {/* Main Content Area: Editor OR Full Width Code Viewer */}
+      {activeItem.contentType === "editor" ? (
+        <LcdPixelEditor />
+      ) : (
+        <div className="flex-1 flex flex-col h-full bg-[#1E1E2E] overflow-hidden">
           {/* Viewer Toolbar */}
           <div className="bg-[#181825] px-6 py-3.5 border-b border-[#313244] flex flex-wrap items-center justify-between gap-3 shrink-0">
             <div className="flex items-center gap-3">
@@ -907,50 +1067,92 @@ export default function DevCodeHubScreen({ className, selectedCodeId, onSelectCo
                     <span>ESP32-S3 핀 연결 요약표</span>
                   </div>
                   <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs font-mono">
+                    <table className="w-full text-left text-xs">
                       <thead>
-                        <tr className="border-b border-[#313244] text-[#a6adc8]">
-                          <th className="pb-2 font-bold">기능</th>
-                          <th className="pb-2 font-bold">ESP32-S3 핀</th>
-                          <th className="pb-2 font-bold">연결 대상</th>
+                        <tr className="border-b border-[#313244] text-[#a6adc8] font-semibold">
+                          <th className="pb-2">신호 / 부품</th>
+                          <th className="pb-2">ESP32-S3 핀</th>
+                          <th className="pb-2">연결 대상</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[#313244]/60 text-[#cdd6f4]">
-                        <tr>
-                          <td className="py-2 text-[#89b4fa] font-bold">버튼 입력</td>
-                          <td className="py-2 text-amber-300 font-bold">GPIO4</td>
-                          <td className="py-2 text-[#a6adc8]">버튼 한쪽 ➔ GND (INPUT_PULLUP)</td>
-                        </tr>
-                        <tr>
-                          <td className="py-2 text-[#89b4fa] font-bold">LED 출력</td>
-                          <td className="py-2 text-amber-300 font-bold">GPIO2</td>
-                          <td className="py-2 text-[#a6adc8]">220Ω 저항 ➔ LED(+), LED(-) ➔ GND</td>
-                        </tr>
-                        <tr>
-                          <td className="py-2 text-emerald-400 font-bold">I2S BCLK</td>
-                          <td className="py-2 text-amber-300 font-bold">GPIO5</td>
-                          <td className="py-2 text-[#a6adc8]">MAX98357A BCLK</td>
-                        </tr>
-                        <tr>
-                          <td className="py-2 text-emerald-400 font-bold">I2S LRCK</td>
-                          <td className="py-2 text-amber-300 font-bold">GPIO3</td>
-                          <td className="py-2 text-[#a6adc8]">MAX98357A LRC</td>
-                        </tr>
-                        <tr>
-                          <td className="py-2 text-emerald-400 font-bold">I2S DOUT</td>
-                          <td className="py-2 text-amber-300 font-bold">GPIO44</td>
-                          <td className="py-2 text-[#a6adc8]">MAX98357A DIN (ESP32 RX핀)</td>
-                        </tr>
-                        <tr>
-                          <td className="py-2 text-rose-400 font-bold">전원 5V</td>
-                          <td className="py-2 text-amber-300 font-bold">5V</td>
-                          <td className="py-2 text-[#a6adc8]">MAX98357A VDD</td>
-                        </tr>
-                        <tr>
-                          <td className="py-2 text-[#6c7086] font-bold">공통 GND</td>
-                          <td className="py-2 text-amber-300 font-bold">GND</td>
-                          <td className="py-2 text-[#a6adc8]">버튼, LED(-), MAX98357A GND</td>
-                        </tr>
+                        {activeItem.id === "content-week-3-circuit-diagram" ? (
+                          <>
+                            <tr>
+                              <td className="py-1.5 text-cyan-400 font-bold">LCD DIN (MOSI)</td>
+                              <td className="py-1.5 text-amber-300 font-bold">GPIO11</td>
+                              <td className="py-1.5 text-[#a6adc8]">ST7789 DIN (데이터)</td>
+                            </tr>
+                            <tr>
+                              <td className="py-1.5 text-cyan-400 font-bold">LCD CLK (SCK)</td>
+                              <td className="py-1.5 text-amber-300 font-bold">GPIO12</td>
+                              <td className="py-1.5 text-[#a6adc8]">ST7789 CLK (클럭)</td>
+                            </tr>
+                            <tr>
+                              <td className="py-1.5 text-cyan-400 font-bold">LCD CS / DC / RST</td>
+                              <td className="py-1.5 text-amber-300 font-bold">13 / 7 / 6</td>
+                              <td className="py-1.5 text-[#a6adc8]">CS:13, DC:7, RST:6</td>
+                            </tr>
+                            <tr>
+                              <td className="py-1.5 text-cyan-400 font-bold">LCD VCC / BL</td>
+                              <td className="py-1.5 text-amber-300 font-bold">5V (또는 3V3)</td>
+                              <td className="py-1.5 text-[#a6adc8]">전원 및 백라이트</td>
+                            </tr>
+                            <tr>
+                              <td className="py-1.5 text-emerald-400 font-bold">I2S 스피커</td>
+                              <td className="py-1.5 text-amber-300 font-bold">5 / 3 / 44</td>
+                              <td className="py-1.5 text-[#a6adc8]">BCLK:5, LRC:3, DIN:44</td>
+                            </tr>
+                            <tr>
+                              <td className="py-1.5 text-[#89b4fa] font-bold">버튼 / LED</td>
+                              <td className="py-1.5 text-amber-300 font-bold">GPIO4 / GPIO2</td>
+                              <td className="py-1.5 text-[#a6adc8]">버튼: GPIO4, LED: GPIO2</td>
+                            </tr>
+                            <tr>
+                              <td className="py-1.5 text-[#6c7086] font-bold">공통 GND</td>
+                              <td className="py-1.5 text-amber-300 font-bold">GND</td>
+                              <td className="py-1.5 text-[#a6adc8]">전체 모듈 공통 접지</td>
+                            </tr>
+                          </>
+                        ) : (
+                          <>
+                            <tr>
+                              <td className="py-2 text-[#89b4fa] font-bold">버튼 입력</td>
+                              <td className="py-2 text-amber-300 font-bold">GPIO4</td>
+                              <td className="py-2 text-[#a6adc8]">버튼 한쪽 ➔ GND (INPUT_PULLUP)</td>
+                            </tr>
+                            <tr>
+                              <td className="py-2 text-[#89b4fa] font-bold">LED 출력</td>
+                              <td className="py-2 text-amber-300 font-bold">GPIO2</td>
+                              <td className="py-2 text-[#a6adc8]">220Ω 저항 ➔ LED(+), LED(-) ➔ GND</td>
+                            </tr>
+                            <tr>
+                              <td className="py-2 text-emerald-400 font-bold">I2S BCLK</td>
+                              <td className="py-2 text-amber-300 font-bold">GPIO5</td>
+                              <td className="py-2 text-[#a6adc8]">MAX98357A BCLK</td>
+                            </tr>
+                            <tr>
+                              <td className="py-2 text-emerald-400 font-bold">I2S LRCK</td>
+                              <td className="py-2 text-amber-300 font-bold">GPIO3</td>
+                              <td className="py-2 text-[#a6adc8]">MAX98357A LRC</td>
+                            </tr>
+                            <tr>
+                              <td className="py-2 text-emerald-400 font-bold">I2S DOUT</td>
+                              <td className="py-2 text-amber-300 font-bold">GPIO44</td>
+                              <td className="py-2 text-[#a6adc8]">MAX98357A DIN (ESP32 RX핀)</td>
+                            </tr>
+                            <tr>
+                              <td className="py-2 text-rose-400 font-bold">전원 5V</td>
+                              <td className="py-2 text-amber-300 font-bold">5V</td>
+                              <td className="py-2 text-[#a6adc8]">MAX98357A VDD</td>
+                            </tr>
+                            <tr>
+                              <td className="py-2 text-[#6c7086] font-bold">공통 GND</td>
+                              <td className="py-2 text-amber-300 font-bold">GND</td>
+                              <td className="py-2 text-[#a6adc8]">버튼, LED(-), MAX98357A GND</td>
+                            </tr>
+                          </>
+                        )}
                       </tbody>
                     </table>
                   </div>
@@ -980,7 +1182,7 @@ export default function DevCodeHubScreen({ className, selectedCodeId, onSelectCo
                   </div>
 
                   <div className="p-3 bg-indigo-950/40 border border-indigo-500/30 rounded-xl text-xs text-indigo-200">
-                    💡 <strong>실습 팁</strong>: 배선이 완료된 후 다음 실습 코드인 <strong>`soda-2-2.ino`</strong>를 업로드하여 동작을 테스트하세요!
+                    💡 <strong>실습 팁</strong>: 배선이 완료된 후 다음 실습 코드인 <strong>&apos;soda-2-2.ino&apos;</strong>를 업로드하여 동작을 테스트하세요!
                   </div>
                 </div>
               </div>
@@ -1031,6 +1233,7 @@ export default function DevCodeHubScreen({ className, selectedCodeId, onSelectCo
             <span className="font-mono text-[11px] text-[#6c7086] hidden xl:inline">코드 라인: {activeItem.code.split("\n").length}줄</span>
           </div>
         </div>
-      </div>
-    );
-  }
+      )}
+    </div>
+  );
+}

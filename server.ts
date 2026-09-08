@@ -79,9 +79,23 @@ interface CourseContent {
   tags: string[];
   pinMap?: string;
   code: string;
-  contentType?: "code" | "circuit" | "doc";
+  contentType?: "code" | "circuit" | "doc" | "editor";
   imageUrl?: string;
   updatedAt?: string;
+}
+
+const FIRMWARE_DIR = path.join(process.cwd(), 'firmware');
+
+function getFirmwareCode(filename: string, fallbackCode: string = ""): string {
+  try {
+    const fullPath = path.join(FIRMWARE_DIR, filename);
+    if (fs.existsSync(fullPath)) {
+      return fs.readFileSync(fullPath, 'utf8');
+    }
+  } catch (err) {
+    console.error(`[Firmware] Failed to read ${filename}:`, err);
+  }
+  return fallbackCode;
 }
 
 const DEFAULT_COURSE_CONTENTS: CourseContent[] = [
@@ -114,555 +128,215 @@ const DEFAULT_COURSE_CONTENTS: CourseContent[] = [
   {
     id: "content-week-1-sound",
     week: 1,
-    title: "스피커테스트 도레미파솔라시도",
+    title: "1-1. 스피커테스트 도레미파솔라시도",
     description: "I2S 디지털 앰프/스피커 핀(BCLK:5, LRC:3, DOUT:44)을 초기화하고 도레미파솔라시도 음계를 재생하는 소다봇 사운드 기초 실습입니다.",
-    filename: "soda-2-1.ino",
+    filename: "soda-1-1.ino",
     language: "arduino",
     tags: ["I2S", "스피커", "사운드", "ESP32", "도레미파솔라시도"],
     pinMap: "BCLK: D5, LRC: D3, DOUT: D44",
     updatedAt: new Date().toISOString(),
-    code: `#include <driver/i2s.h>
-#include <math.h>
-
-// ========================
-// 스피커 핀 설정
-// ========================
-#define I2S_BCLK  5
-#define I2S_LRC   3
-#define I2S_DOUT  44
-
-#define I2S_PORT I2S_NUM_0
-#define SAMPLE_RATE 44100
-
-
-// ========================
-// 소리 내기 함수
-// 수정하지 마세요
-// ========================
-void playTone(float freq, int duration) {
-
-  int samples = SAMPLE_RATE * duration / 1000;
-  int16_t buffer[2];
-
-  for (int i = 0; i < samples; i++) {
-
-    int16_t sound =
-      sin(2 * PI * freq * i / SAMPLE_RATE) * 6000;
-
-    buffer[0] = sound;
-    buffer[1] = sound;
-
-    size_t written;
-
-    i2s_write(
-      I2S_PORT,
-      buffer,
-      sizeof(buffer),
-      &written,
-      portMAX_DELAY
-    );
-  }
-
-  i2s_zero_dma_buffer(I2S_PORT);
-}
-
-
-// ========================
-// 처음 한 번 실행
-// ========================
-void setup() {
-
-  // I2S 설정
-  i2s_config_t i2s_config = {
-
-    .mode = (i2s_mode_t)(
-      I2S_MODE_MASTER |
-      I2S_MODE_TX
-    ),
-
-    .sample_rate = SAMPLE_RATE,
-    .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
-
-    .channel_format =
-      I2S_CHANNEL_FMT_RIGHT_LEFT,
-
-    .communication_format =
-      I2S_COMM_FORMAT_STAND_I2S,
-
-    .intr_alloc_flags = 0,
-    .dma_buf_count = 8,
-    .dma_buf_len = 256,
-    .use_apll = false,
-    .tx_desc_auto_clear = true,
-    .fixed_mclk = 0
-  };
-
-
-  // 핀 연결
-  i2s_pin_config_t pin_config = {
-
-    .bck_io_num = I2S_BCLK,
-    .ws_io_num = I2S_LRC,
-    .data_out_num = I2S_DOUT,
-    .data_in_num = I2S_PIN_NO_CHANGE
-  };
-
-
-  i2s_driver_install(
-    I2S_PORT,
-    &i2s_config,
-    0,
-    NULL
-  );
-
-  i2s_set_pin(
-    I2S_PORT,
-    &pin_config
-  );
-
-
-  // ==================================
-  // 🎵 학생 실습 : 여기만 수정하세요!
-  // ==================================
-
-  playTone(262, 200);   // 도
-  playTone(294, 200);   // 레
-  playTone(330, 200);   // 미
-  playTone(349, 200);   // 파
-  playTone(392, 200);   // 솔
-  playTone(440, 200);   // 라
-  playTone(494, 200);   // 시
-  playTone(523, 500);   // 높은 도
-
-  // ==================================
-}
-
-
-// 반복 실행 없음
-void loop() {
-
-}
-`
+    code: getFirmwareCode("soda-1-1.ino")
   },
   {
     id: "content-week-1-btn-led-sound",
     week: 1,
-    title: "버튼 + LED + 스피커",
+    title: "1-2. 버튼 + LED + 스피커",
     description: "버튼(D4)을 누르면 LED(D2)가 켜지며 MAX98357A I2S 앰프 스피커를 통해 도-미-솔 화음 사운드를 출력하는 인터랙션 예제입니다.",
-    filename: "soda-2-2.ino",
+    filename: "soda-1-2.ino",
     language: "arduino",
     tags: ["버튼", "LED", "I2S", "스피커", "ESP32", "사운드"],
     pinMap: "LED: D2, 버튼: D4, 스피커: BCLK: D5, LRC: D3, DOUT: D44",
     updatedAt: new Date().toISOString(),
-    code: `#include <driver/i2s.h>
-#include <math.h>
-
-// ========================
-// 핀 설정
-// ========================
-
-// LED / 버튼
-#define LED_PIN     2
-#define BUTTON_PIN  4
-
-// MAX98357A 앰프
-#define I2S_BCLK    5
-#define I2S_LRC     3
-#define I2S_DOUT    44      // ESP32-S3 SuperMini RX 핀
-
-#define I2S_PORT    I2S_NUM_0
-#define SAMPLE_RATE 44100
-
-
-// ========================
-// I2S 설정
-// ========================
-
-void setup() {
-
-  Serial.begin(115200);
-
-  pinMode(LED_PIN, OUTPUT);
-  pinMode(BUTTON_PIN, INPUT_PULLUP);
-
-  digitalWrite(LED_PIN, LOW);
-
-
-  i2s_config_t i2s_config = {
-
-    .mode = (i2s_mode_t)(
-      I2S_MODE_MASTER |
-      I2S_MODE_TX
-    ),
-
-    .sample_rate = SAMPLE_RATE,
-
-    .bits_per_sample =
-      I2S_BITS_PER_SAMPLE_16BIT,
-
-    .channel_format =
-      I2S_CHANNEL_FMT_RIGHT_LEFT,
-
-    .communication_format =
-      I2S_COMM_FORMAT_STAND_I2S,
-
-    .intr_alloc_flags = 0,
-
-    .dma_buf_count = 8,
-    .dma_buf_len = 256,
-
-    .use_apll = false,
-    .tx_desc_auto_clear = true,
-    .fixed_mclk = 0
-  };
-
-
-  i2s_pin_config_t pin_config = {
-
-    .bck_io_num = I2S_BCLK,
-
-    .ws_io_num = I2S_LRC,
-
-    .data_out_num = I2S_DOUT,
-
-    .data_in_num =
-      I2S_PIN_NO_CHANGE
-  };
-
-
-  i2s_driver_install(
-    I2S_PORT,
-    &i2s_config,
-    0,
-    NULL
-  );
-
-
-  i2s_set_pin(
-    I2S_PORT,
-    &pin_config
-  );
-}
-
-
-// ========================
-// 메인
-// ========================
-
-void loop() {
-
-  if (digitalRead(BUTTON_PIN) == LOW) {
-
-    digitalWrite(LED_PIN, HIGH);
-
-    // 도
-    playTone(523.25, 180);
-
-    delay(40);
-
-    // 미
-    playTone(659.25, 180);
-
-    delay(40);
-
-    // 솔
-    playTone(783.99, 300);
-
-
-    // 버튼을 놓을 때까지 기다림
-    while (digitalRead(BUTTON_PIN) == LOW) {
-      delay(10);
-    }
-
-    digitalWrite(LED_PIN, LOW);
-
-    delay(50);
-  }
-}
-
-
-// ========================
-// 사인파 소리 출력
-// ========================
-
-void playTone(float frequency, int duration_ms) {
-
-  const int BUFFER_FRAMES = 256;
-
-  int16_t buffer[BUFFER_FRAMES * 2];
-
-  float phase = 0;
-
-  float phaseStep =
-    2.0 * PI * frequency / SAMPLE_RATE;
-
-
-  int totalSamples =
-    SAMPLE_RATE * duration_ms / 1000;
-
-  int generated = 0;
-
-
-  while (generated < totalSamples) {
-
-    int count =
-      min(BUFFER_FRAMES,
-          totalSamples - generated);
-
-
-    for (int i = 0; i < count; i++) {
-
-      // 볼륨
-      int16_t sample =
-        (int16_t)(sin(phase) * 6000);
-
-      phase += phaseStep;
-
-      if (phase >= 2.0 * PI) {
-        phase -= 2.0 * PI;
-      }
-
-
-      // 좌/우 동일 신호
-      buffer[i * 2]     = sample;
-      buffer[i * 2 + 1] = sample;
-    }
-
-
-    size_t bytesWritten;
-
-    i2s_write(
-      I2S_PORT,
-      buffer,
-      count * 2 * sizeof(int16_t),
-      &bytesWritten,
-      portMAX_DELAY
-    );
-
-
-    generated += count;
-  }
-
-
-  // 소리 끄기
-  i2s_zero_dma_buffer(I2S_PORT);
-}
-`
+    code: getFirmwareCode("soda-1-2.ino")
   },
   {
-    id: "content-week-1-hw",
-    week: 1,
-    title: "소다봇 기본 하드웨어 및 LED/서보모터 제어",
-    description: "ESP32 보드에서 RGB LED와 서보모터를 초기화하고 표정 및 각도를 제어하는 1주차 기본 펌웨어입니다.",
-    filename: "sodabot_week1_hw_basic.ino",
-    language: "arduino",
-    tags: ["ESP32", "Arduino", "LED", "서보모터"],
-    pinMap: "RGB LED: D4, 서보모터: D18, 스피커: D5/D3/D44",
-    updatedAt: new Date().toISOString(),
-    code: `// [1주차] 소다봇 하드웨어 기본 제어 예제
-#include <ESP32Servo.h>
-
-#define PIN_LED_R 4
-#define PIN_LED_G 16
-#define PIN_LED_B 17
-#define PIN_SERVO 18
-
-Servo neckServo;
-
-void setup() {
-  Serial.begin(115200);
-  pinMode(PIN_LED_R, OUTPUT);
-  pinMode(PIN_LED_G, OUTPUT);
-  pinMode(PIN_LED_B, OUTPUT);
-
-  neckServo.attach(PIN_SERVO);
-  neckServo.write(90); // 기본 90도 중앙 위치
-
-  Serial.println("🤖 [소다봇 1주차] 하드웨어 초기화 완료!");
-  setLedColor(0, 255, 100); // 에메랄드 그린
-}
-
-void loop() {
-  // 고개 끄덕이기 동작
-  neckServo.write(70);
-  delay(500);
-  neckServo.write(110);
-  delay(500);
-  neckServo.write(90);
-  delay(1000);
-}
-
-void setLedColor(int r, int g, int b) {
-  analogWrite(PIN_LED_R, r);
-  analogWrite(PIN_LED_G, g);
-  analogWrite(PIN_LED_B, b);
-}`
-  },
-  {
-    id: "content-week-3",
+    id: "content-week-3-circuit-diagram",
     week: 3,
-    title: "소다봇 음성 인식(STT) 및 파이썬 오디오 클라이언트",
-    description: "마이크 입력을 받아 서버의 Whisper STT 엔드포인트로 전송하고 결과를 수신하는 파이썬 스크립트입니다.",
-    filename: "sodabot_week3_audio_client.py",
-    language: "python",
-    tags: ["Python", "STT", "Whisper", "마이크"],
-    pinMap: "USB 마이크 또는 PC 내장 마이크 사용",
+    title: "[배선도] 2.0\" LCD + 버튼 + LED + 스피커 회로 연결도",
+    description: "Waveshare 2.0인치 ST7789 LCD(SPI), MAX98357A I2S 앰프, 버튼, LED를 ESP32-S3 SuperMini에 연결하는 3주차 통합 배선도입니다.",
+    filename: "circuit_lcd_btn_led_speaker.png",
+    language: "json",
+    contentType: "circuit",
+    imageUrl: "/images/circuit_lcd_btn_led_speaker.png",
+    tags: ["배선도", "회로도", "ST7789", "LCD", "ESP32-S3", "3주차"],
+    pinMap: "LCD(MOSI:11, CLK:12, CS:13, DC:7, RST:6, BL:5V), I2S(5/3/44), 버튼:4, LED:2",
     updatedAt: new Date().toISOString(),
-    code: `# [3주차] 파이썬 마이크 음성 녹음 및 STT 전송 클라이언트
-import sounddevice as sd
-import numpy as np
-import scipy.io.wavfile as wav
-import requests
-import io
-
-SERVER_URL = "http://localhost:7989/api/hw/audio-chat"
-SAMPLE_RATE = 16000
-DURATION = 4  # 녹음 초
-
-def record_and_send():
-    print(f"🎙️ {DURATION}초 동안 말씀하세요...")
-    audio_data = sd.rec(int(DURATION * SAMPLE_RATE), samplerate=SAMPLE_RATE, channels=1, dtype='int16')
-    sd.wait()
-    print("✅ 녹음 완료! 서버로 전송 중...")
-
-    wav_io = io.BytesIO()
-    wav.write(wav_io, SAMPLE_RATE, audio_data)
-    wav_io.seek(0)
-
-    files = {'file': ('voice.wav', wav_io, 'audio/wav')}
-    headers = {'Authorization': 'Bearer YOUR_SESSION_TOKEN'}
-
-    try:
-        response = requests.post(SERVER_URL, files=files, headers=headers)
-        if response.status_code == 200:
-            result = response.json()
-            print("📝 인식된 텍스트:", result.get("transcript"))
-            print("🤖 소다봇 답변:", result.get("reply"))
-        else:
-            print("❌ 오류 발생:", response.text)
-    except Exception as e:
-        print("연결 실패:", e)
-
-if __name__ == "__main__":
-    record_and_send()`
+    code: `// [3주차] 2.0" LCD + 버튼 + LED + 스피커 전체 핀 연결 요약
+// =========================================================================
+// 부품          | ESP32-S3 핀  | Waveshare 2.0" LCD / 앰프 / 부품 핀
+// -------------+-------------+-------------------------------------------
+// LCD VCC      | 3V3         | VCC (3.3V 전원)
+// LCD GND      | GND         | GND (공통 접지)
+// LCD DIN      | GPIO11      | MOSI (데이터 입력선)
+// LCD CLK      | GPIO12      | SCLK (SPI 클럭선)
+// LCD CS       | GPIO13      | CS (칩 셀렉트)
+// LCD DC       | GPIO7       | DC (Data / Command 제어)
+// LCD RST      | GPIO6       | RST (리셋선)
+// LCD BL       | 5V / 3V3    | 백라이트 전원
+// -------------+-------------+-------------------------------------------
+// I2S BCLK     | GPIO5       | MAX98357A BCLK
+// I2S LRC      | GPIO3       | MAX98357A LRC
+// I2S DOUT     | GPIO44      | MAX98357A DIN (SuperMini RX 핀)
+// I2S VIN/GND  | 5V / GND    | MAX98357A 전원 및 공통 GND
+// -------------+-------------+-------------------------------------------
+// BUTTON       | GPIO4       | 버튼 한쪽 ➔ GND (내부 풀업 INPUT_PULLUP)
+// LED          | GPIO2       | 220Ω 저항 ➔ LED(+), LED(-) ➔ GND
+// =========================================================================
+// 동작 원리: 
+// 1. ST7789 LCD 화면에 UI 그래픽 및 카운터가 표시됩니다.
+// 2. 버튼을 누르면 카운터 증가 및 화면 색상 전환!
+// 3. 동시에 LED 점등과 함께 I2S 스피커로 경쾌한 도-미-솔 사운드가 울립니다.`
   },
   {
-    id: "content-week-4",
+    id: "content-week-3-lcd-hello",
+    week: 3,
+    title: "3-1. LCD 기본 출력 - Hello SODA!",
+    description: "Waveshare 2.0인치 ST7789 LCD 디스플레이를 초기화하고 화면 중앙에 'Hello SODA!' 글씨를 출력하는 가장 기본적이고 심플한 3주차 첫 실습 코드입니다.",
+    filename: "soda-3-1.ino",
+    language: "arduino",
+    tags: ["ST7789", "LCD", "Hello SODA!", "기본코드", "디스플레이", "ESP32"],
+    pinMap: "LCD(MOSI:11, CLK:12, CS:13, DC:7, RST:6, BL:5V)",
+    updatedAt: new Date().toISOString(),
+    code: getFirmwareCode("soda-3-1.ino")
+  },
+  {
+    id: "content-week-3-lcd-basic",
+    week: 3,
+    title: "3-2. LCD 기본코드 - 메인화면 표시 버튼클릭시 증가표시",
+    description: "ST7789 2.0인치 LCD 화면에 메인 그래픽을 표시하고, 버튼을 누를 때마다 클릭 카운트 증가 화면 및 도-미-솔 사운드를 출력하는 3주차 실습입니다.",
+    filename: "soda-3-2.ino",
+    language: "arduino",
+    tags: ["ST7789", "LCD", "SPI", "버튼", "카운터", "I2S"],
+    pinMap: "LCD(MOSI:11, CLK:12, CS:13, DC:7, RST:6), 버튼:4, LED:2, I2S:5/3/44",
+    updatedAt: new Date().toISOString(),
+    code: getFirmwareCode("soda-3-2.ino")
+  },
+  {
+    id: "content-week-3-lcd-shapes",
+    week: 3,
+    title: "3-3. LCD 다양한 도형 그리기",
+    description: "ST7789 2.0인치 LCD 디스플레이에 선(Line), 사각형(Rect), 원(Circle), 채운 원(FillCircle) 등 다양한 2D 그래픽 도형을 2초 간격으로 순차 렌더링하는 3주차 실습입니다.",
+    filename: "soda-3-3.ino",
+    language: "arduino",
+    tags: ["ST7789", "LCD", "도형", "GFX", "drawLine", "drawRect", "drawCircle", "ESP32"],
+    pinMap: "LCD(MOSI:11, CLK:12, CS:13, DC:7, RST:6, BL:5V)",
+    updatedAt: new Date().toISOString(),
+    code: getFirmwareCode("soda-3-3.ino")
+  },
+  {
+    id: "content-week-3-lcd-editor",
+    week: 3,
+    title: "3-4. 2.0\" LCD 화면편집기 (소다봇 표정 스튜디오)",
+    description: "마우스로 소다봇 표정 및 픽셀 아트를 직접 그리고 2장 표정 전환 애니메이션을 아두이노 C++ 코드로 생성/다운로드하는 3주차 전용 그래픽 도구입니다.",
+    filename: "soda-3-4.ino",
+    language: "arduino",
+    contentType: "editor",
+    tags: ["LCD", "화면편집기", "표정에디터", "비트맵", "애니메이션", "도구"],
+    pinMap: "LCD(MOSI:11, CLK:12, CS:13, DC:7, RST:6), 버튼:4, LED:2, I2S:5/3/44",
+    updatedAt: new Date().toISOString(),
+    code: getFirmwareCode("soda-3-4.ino")
+  },
+  // ====================================================
+  // WEEK 04 — 공룡을 점프시켜라 (4개 실습)
+  // ====================================================
+  {
+    id: "content-week-4-dino-basic",
     week: 4,
-    title: "소다봇 AI LLM REST API 연동 스크립트",
-    description: "LM Studio 로컬 LLM 또는 소다봇 대화 API를 호출하여 프롬프트와 페르소나를 전송하는 예제입니다.",
-    filename: "sodabot_week4_llm_test.py",
-    language: "python",
-    tags: ["LLM", "API", "REST", "LM Studio"],
+    title: "4-1. 공룡과 바닥 표시",
+    description: "ST7789 2.0인치 LCD에 공룡 스프라이트 비트맵과 바닥 선을 선명하게 렌더링하는 4주차 첫 번째 실습입니다.",
+    filename: "soda-4-1.ino",
+    language: "arduino",
+    tags: ["디노게임", "비트맵", "공룡", "LCD", "ST7789", "ESP32"],
+    pinMap: "LCD(MOSI:11, CLK:12, CS:13, DC:7, RST:6, BL:5V)",
     updatedAt: new Date().toISOString(),
-    code: `# [4주차] 소다봇 LLM 대화 API 호출 예제
-import requests
-import json
-
-API_URL = "http://localhost:7989/api/v1/chat/completions"
-
-headers = {
-    "Content-Type": "application/json",
-    "Authorization": "Bearer YOUR_SESSION_TOKEN"
-}
-
-payload = {
-    "model": "llama-3-korean-bllossom-8b",
-    "messages": [
-        {"role": "system", "content": "너는 디랩 코딩학원의 반려봇 소다봇이야. 친근하게 힌트를 줘."},
-        {"role": "user", "content": "파이썬에서 리스트 뒤집는 법 알려줘!"}
-    ],
-    "temperature": 0.7,
-    "max_tokens": 256
-}
-
-response = requests.post(API_URL, headers=headers, json=payload)
-if response.status_code == 200:
-    data = response.json()
-    reply = data['choices'][0]['message']['content']
-    print("🤖 소다봇의 응답:\\n", reply)
-else:
-    print("API 에러:", response.status_code, response.text)`
+    code: getFirmwareCode("soda-4-1.ino")
   },
   {
-    id: "content-week-5",
+    id: "content-week-4-dino-position",
+    week: 4,
+    title: "4-2. Y좌표로 공룡 위치 변경",
+    description: "공룡의 Y좌표 변수를 변경하여 공룡이 공중에 떠 있는 위치를 제어하고 화면 잔상을 지우는 원리를 학습합니다.",
+    filename: "soda-4-2.ino",
+    language: "arduino",
+    tags: ["좌표이동", "Y좌표", "공룡위치", "애니메이션", "ESP32"],
+    pinMap: "LCD(MOSI:11, CLK:12, CS:13, DC:7, RST:6, BL:5V)",
+    updatedAt: new Date().toISOString(),
+    code: getFirmwareCode("soda-4-2.ino")
+  },
+  {
+    id: "content-week-4-button-jump-simple",
+    week: 4,
+    title: "4-3. 정해진 위치를 이용한 점프 애니메이션",
+    description: "버튼(GPIO4)을 누르면 정해진 높이 단계 배열을 따라 공룡이 위로 올라갔다 내려오는 기초 점프 애니메이션을 구현합니다.",
+    filename: "soda-4-3.ino",
+    language: "arduino",
+    tags: ["버튼점프", "GPIO4", "점프애니메이션", "인터랙션", "ESP32"],
+    pinMap: "LCD(MOSI:11, CLK:12, CS:13, DC:7, RST:6), 버튼:4",
+    updatedAt: new Date().toISOString(),
+    code: getFirmwareCode("soda-4-3.ino")
+  },
+  {
+    id: "content-week-4-dino-jump-final",
+    week: 4,
+    title: "4-4. 점프 힘과 중력을 이용한 자연스러운 점프",
+    description: "물리 엔진 개념(점프 속도 velocity와 중력 gravity)을 적용하여 진짜 게임처럼 부드럽고 찰진 공룡 점프를 완성합니다.",
+    filename: "soda-4-4.ino",
+    language: "arduino",
+    tags: ["물리엔진", "중력", "속도", "완성점프", "DINO_FINAL", "ESP32"],
+    pinMap: "LCD(MOSI:11, CLK:12, CS:13, DC:7, RST:6), 버튼:4",
+    updatedAt: new Date().toISOString(),
+    code: getFirmwareCode("soda-4-4.ino")
+  },
+  // ====================================================
+  // WEEK 05 — 진짜 게임을 완성하라 (4개 실습)
+  // ====================================================
+  {
+    id: "content-week-5-cactus-move",
     week: 5,
-    title: "소다봇 감정 표현 & 모션 시퀀서 코드",
-    description: "행복, 슬픔, 당황 등 감정에 따라 서보모터와 LED가 싱크되어 반응하는 동작 시퀀서 아두이노 코드입니다.",
-    filename: "sodabot_week5_motion_sequencer.ino",
+    title: "5-1. X좌표로 선인장 이동",
+    description: "오른쪽 끝에서 왼쪽으로 스스로 달려오는 장애물(선인장)의 X좌표 이동 및 화면 루프 알고리즘을 구현합니다.",
+    filename: "soda-5-1.ino",
     language: "arduino",
-    tags: ["Motion", "서보모터", "감정표현", "C++"],
+    tags: ["선인장", "장애물이동", "X좌표", "스크롤", "ESP32"],
+    pinMap: "LCD(MOSI:11, CLK:12, CS:13, DC:7, RST:6), 버튼:4",
     updatedAt: new Date().toISOString(),
-    code: `// [5주차] 소다봇 감정 모션 시퀀서
-#include <ESP32Servo.h>
-
-Servo neckServo;
-#define PIN_SERVO 18
-
-void playEmotion(String emotion) {
-  if (emotion == "HAPPY") {
-    // 기쁨: 빠르게 좌우 흔들기
-    for(int i=0; i<3; i++) {
-      neckServo.write(75); delay(150);
-      neckServo.write(105); delay(150);
-    }
-    neckServo.write(90);
-  } else if (emotion == "NOD") {
-    // 끄덕끄덕: 상하 끄덕임
-    neckServo.write(60); delay(250);
-    neckServo.write(100); delay(250);
-    neckServo.write(90);
-  } else if (emotion == "SURPRISED") {
-    // 깜짝 놀람: 회전
-    neckServo.write(120); delay(400);
-    neckServo.write(90);
-  }
-}`
+    code: getFirmwareCode("soda-5-1.ino")
   },
   {
-    id: "content-week-6",
-    week: 6,
-    title: "6주차 종합: AI 소다봇 완성본 통합 펌웨어 (Full Package)",
-    description: "BLE 무선 통신, 웹소켓, LED 감정 표현, 서보모터 반응형 액션이 모두 통합된 소다봇 최종 펌웨어입니다.",
-    filename: "sodabot_week6_final_firmware.ino",
+    id: "content-week-5-collision-gameover",
+    week: 5,
+    title: "5-2. 충돌, 게임 종료, 다시 시작",
+    description: "공룡과 선인장의 AABB 충돌 판정(Bounding Box)을 계산하고, 부딪혔을 때 GAME OVER 화면 및 버튼으로 재시작하는 흐름을 제작합니다.",
+    filename: "soda-5-2.ino",
     language: "arduino",
-    tags: ["최종본", "Full Package", "BLE", "ESP32", "Arduino"],
+    tags: ["충돌판정", "게임오버", "재시작", "AABB", "ESP32"],
+    pinMap: "LCD(MOSI:11, CLK:12, CS:13, DC:7, RST:6), 버튼:4",
     updatedAt: new Date().toISOString(),
-    code: `// [6주차] 소다봇 최종 통합 펌웨어 (BLE + 모션 + LED + 사운드)
-#include <BLEDevice.h>
-#include <BLEServer.h>
-#include <BLEUtils.h>
-#include <BLE2902.h>
-#include <ESP32Servo.h>
-
-#define SERVICE_UUID        "4fafc201-1fb5-459e-8fcc-c5c9c331914b"
-#define CHARACTERISTIC_UUID "beb5483e-36e1-4688-b7f5-ea07361b26a8"
-
-Servo neckServo;
-BLECharacteristic* pCharacteristic = NULL;
-bool deviceConnected = false;
-
-void setup() {
-  Serial.begin(115200);
-  neckServo.attach(18);
-  neckServo.write(90);
-
-  BLEDevice::init("Sodabot-Robot");
-  BLEServer *pServer = BLEDevice::createServer();
-  BLEService *pService = pServer->createService(SERVICE_UUID);
-  pCharacteristic = pService->createCharacteristic(
-    CHARACTERISTIC_UUID,
-    BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE
-  );
-  pService->start();
-  BLEDevice::getAdvertising()->start();
-
-  Serial.println("✨ 소다봇 6주차 통합 펌웨어 준비 완료!");
-}
-
-void loop() {
-  delay(20);
-}`
+    code: getFirmwareCode("soda-5-2.ino")
+  },
+  {
+    id: "content-week-5-score-level",
+    week: 5,
+    title: "5-3. 점수와 속도 증가",
+    description: "시간이 지날수록 실시간 점수(SCORE)가 올라가고, 난이도에 따라 선인장 속도가 점점 빨라지는 레벨업 시스템을 적용합니다.",
+    filename: "soda-5-3.ino",
+    language: "arduino",
+    tags: ["점수시스템", "난이도조절", "레벨업", "속도증가", "ESP32"],
+    pinMap: "LCD(MOSI:11, CLK:12, CS:13, DC:7, RST:6), 버튼:4",
+    updatedAt: new Date().toISOString(),
+    code: getFirmwareCode("soda-5-3.ino")
+  },
+  {
+    id: "content-week-5-dino-game-final",
+    week: 5,
+    title: "5-4. 최고점 저장 & 완성형 디노 게임",
+    description: "랜덤 선인장 간격, 공룡 발 달리기 애니메이션, EEPROM/Flash 최고 기록(BEST SCORE) 저장 기능이 모두 포함된 완성형 아케이드 디노 게임입니다.",
+    filename: "soda-5-4.ino",
+    language: "arduino",
+    tags: ["디노게임완성", "최고점수", "아케이드", "풀버전", "대결게임", "ESP32"],
+    pinMap: "LCD(MOSI:11, CLK:12, CS:13, DC:7, RST:6), 버튼:4, LED:2",
+    updatedAt: new Date().toISOString(),
+    code: getFirmwareCode("soda-5-4.ino")
   }
 ];
 
@@ -1354,7 +1028,17 @@ app.post("/api/admin/users/:id/apikey", requireAdmin, (req, res) => {
 // ----------------------------------------------------
 app.get("/api/course-contents", (req, res) => {
   const db = readDB();
-  const contents = (db.courseContents || DEFAULT_COURSE_CONTENTS).slice().sort((a, b) => a.week - b.week);
+  const rawContents = db.courseContents && db.courseContents.length > 0 ? db.courseContents : DEFAULT_COURSE_CONTENTS;
+  
+  // firmware 폴더에 실제 파일이 있다면 실시간 파일 내용으로 동기화하여 제공
+  const contents = rawContents.map(c => {
+    if (c.filename && c.filename.endsWith('.ino')) {
+      const liveCode = getFirmwareCode(c.filename, c.code);
+      return { ...c, code: liveCode };
+    }
+    return c;
+  }).sort((a, b) => a.week - b.week);
+
   res.json({ contents });
 });
 
@@ -1367,12 +1051,23 @@ app.post("/api/admin/course-contents", requireAdmin, (req, res) => {
   const db = readDB();
   if (!db.courseContents) db.courseContents = DEFAULT_COURSE_CONTENTS;
 
+  const targetFilename = (filename || `sodabot_week${week || 1}_code.ino`).trim();
+
+  // firmware 폴더에도 파일 저장
+  if (targetFilename.endsWith('.ino')) {
+    try {
+      fs.writeFileSync(path.join(FIRMWARE_DIR, targetFilename), code, 'utf8');
+    } catch (e) {
+      console.error('[Firmware Save Error]', e);
+    }
+  }
+
   const newContent: CourseContent = {
     id: "content-" + Date.now(),
     week: Number(week) || 1,
     title: title.trim(),
     description: (description || "").trim(),
-    filename: (filename || `sodabot_week${week || 1}_code.ino`).trim(),
+    filename: targetFilename,
     language: language || "arduino",
     tags: Array.isArray(tags) ? tags : (typeof tags === "string" ? tags.split(",").map((t: string) => t.trim()).filter(Boolean) : []),
     pinMap: pinMap ? pinMap.trim() : undefined,
@@ -1404,7 +1099,17 @@ app.put("/api/admin/course-contents/:id", requireAdmin, (req, res) => {
     content.tags = Array.isArray(tags) ? tags : (typeof tags === "string" ? tags.split(",").map((t: string) => t.trim()).filter(Boolean) : []);
   }
   if (pinMap !== undefined) content.pinMap = pinMap.trim();
-  if (code !== undefined) content.code = code;
+  if (code !== undefined) {
+    content.code = code;
+    // firmware 폴더에도 동기화
+    if (content.filename && content.filename.endsWith('.ino')) {
+      try {
+        fs.writeFileSync(path.join(FIRMWARE_DIR, content.filename), code, 'utf8');
+      } catch (e) {
+        console.error('[Firmware Save Error]', e);
+      }
+    }
+  }
   content.updatedAt = new Date().toISOString();
 
   writeDB(db);

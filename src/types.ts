@@ -38,7 +38,7 @@ export interface CourseContent {
   tags: string[];
   pinMap?: string;
   code: string;
-  contentType?: "code" | "circuit" | "doc";
+  contentType?: "code" | "circuit" | "doc" | "editor";
   imageUrl?: string;
   updatedAt?: string;
 }

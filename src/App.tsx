@@ -45,7 +45,8 @@ import {
   Folder,
   FolderOpen,
   FolderCode,
-  FileCode
+  FileCode,
+  Palette
 } from "lucide-react";
 import { ChatRoom, Message, LMStudioConfig, CourseContent } from "./types";
 
@@ -833,7 +834,10 @@ export default function App() {
         {/* 2. Admin Center Main (Global Dashboard or Dev Hub) */}
         {mainNavTab === "dev" ? (
           <div className="flex-1 flex flex-col h-screen overflow-hidden">
-            <DevCodeHubScreen />
+            <DevCodeHubScreen
+              selectedCodeId={selectedDevCodeId}
+              onSelectCode={setSelectedDevCodeId}
+            />
           </div>
         ) : (
           <main className="flex-1 flex flex-col h-screen overflow-y-auto bg-white border-r border-[#EAE6DF] p-6 relative">
@@ -1528,7 +1532,8 @@ export default function App() {
                         {weekCodes.map(codeItem => {
                           const isSelected = selectedDevCodeId === codeItem.id;
                           const isCircuit = codeItem.contentType === "circuit" || codeItem.title.includes("배선도");
-                          const ext = isCircuit ? "회로도" : (codeItem.filename.split(".").pop()?.toUpperCase() || "INO");
+                          const isEditor = codeItem.contentType === "editor" || codeItem.title.includes("화면편집기");
+                          const ext = isCircuit ? "회로도" : isEditor ? "에디터" : (codeItem.filename.split(".").pop()?.toUpperCase() || "INO");
 
                           return (
                             <button
@@ -1540,7 +1545,9 @@ export default function App() {
                                 isSelected
                                   ? isCircuit
                                     ? "bg-emerald-50 text-emerald-800 font-bold border border-emerald-200 shadow-2xs"
-                                    : "bg-indigo-50 text-indigo-700 font-bold border border-indigo-200 shadow-2xs"
+                                    : isEditor
+                                      ? "bg-purple-50 text-purple-800 font-bold border border-purple-200 shadow-2xs"
+                                      : "bg-indigo-50 text-indigo-700 font-bold border border-indigo-200 shadow-2xs"
                                   : "text-[#5C5B57] hover:text-[#1D1D1F] hover:bg-[#EAE6DF]/30"
                               }`}
                               title={`${codeItem.title} (${codeItem.filename})`}
@@ -1548,6 +1555,8 @@ export default function App() {
                               <div className="flex items-center gap-1.5 min-w-0 flex-1">
                                 {isCircuit ? (
                                   <ImageIcon className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-emerald-600' : 'text-emerald-500'}`} />
+                                ) : isEditor ? (
+                                  <Palette className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-purple-600' : 'text-purple-500'}`} />
                                 ) : (
                                   <FileCode className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-indigo-600' : 'text-[#86868B]'}`} />
                                 )}
@@ -1557,10 +1566,14 @@ export default function App() {
                                 isSelected
                                   ? isCircuit
                                     ? 'bg-emerald-100 text-emerald-800 font-extrabold'
-                                    : 'bg-indigo-100 text-indigo-800 font-extrabold'
+                                    : isEditor
+                                      ? 'bg-purple-100 text-purple-800 font-extrabold'
+                                      : 'bg-indigo-100 text-indigo-800 font-extrabold'
                                   : isCircuit
                                     ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/60'
-                                    : 'bg-[#EAE6DF]/60 text-[#86868B]'
+                                    : isEditor
+                                      ? 'bg-purple-50 text-purple-700 border border-purple-200/60 font-bold'
+                                      : 'bg-[#EAE6DF]/60 text-[#86868B]'
                               }`}>
                                 {ext}
                               </span>
