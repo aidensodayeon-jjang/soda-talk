@@ -1188,11 +1188,49 @@ export default function DevCodeHubScreen({ className, selectedCodeId, onSelectCo
               </div>
             </div>
           ) : (
-            /* Code Text Area */
-            <div className="flex-1 overflow-auto p-6 font-mono text-xs leading-relaxed text-[#cdd6f4] selection:bg-[#585b70] scrollbar-thin">
-              <pre className="whitespace-pre">
-                <code>{activeItem.code}</code>
-              </pre>
+            /* Code Text Area with Line Numbers */
+            <div className="flex-1 overflow-auto p-4 font-mono text-xs leading-relaxed text-[#cdd6f4] selection:bg-[#585b70] scrollbar-thin bg-[#1e1e2e]">
+              <div className="min-w-full inline-block">
+                <table className="w-full border-collapse">
+                  <tbody>
+                    {(activeItem.code || "").split("\n").map((line, idx) => {
+                      const isMissionLine = line.includes("★") || line.includes("👈") || line.includes("[실습 미션");
+                      const isComment = line.trim().startsWith("//") || line.trim().startsWith("/*") || line.trim().startsWith("*");
+                      return (
+                        <tr
+                          key={idx}
+                          className={`transition-colors ${
+                            isMissionLine
+                              ? "bg-amber-400/15"
+                              : "hover:bg-[#313244]/40"
+                          } group`}
+                        >
+                          <td
+                            className={`w-12 min-w-[3rem] text-right pr-4 select-none align-top font-mono text-[11px] border-r border-[#313244]/60 ${
+                              isMissionLine
+                                ? "text-amber-300 font-bold"
+                                : "text-[#585b70] group-hover:text-[#89b4fa]"
+                            }`}
+                          >
+                            {idx + 1}
+                          </td>
+                          <td
+                            className={`whitespace-pre pl-4 font-mono leading-relaxed ${
+                              isMissionLine
+                                ? "text-amber-200 font-semibold"
+                                : isComment
+                                ? "text-[#a6adc8]"
+                                : "text-[#cdd6f4]"
+                            }`}
+                          >
+                            {line || " "}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 

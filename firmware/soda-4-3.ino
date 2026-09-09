@@ -7,15 +7,19 @@
 // 오늘의 실습
 // ==================================
 //
-// 오늘 배울 기능: 여러 Y 위치를 빠르게 보여 주어 움직임 만들기
-// 학생이 수정할 부분: JUMP_DELAY 숫자
-// 수정하지 않아도 되는 부분: LCD 설정과 공룡 그리기 함수
+// 오늘 배울 기능: 점프의 힘과 중력으로 자연스럽게 움직이기
+// 학생이 수정할 부분: 
+//   1. 18라인 JUMP_POWER (점프하는 힘, 음수값)
+//   2. 19라인 GRAVITY (아래로 끌어당기는 중력)
+// 수정하지 않아도 되는 부분: 버튼 처리와 화면 갱신
 //
 
 // ========================
 // 학생 게임 설정
 // ========================
-int JUMP_DELAY = 70;  // 작을수록 점프 애니메이션이 빨라집니다.
+// ★★★ [실습 미션: 점프 힘과 중력 조절하기] ★★★
+float JUMP_POWER = -8.5f;  // 👈 [여기!] 점프의 힘 (예: -10.0f 더 높이 점프)
+float GRAVITY = 0.48f;     // 👈 [여기!] 공룡을 아래로 끌어당기는 힘 (예: 0.6f 빠른 착지)
 
 // ==================================
 // 수정하지 마세요: 게임 기본 코드
@@ -28,10 +32,18 @@ constexpr int MOSI = 11, CLK = 12, CS = 13, DC = 7, RST = 6;
 constexpr int SCREEN_W = 320;
 constexpr int GROUND_Y = 190;
 constexpr int DINO_X = 45;
-constexpr int DINO_GROUND_Y = 152;
+constexpr int DINO_H = 38;
+constexpr int DINO_GROUND_Y = GROUND_Y - DINO_H;
+constexpr uint32_t FRAME_MS = 33;
 
 SPIClass screenSPI(HSPI);
 Adafruit_ST7789 lcd(&screenSPI, Pin::CS, Pin::DC, Pin::RST);
+
+float dinoY = DINO_GROUND_Y;
+float jumpSpeed = 0;
+bool jumping = false;
+bool lastButton = HIGH;
+uint32_t nextFrame = 0;
 
 void drawDino(int x, int y) {
   lcd.fillRect(x + 13, y + 13, 15, 20, ST77XX_BLACK);
@@ -44,21 +56,30 @@ void drawDino(int x, int y) {
   lcd.fillRect(x + 25, y + 34, 8, 4, ST77XX_BLACK);
 }
 
-void showDinoAt(int y) {
-  // 화면 전체가 아니라 공룡이 움직이는 부분만 지웁니다.
-  lcd.fillRect(DINO_X - 5, 85, 55, GROUND_Y - 84, ST77XX_WHITE);
+void redrawDino() {
+  lcd.fillRect(DINO_X - 5, 65, 55, GROUND_Y - 64, ST77XX_WHITE);
   lcd.drawFastHLine(0, GROUND_Y, SCREEN_W, ST77XX_BLACK);
-  drawDino(DINO_X, y);
+  drawDino(DINO_X, int(dinoY));
 }
 
-void simpleJump() {
-  int jumpY[] = {152, 130, 110, 90, 110, 130, 152};
-  int stepCount = sizeof(jumpY) / sizeof(jumpY[0]);
+void startJump() {
+  if (jumping) return;  // 점프 중에는 다시 점프하지 않습니다.
+  jumping = true;
+  jumpSpeed = JUMP_POWER;
+}
 
-  for (int step = 0; step < stepCount; step++) {
-    showDinoAt(jumpY[step]);
-    delay(JUMP_DELAY);
+void updateJump() {
+  if (!jumping) return;
+
+  jumpSpeed += GRAVITY;
+  dinoY += jumpSpeed;
+
+  if (dinoY >= DINO_GROUND_Y) {
+    dinoY = DINO_GROUND_Y;
+    jumpSpeed = 0;
+    jumping = false;
   }
+  redrawDino();
 }
 
 void setup() {
@@ -71,13 +92,17 @@ void setup() {
 
   lcd.fillScreen(ST77XX_WHITE);
   lcd.drawFastHLine(0, GROUND_Y, SCREEN_W, ST77XX_BLACK);
-  drawDino(DINO_X, DINO_GROUND_Y);
+  drawDino(DINO_X, int(dinoY));
 }
 
 void loop() {
-  if (digitalRead(Pin::BUTTON) == LOW) {
-    simpleJump();
-    while (digitalRead(Pin::BUTTON) == LOW) delay(5);
-    delay(20);
-  }
+  bool buttonNow = digitalRead(Pin::BUTTON);
+  bool justPressed = buttonNow == LOW && lastButton == HIGH;
+  lastButton = buttonNow;
+  if (justPressed) startJump();
+
+  uint32_t now = millis();
+  if (int32_t(now - nextFrame) < 0) return;
+  nextFrame = now + FRAME_MS;
+  updateJump();
 }

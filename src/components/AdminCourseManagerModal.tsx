@@ -521,9 +521,22 @@ void loop() {
                       미리보기 닫기 ✕
                     </button>
                   </div>
-                  <pre className="text-xs font-mono text-[#cdd6f4] max-h-60 overflow-y-auto p-2 scrollbar-thin">
-                    <code>{previewContent.code}</code>
-                  </pre>
+                  <div className="max-h-60 overflow-y-auto p-2 scrollbar-thin">
+                    <table className="w-full border-collapse font-mono text-xs">
+                      <tbody>
+                        {(previewContent.code || "").split("\n").map((line, idx) => (
+                          <tr key={idx} className="hover:bg-[#313244]/40">
+                            <td className="w-10 min-w-[2.5rem] text-right pr-3 text-[#585b70] select-none align-top text-[10px] border-r border-[#313244]">
+                              {idx + 1}
+                            </td>
+                            <td className="whitespace-pre pl-3 text-[#cdd6f4]">
+                              {line || " "}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               )}
             </div>

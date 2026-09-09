@@ -7,26 +7,30 @@
 // 오늘의 실습
 // ==================================
 //
-// 오늘 배울 기능: Y좌표로 공룡의 높이 바꾸기
-// 학생이 수정할 부분: 아래 dinoY 숫자
+// 오늘 배울 기능: 여러 Y 위치를 빠르게 보여 주어 움직임 만들기
+// 학생이 수정할 부분: 
+//   1. 18라인 JUMP_DELAY 숫자 (점프 속도)
+//   2. 59라인 jumpY[] 점프 높이 배열 (점프 높이 Y좌표 목록)
 // 수정하지 않아도 되는 부분: LCD 설정과 공룡 그리기 함수
 //
 
 // ========================
-// 학생 실습: 152, 120, 90을 차례로 입력하세요.
+// 학생 게임 설정
 // ========================
-int dinoY = 152;
+int JUMP_DELAY = 70;  // 작을수록 점프 애니메이션이 빨라집니다.
 
 // ==================================
 // 수정하지 마세요: 게임 기본 코드
 // ==================================
 namespace Pin {
+constexpr uint8_t BUTTON = 4;
 constexpr int MOSI = 11, CLK = 12, CS = 13, DC = 7, RST = 6;
 }
 
 constexpr int SCREEN_W = 320;
 constexpr int GROUND_Y = 190;
 constexpr int DINO_X = 45;
+constexpr int DINO_GROUND_Y = 152;
 
 SPIClass screenSPI(HSPI);
 Adafruit_ST7789 lcd(&screenSPI, Pin::CS, Pin::DC, Pin::RST);
@@ -42,7 +46,29 @@ void drawDino(int x, int y) {
   lcd.fillRect(x + 25, y + 34, 8, 4, ST77XX_BLACK);
 }
 
+void showDinoAt(int y) {
+  // 화면 전체가 아니라 공룡이 움직이는 부분만 지웁니다.
+  lcd.fillRect(DINO_X - 5, 85, 55, GROUND_Y - 84, ST77XX_WHITE);
+  lcd.drawFastHLine(0, GROUND_Y, SCREEN_W, ST77XX_BLACK);
+  drawDino(DINO_X, y);
+}
+
+void simpleJump() {
+  // ========================================================
+  // ★★★ [실습 미션: 59라인 점프 높이(Y좌표) 바꾸기] ★★★
+  // 숫자가 작을수록 화면 더 높은 곳으로 점프합니다! (예: 90 -> 60)
+  // ========================================================
+  int jumpY[] = {152, 130, 110, 90, 110, 130, 152}; // 👈 [여기!] 공룡이 거쳐갈 Y좌표 목록
+  int stepCount = sizeof(jumpY) / sizeof(jumpY[0]);
+
+  for (int step = 0; step < stepCount; step++) {
+    showDinoAt(jumpY[step]);
+    delay(JUMP_DELAY);
+  }
+}
+
 void setup() {
+  pinMode(Pin::BUTTON, INPUT_PULLUP);
   screenSPI.begin(Pin::CLK, -1, Pin::MOSI, Pin::CS);
   lcd.init(240, 320);
   lcd.setSPISpeed(20000000);
@@ -51,9 +77,13 @@ void setup() {
 
   lcd.fillScreen(ST77XX_WHITE);
   lcd.drawFastHLine(0, GROUND_Y, SCREEN_W, ST77XX_BLACK);
-  drawDino(DINO_X, dinoY);
+  drawDino(DINO_X, DINO_GROUND_Y);
 }
 
 void loop() {
-  // 숫자를 바꾼 뒤 다시 업로드하여 위치를 확인합니다.
+  if (digitalRead(Pin::BUTTON) == LOW) {
+    simpleJump();
+    while (digitalRead(Pin::BUTTON) == LOW) delay(5);
+    delay(20);
+  }
 }
