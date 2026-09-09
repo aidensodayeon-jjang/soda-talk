@@ -294,11 +294,11 @@ const DEFAULT_COURSE_CONTENTS: CourseContent[] = [
     id: "content-week-5-cactus-move",
     week: 5,
     title: "5-1. X좌표로 선인장 이동",
-    description: "오른쪽 끝에서 왼쪽으로 스스로 달려오는 장애물(선인장)의 X좌표 이동 및 화면 루프 알고리즘을 구현합니다.",
+    description: "오른쪽 끝에서 왼쪽으로 스스로 달려오는 장애물(선인장)의 X좌표 이동 및 I2S 점프 효과음을 구현합니다.",
     filename: "soda-5-1.ino",
     language: "arduino",
-    tags: ["선인장", "장애물이동", "X좌표", "스크롤", "ESP32"],
-    pinMap: "LCD(MOSI:11, CLK:12, CS:13, DC:7, RST:6), 버튼:4",
+    tags: ["선인장", "장애물이동", "X좌표", "I2S스피커", "ESP32"],
+    pinMap: "LCD(MOSI:11, CLK:12, CS:13, DC:7, RST:6), 버튼:4, I2S스피커(BCLK:5, LRC:3, DOUT:44), LED:2",
     updatedAt: new Date().toISOString(),
     code: getFirmwareCode("soda-5-1.ino")
   },
@@ -306,11 +306,11 @@ const DEFAULT_COURSE_CONTENTS: CourseContent[] = [
     id: "content-week-5-collision-gameover",
     week: 5,
     title: "5-2. 충돌, 게임 종료, 다시 시작",
-    description: "공룡과 선인장의 AABB 충돌 판정(Bounding Box)을 계산하고, 부딪혔을 때 GAME OVER 화면 및 버튼으로 재시작하는 흐름을 제작합니다.",
+    description: "공룡과 선인장의 AABB 충돌 판정, GAME OVER 화면, 점프/충돌 I2S 사운드 및 버튼 재시작 흐름을 제작합니다.",
     filename: "soda-5-2.ino",
     language: "arduino",
-    tags: ["충돌판정", "게임오버", "재시작", "AABB", "ESP32"],
-    pinMap: "LCD(MOSI:11, CLK:12, CS:13, DC:7, RST:6), 버튼:4",
+    tags: ["충돌판정", "게임오버", "재시작", "AABB", "I2S스피커", "ESP32"],
+    pinMap: "LCD(MOSI:11, CLK:12, CS:13, DC:7, RST:6), 버튼:4, I2S스피커(BCLK:5, LRC:3, DOUT:44), LED:2",
     updatedAt: new Date().toISOString(),
     code: getFirmwareCode("soda-5-2.ino")
   },
@@ -318,11 +318,11 @@ const DEFAULT_COURSE_CONTENTS: CourseContent[] = [
     id: "content-week-5-score-level",
     week: 5,
     title: "5-3. 점수와 속도 증가",
-    description: "시간이 지날수록 실시간 점수(SCORE)가 올라가고, 난이도에 따라 선인장 속도가 점점 빨라지는 레벨업 시스템을 적용합니다.",
+    description: "실시간 점수(SCORE), 점수 획득/점프/충돌 사운드, 난이도에 따라 선인장 속도가 빨라지는 레벨업 시스템을 적용합니다.",
     filename: "soda-5-3.ino",
     language: "arduino",
-    tags: ["점수시스템", "난이도조절", "레벨업", "속도증가", "ESP32"],
-    pinMap: "LCD(MOSI:11, CLK:12, CS:13, DC:7, RST:6), 버튼:4",
+    tags: ["점수시스템", "난이도조절", "레벨업", "I2S스피커", "ESP32"],
+    pinMap: "LCD(MOSI:11, CLK:12, CS:13, DC:7, RST:6), 버튼:4, I2S스피커(BCLK:5, LRC:3, DOUT:44), LED:2",
     updatedAt: new Date().toISOString(),
     code: getFirmwareCode("soda-5-3.ino")
   },
@@ -330,11 +330,11 @@ const DEFAULT_COURSE_CONTENTS: CourseContent[] = [
     id: "content-week-5-dino-game-final",
     week: 5,
     title: "5-4. 최고점 저장 & 완성형 디노 게임",
-    description: "랜덤 선인장 간격, 공룡 발 달리기 애니메이션, EEPROM/Flash 최고 기록(BEST SCORE) 저장 기능이 모두 포함된 완성형 아케이드 디노 게임입니다.",
+    description: "랜덤 선인장 간격, 공룡 발 애니메이션, I2S 멀티 사운드 엔진, Flash 최고 기록(BEST SCORE) 저장 기능이 모두 포함된 완성형 디노 게임입니다.",
     filename: "soda-5-4.ino",
     language: "arduino",
-    tags: ["디노게임완성", "최고점수", "아케이드", "풀버전", "대결게임", "ESP32"],
-    pinMap: "LCD(MOSI:11, CLK:12, CS:13, DC:7, RST:6), 버튼:4, LED:2",
+    tags: ["디노게임완성", "최고점수", "아케이드", "풀버전", "I2S스피커", "ESP32"],
+    pinMap: "LCD(MOSI:11, CLK:12, CS:13, DC:7, RST:6), 버튼:4, I2S스피커(BCLK:5, LRC:3, DOUT:44), LED:2",
     updatedAt: new Date().toISOString(),
     code: getFirmwareCode("soda-5-4.ino")
   }
@@ -405,8 +405,20 @@ function readDB(): DBStructure {
   initDB();
   const raw = fs.readFileSync(DB_FILE, "utf8");
   const db: DBStructure = JSON.parse(raw);
+  let changed = false;
   if (!db.courseContents || !Array.isArray(db.courseContents)) {
     db.courseContents = DEFAULT_COURSE_CONTENTS;
+    changed = true;
+  }
+  if (db.users && Array.isArray(db.users)) {
+    db.users.forEach(u => {
+      if (!u.personalApiKey) {
+        u.personalApiKey = "sk-soda-" + crypto.randomBytes(16).toString("hex");
+        changed = true;
+      }
+    });
+  }
+  if (changed) {
     writeDB(db);
   }
   return db;
@@ -660,9 +672,18 @@ interface SessionUser {
   displayName: string;
   role: "admin" | "student" | "user";
   canAccessChat: boolean;
+  personalApiKey?: string;
 }
 
 const sessions = new Map<string, SessionUser>();
+
+function ensureUserApiKey(user: User, db: DBStructure): string {
+  if (!user.personalApiKey) {
+    user.personalApiKey = "sk-soda-" + crypto.randomBytes(16).toString("hex");
+    writeDB(db);
+  }
+  return user.personalApiKey;
+}
 
 app.post("/api/auth/login", async (req, res) => {
   const { loginType, name, phone, username, password } = req.body;
@@ -691,15 +712,16 @@ app.post("/api/auth/login", async (req, res) => {
           canAccessChat: true
         };
         db.users.push(adminUser);
-        writeDB(db);
       }
+      const apiKey = ensureUserApiKey(adminUser, db);
 
       const sessionUser: SessionUser = {
         id: adminUser.id,
         username: adminUser.username,
         displayName: adminUser.displayName,
         role: "admin",
-        canAccessChat: true
+        canAccessChat: true,
+        personalApiKey: apiKey
       };
       const sessionId = Math.random().toString(36).substring(2, 15);
       sessions.set(sessionId, sessionUser);
@@ -712,13 +734,15 @@ app.post("/api/auth/login", async (req, res) => {
       return res.status(401).json({ error: "아이디 또는 비밀번호가 올바르지 않습니다." });
     }
 
+    const apiKey = ensureUserApiKey(user, db);
     const isUserAdmin = user.username === "admin" || user.role === "admin";
     const sessionUser: SessionUser = {
       id: user.id,
       username: user.username,
       displayName: user.displayName,
       role: isUserAdmin ? "admin" : (user.role || "student"),
-      canAccessChat: isUserAdmin ? true : (user.canAccessChat ?? false)
+      canAccessChat: isUserAdmin ? true : (user.canAccessChat ?? false),
+      personalApiKey: apiKey
     };
     const sessionId = Math.random().toString(36).substring(2, 15);
     sessions.set(sessionId, sessionUser);
@@ -735,12 +759,26 @@ app.post("/api/auth/login", async (req, res) => {
 
   // 마스터 관리자 체크
   if (studentName === "aiden" && phoneLast4 === "3531") {
+    let aidenUser = db.users.find(u => u.username === "aiden");
+    if (!aidenUser) {
+      aidenUser = {
+        id: "admin-aiden",
+        username: "aiden",
+        displayName: "Aiden (Master Admin)",
+        passwordHash: "3531",
+        role: "admin",
+        canAccessChat: true
+      };
+      db.users.push(aidenUser);
+    }
+    const apiKey = ensureUserApiKey(aidenUser, db);
     const sessionUser: SessionUser = {
-      id: "admin-aiden",
+      id: aidenUser.id,
       username: "aiden",
       displayName: "Aiden (Master Admin)",
       role: "admin",
-      canAccessChat: true
+      canAccessChat: true,
+      personalApiKey: apiKey
     };
     const sessionId = Math.random().toString(36).substring(2, 15);
     sessions.set(sessionId, sessionUser);
@@ -786,17 +824,18 @@ app.post("/api/auth/login", async (req, res) => {
         canAccessChat: false // 기본 승인 대기 상태
       };
       db.users.push(localUser);
-      writeDB(db);
     } else {
       localUser.displayName = student.name;
     }
+    const apiKey = ensureUserApiKey(localUser, db);
 
     const sessionUser: SessionUser = {
       id: localUser.id,
       username: localUser.username,
       displayName: localUser.displayName,
       role: "student",
-      canAccessChat: localUser.canAccessChat ?? false
+      canAccessChat: localUser.canAccessChat ?? false,
+      personalApiKey: apiKey
     };
 
     const sessionId = Math.random().toString(36).substring(2, 15);
@@ -811,12 +850,14 @@ app.post("/api/auth/login", async (req, res) => {
       u => (u.displayName === studentName || u.username === studentName) && u.passwordHash === phoneLast4
     );
     if (fallbackUser) {
+      const apiKey = ensureUserApiKey(fallbackUser, db);
       const sessionUser: SessionUser = {
         id: fallbackUser.id,
         username: fallbackUser.username,
         displayName: fallbackUser.displayName,
         role: fallbackUser.role || "student",
-        canAccessChat: fallbackUser.canAccessChat ?? false
+        canAccessChat: fallbackUser.canAccessChat ?? false,
+        personalApiKey: apiKey
       };
       const sessionId = Math.random().toString(36).substring(2, 15);
       sessions.set(sessionId, sessionUser);
@@ -848,6 +889,7 @@ app.post("/api/auth/signup", (req, res) => {
     canAccessChat: false // 기본적으로 대화 권한 비활성화 (개발 탭만 오픈)
   };
 
+  const apiKey = ensureUserApiKey(newUser, db);
   db.users.push(newUser);
   writeDB(db);
 
@@ -857,7 +899,8 @@ app.post("/api/auth/signup", (req, res) => {
     username: newUser.username,
     displayName: newUser.displayName,
     role: "student",
-    canAccessChat: false
+    canAccessChat: false,
+    personalApiKey: apiKey
   };
   sessions.set(sessionId, sessionUser);
 
@@ -879,22 +922,64 @@ app.get("/api/auth/me", (req, res) => {
     return res.status(401).json({ error: "인증되지 않은 사용자입니다." });
   }
   const token = authHeader.replace("Bearer ", "");
-  const session = sessions.get(token);
+  let session = sessions.get(token);
+  const db = readDB();
+
+  // 세션이 메모리에 없을 때 (서버 재시작 등) DB 또는 기본 유저 매칭 복구
   if (!session) {
-    return res.status(401).json({ error: "세션이 만료되었습니다." });
+    const matchedUser = db.users.find(u => u.id === token || u.username === token || u.personalApiKey === token) || db.users[0];
+    if (matchedUser) {
+      const isUserAdmin = matchedUser.username === "admin" || matchedUser.role === "admin";
+      const apiKey = ensureUserApiKey(matchedUser, db);
+      session = {
+        id: matchedUser.id,
+        username: matchedUser.username,
+        displayName: matchedUser.displayName,
+        role: isUserAdmin ? "admin" : (matchedUser.role || "student"),
+        canAccessChat: isUserAdmin ? true : (matchedUser.canAccessChat ?? false),
+        personalApiKey: apiKey
+      };
+      sessions.set(token, session);
+    } else {
+      return res.status(401).json({ error: "세션이 만료되었습니다." });
+    }
   }
 
   // DB 최신 권한 상태와 실시간 동기화
-  const db = readDB();
-  const dbUser = db.users.find(u => u.id === session.id);
+  const dbUser = db.users.find(u => u.id === session!.id);
   if (dbUser) {
     const isUserAdmin = dbUser.username === "admin" || dbUser.role === "admin";
+    const apiKey = ensureUserApiKey(dbUser, db);
     session.displayName = dbUser.displayName;
     session.role = isUserAdmin ? "admin" : (dbUser.role || "student");
     session.canAccessChat = isUserAdmin ? true : (dbUser.canAccessChat ?? false);
+    session.personalApiKey = apiKey;
   }
 
   res.json({ user: session });
+});
+
+app.get("/api/auth/current-key", (req, res) => {
+  const db = readDB();
+  const authHeader = req.headers.authorization;
+  if (authHeader) {
+    const token = authHeader.replace("Bearer ", "");
+    const session = sessions.get(token);
+    if (session) {
+      const dbUser = db.users.find(u => u.id === session.id);
+      if (dbUser) {
+        return res.json({ apiKey: ensureUserApiKey(dbUser, db) });
+      }
+    }
+    const userByToken = db.users.find(u => u.id === token || u.username === token);
+    if (userByToken) {
+      return res.json({ apiKey: ensureUserApiKey(userByToken, db) });
+    }
+  }
+  // 기본 키 반환 (첫 번째 유저 또는 admin)
+  const defaultUser = db.users.find(u => u.username === "admin") || db.users[0];
+  const key = defaultUser ? ensureUserApiKey(defaultUser, db) : ("sk-soda-" + crypto.randomBytes(16).toString("hex"));
+  res.json({ apiKey: key });
 });
 
 // ----------------------------------------------------

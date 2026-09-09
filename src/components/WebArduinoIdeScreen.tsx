@@ -444,7 +444,7 @@ export default function WebArduinoIdeScreen({ initialCode, initialFilename, onCl
       // 5. Hard Reset Chip
       await espLoader.after("hard_reset");
       await transport.disconnect();
-      addLog("sys", "🔄 보드가 새 펌웨어로 자동 재부팅되었습니다! 소다봇 스피커에서 소리가 납니다.");
+      addLog("sys", "🔄 보드가 새 펌웨어로 자동 재부팅되었습니다.");
 
       // 6. Auto-reconnect serial monitor after reset
       setTimeout(async () => {

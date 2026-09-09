@@ -1,0 +1,815 @@
+// SODABOT BASIC: ESP32-S3, BLE/Wi-Fi/USB 명령 및 기본 표정
+#include <Arduino.h>
+#include <WiFi.h>
+#include <ArduinoJson.h>
+#include <driver/i2s.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_ST7789.h>
+#include <SPI.h>
+#include <BLEDevice.h>
+#include <BLEServer.h>
+#include <BLEUtils.h>
+#include <BLE2902.h>
+#include <AsyncTCP.h>
+#include <ESPAsyncWebServer.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/queue.h>
+const char* ssid = __SODA_WIFI_SSID__;
+const char* password = __SODA_WIFI_PASSWORD__;
+
+struct IncomingMessage { char json[1024]; uint32_t clientId; uint8_t source; };
+void processMessage(const IncomingMessage& message);
+AsyncWebServer server(8080);
+AsyncWebSocket ws("/soda/ws");
+QueueHandle_t incomingQueue;
+bool webServerStarted = false;
+// BLE UUID definitions matching web app
+#define SERVICE_UUID        "6b8a0001-4f2a-4b3c-9d5e-1a2b3c4d5e6f"
+#define CHAR_WRITE_UUID     "6b8a0002-4f2a-4b3c-9d5e-1a2b3c4d5e6f"
+#define CHAR_NOTIFY_UUID    "6b8a0003-4f2a-4b3c-9d5e-1a2b3c4d5e6f"
+
+BLEServer* pServer = NULL;
+BLECharacteristic* pNotifyCharacteristic = NULL;
+bool deviceConnected = false;
+
+
+// === SODA-AIBOT v2 보드 핀맵 (실물 SuperMini 핀 순서 기준) ===
+// 실물 헤더: 좌=TX(43) RX(44) 1 2 3 4 5 6 7,  우=5V G 3V3 13 12 11 10 9 8
+// LCD (하드웨어 SPI). 점퍼선 배선 시 CS = GPIO13, RST = GPIO6, DC = GPIO7
+#define TFT_CS   13
+#define TFT_RST  6   // LCD RES = GPIO6 (좌 8번째 핀)
+#define TFT_DC   7   // LCD DC  = GPIO7 (좌 9번째 핀)
+#define TFT_MOSI 11
+#define TFT_CLK  12
+SPIClass hspi(HSPI);
+Adafruit_ST7789 tft = Adafruit_ST7789(&hspi, TFT_CS, TFT_DC, TFT_RST);
+// 2.0" ST7789 240x320 LCD, setRotation(3) 기준 320x240 화면 (기존 방향에서 180도 회전)
+#define LEX    100
+#define REX    220
+#define EYE_Y  120
+#define EW      84
+#define EH      68
+#define ER      20
+
+// 스피커 (I2S_NUM_0) — J2: DIN=GPIO44(RX), LRC=GPIO1, BCLK=GPIO2
+#define I2S_SPK_BCLK 2
+#define I2S_SPK_LRC  1
+#define I2S_SPK_DOUT 44
+#define TTS_SAMPLE_RATE 24000
+#define SPEAKER_VOLUME_PERCENT 55
+#define SPEAKER_SAFE_PEAK 20000
+
+
+bool speakerReady = false;
+int16_t applySpeakerVolume(int16_t sample) {
+  int32_t amplified = ((int32_t)sample * SPEAKER_VOLUME_PERCENT) / 100;
+  // MAX98357A 입력에 여유를 남겨 큰 음절에서 생기는 지직거림을 방지한다.
+  if (amplified > SPEAKER_SAFE_PEAK) amplified = SPEAKER_SAFE_PEAK;
+  if (amplified < -SPEAKER_SAFE_PEAK) amplified = -SPEAKER_SAFE_PEAK;
+  return (int16_t)amplified;
+}
+
+// ── LCD 함수들 ────────────────────────────────────────────────────────────────
+
+#define LCD_BG_COLOR ST77XX_BLACK
+// 소다톡 웹앱의 시안/민트색(#22D3EE -> RGB 34, 211, 238)과 1:1 일치하는 RGB565 컬러
+#define EYE_COLOR 0x269D
+
+void drawEye(int cx, int cy, int ew, int eh, int er, int pox, int poy) {
+  tft.fillRoundRect(cx - ew/2, cy - eh/2, ew, eh, er, EYE_COLOR);
+}
+
+// ── 표정 함수들 ───────────────────────────────────────────────────────────────
+
+void idleEyes() {
+  tft.fillScreen(LCD_BG_COLOR);
+  drawEye(LEX, EYE_Y, EW, EH, ER, 0, 0);
+  drawEye(REX, EYE_Y, EW, EH, ER, 0, 0);
+}
+
+void blinkOnce() {
+  // 위에서 아래로 덮기
+  for (int d = 0; d <= EH + 4; d += 12) {
+    tft.fillRect(LEX - EW/2 - 2, EYE_Y - EH/2 - 2, EW + 4, d, LCD_BG_COLOR);
+    tft.fillRect(REX - EW/2 - 2, EYE_Y - EH/2 - 2, EW + 4, d, LCD_BG_COLOR);
+    delay(8);
+  }
+  delay(60);
+  idleEyes();
+}
+
+// ^^ 행복한 기쁨 눈 (아치형 ^ ^ 곡선 + 두근두근 애니메이션 및 반짝임)
+void happyEyes() {
+  // 펄스 바운스 애니메이션 (2회 통통 튀기)
+  for (int step = 0; step < 2; step++) {
+    for (int offset : {0, -6, 0}) {
+      tft.fillScreen(LCD_BG_COLOR);
+
+      // 두꺼운 반원 아치 라인 (^ ^)
+      for (int cx : {LEX, REX}) {
+        int cy = EYE_Y + 12 + offset;
+        int r = 44;
+        for (int t = 0; t < 16; t++) {
+          tft.drawCircle(cx, cy, r - t, EYE_COLOR);
+        }
+        // 아래쪽 깔끔하게 컷팅
+        tft.fillRect(cx - 50, cy, 100, 50, LCD_BG_COLOR);
+      }
+
+      // 우상단 반짝이는 기쁨 별/스파클 효과
+      tft.setTextColor(tft.color565(255, 220, 100)); // 따뜻한 골드 빛
+      tft.setTextSize(2);
+      tft.setCursor(LEX + 45, EYE_Y - 45 + offset);
+      tft.print("*");
+      tft.setCursor(REX + 45, EYE_Y - 45 + offset);
+      tft.print("*");
+
+      delay(60);
+    }
+  }
+}
+
+// 가로로 좁아진 눈 (녹음 중)
+void listeningEyes() {
+  tft.fillScreen(LCD_BG_COLOR);
+  drawEye(LEX, EYE_Y, EW, EH / 2, ER, 0, 0);
+  drawEye(REX, EYE_Y, EW, EH / 2, ER, 0, 0);
+}
+
+// 눈 위로 굴리기 (생각 중) — 위쪽 절반 마스킹
+void thinkingEyes() {
+  tft.fillScreen(LCD_BG_COLOR);
+  drawEye(LEX, EYE_Y, EW, EH, ER, 0, 0);
+  drawEye(REX, EYE_Y, EW, EH, ER, 0, 0);
+  tft.fillRect(LEX - EW/2 - 2, EYE_Y - EH/2 - 2, EW + 4, EH / 2, LCD_BG_COLOR);
+  tft.fillRect(REX - EW/2 - 2, EYE_Y - EH/2 - 2, EW + 4, EH / 2, LCD_BG_COLOR);
+}
+
+// 졸린 눈 — 화면 깜빡임 없이 Zzz 영역만 부분 갱신하여 둥실둥실 애니메이션
+void sleepyEyes() {
+  tft.fillScreen(LCD_BG_COLOR);
+  
+  // 감은 눈은 최초 1회만 그리기 (깜빡임 완벽 제거)
+  drawEye(LEX, EYE_Y, EW, EH, ER, 0, 0);
+  drawEye(REX, EYE_Y, EW, EH, ER, 0, 0);
+  tft.fillRect(LEX - EW/2 - 2, EYE_Y - EH/2 - 2, EW + 4, EH * 2/3, LCD_BG_COLOR);
+  tft.fillRect(REX - EW/2 - 2, EYE_Y - EH/2 - 2, EW + 4, EH * 2/3, LCD_BG_COLOR);
+
+  for (int step = 0; step < 2; step++) {
+    for (int dy : {0, -4, -8, -4}) {
+      // 우상단 Zzz 영역만 좁게 지우기 (전체 화면 fillScreen 제거)
+      tft.fillRect(250, 25, 68, 65, LCD_BG_COLOR);
+
+      // Zzz 부유 애니메이션
+      tft.setTextColor(tft.color565(129, 140, 248)); // Z (보라)
+      tft.setTextSize(3);
+      tft.setCursor(256, 36 + dy);
+      tft.print("Z");
+
+      tft.setTextColor(EYE_COLOR); // z (민트 시안)
+      tft.setTextSize(2);
+      tft.setCursor(276, 58 + (dy / 2));
+      tft.print("z");
+
+      tft.setTextSize(1);
+      tft.setCursor(290, 76);
+      tft.print("z");
+
+      delay(90);
+    }
+  }
+}
+
+// 화난 눈 — 안쪽 위 삼각형 마스킹으로 사선 눈썹 느낌
+void angryEyes() {
+  tft.fillScreen(LCD_BG_COLOR);
+  drawEye(LEX, EYE_Y, EW, EH, ER, 0, 0);
+  drawEye(REX, EYE_Y, EW, EH, ER, 0, 0);
+  // 왼쪽: 오른쪽 위 삼각형 마스킹
+  tft.fillTriangle(
+    LEX - EW/2, EYE_Y - EH/2,
+    LEX + EW/2, EYE_Y - EH/2,
+    LEX + EW/2, EYE_Y - EH/2 + EH/2,
+    LCD_BG_COLOR);
+  // 오른쪽: 왼쪽 위 삼각형 마스킹
+  tft.fillTriangle(
+    REX - EW/2, EYE_Y - EH/2,
+    REX + EW/2, EYE_Y - EH/2,
+    REX - EW/2, EYE_Y - EH/2 + EH/2,
+    LCD_BG_COLOR);
+}
+
+// 슬픈 눈 (시선이 아래로 처진 눈 + 눈물 💧 애니메이션)
+void sadEyes() {
+  for (int step = 0; step < 2; step++) {
+    for (int dropY = 0; dropY <= 24; dropY += 8) {
+      tft.fillScreen(LCD_BG_COLOR);
+      
+      // 눈 렌더링
+      drawEye(LEX, EYE_Y, EW, EH, ER, 0, 0);
+      drawEye(REX, EYE_Y, EW, EH, ER, 0, 0);
+
+      // 처진 사선 마스킹 (슬픈 눈썹 느낌)
+      tft.fillTriangle(
+        LEX - EW/2, EYE_Y - EH/2,
+        LEX + EW/2, EYE_Y - EH/2,
+        LEX - EW/2, EYE_Y - EH/2 + EH/2,
+        LCD_BG_COLOR);
+      tft.fillTriangle(
+        REX - EW/2, EYE_Y - EH/2,
+        REX + EW/2, EYE_Y - EH/2,
+        REX + EW/2, EYE_Y - EH/2 + EH/2,
+        LCD_BG_COLOR);
+
+      // 왼쪽 눈 아래 떨어지는 눈물방울 (💧)
+      uint16_t dropColor = tft.color565(34, 211, 238);
+      int tx = LEX - 20;
+      int ty = EYE_Y + EH/2 + 6 + dropY;
+      tft.fillCircle(tx, ty, 6, dropColor);
+      tft.fillTriangle(tx - 6, ty, tx + 6, ty, tx, ty - 10, dropColor);
+
+      delay(50);
+    }
+  }
+}
+
+// 놀란 눈 — 동그란 눈 + 가운데 동공 + ⚡ 깜짝 이펙트 애니메이션
+void surprisedEyes() {
+  for (int step = 0; step < 2; step++) {
+    tft.fillScreen(LCD_BG_COLOR);
+    int r = EH / 2 + 16;
+    
+    // 두 눈
+    tft.fillCircle(LEX, EYE_Y, r, EYE_COLOR);
+    tft.fillCircle(REX, EYE_Y, r, EYE_COLOR);
+    tft.fillCircle(LEX, EYE_Y, 7, LCD_BG_COLOR);
+    tft.fillCircle(REX, EYE_Y, 7, LCD_BG_COLOR);
+
+    // 상단 깜짝 번개 ⚡ 효과
+    tft.setTextColor(tft.color565(255, 230, 80));
+    tft.setTextSize(2);
+    tft.setCursor(140, EYE_Y - EH/2 - 25);
+    tft.print("!");
+
+    delay(100);
+  }
+}
+
+// 찡그린 눈 — 가로로 납작 + 가운데로 모임
+void squintEyes() {
+  tft.fillScreen(LCD_BG_COLOR);
+  drawEye(LEX + 20, EYE_Y, EW - 20, EH / 3, ER, 0, 0);
+  drawEye(REX - 20, EYE_Y, EW - 20, EH / 3, ER, 0, 0);
+}
+
+// 윙크 — 왼쪽 아치(^), 오른쪽 스파클 눈(✨)
+void winkEyes() {
+  tft.fillScreen(LCD_BG_COLOR);
+  
+  // 왼쪽 눈: 아치형 ^
+  for (int t = 0; t < 14; t++) {
+    tft.drawCircle(LEX, EYE_Y + 12, 38 - t, EYE_COLOR);
+  }
+  tft.fillRect(LEX - 44, EYE_Y + 12, 88, 44, LCD_BG_COLOR);
+
+  // 오른쪽 눈: 기본 눈 + 우상단 반짝이는 별 ✨
+  drawEye(REX, EYE_Y, EW, EH, ER, 0, 0);
+  tft.setTextColor(tft.color565(255, 220, 100));
+  tft.setTextSize(2);
+  tft.setCursor(REX + EW/2 - 2, EYE_Y - EH/2 - 6);
+  tft.print("*");
+}
+
+// 왼쪽 시선
+void lookLeft() {
+  tft.fillScreen(LCD_BG_COLOR);
+  drawEye(LEX - 16, EYE_Y, EW, EH, ER, 0, 0);
+  drawEye(REX - 16, EYE_Y, EW, EH, ER, 0, 0);
+}
+
+// 오른쪽 시선
+void lookRight() {
+  tft.fillScreen(LCD_BG_COLOR);
+  drawEye(LEX + 16, EYE_Y, EW, EH, ER, 0, 0);
+  drawEye(REX + 16, EYE_Y, EW, EH, ER, 0, 0);
+}
+
+// 아래 시선 (졸리거나 부끄러울 때)
+void lookDown() {
+  tft.fillScreen(LCD_BG_COLOR);
+  drawEye(LEX, EYE_Y + 15, EW, EH, ER, 0, 0);
+  drawEye(REX, EYE_Y + 15, EW, EH, ER, 0, 0);
+}
+
+// 하트눈
+void heartEyes() {
+  tft.fillScreen(LCD_BG_COLOR);
+  uint16_t hc = tft.color565(255, 50, 100);
+  for (int cx : {LEX, REX}) {
+    // 하트 = 원 두개 + 삼각형
+    tft.fillCircle(cx - 16, EYE_Y - 8, 22, hc);
+    tft.fillCircle(cx + 16, EYE_Y - 8, 22, hc);
+    tft.fillTriangle(cx - 40, EYE_Y - 8, cx + 40, EYE_Y - 8, cx, EYE_Y + 36, hc);
+  }
+}
+
+// 초롱이 눈 (초롱초롱한 동공 + 하이라이트 반짝임)
+void pupilEyes() {
+  tft.fillScreen(LCD_BG_COLOR);
+  for (int cx : {LEX, REX}) {
+    // 1. 민트 시안 바탕 눈
+    drawEye(cx, EYE_Y, EW, EH, ER, 0, 0);
+
+    // 2. 가운데 검은 동공
+    tft.fillCircle(cx, EYE_Y, 18, LCD_BG_COLOR);
+
+    // 3. 동공 우상단/좌하단 반짝이는 흰색 하이라이트 원
+    tft.fillCircle(cx + 6, EYE_Y - 6, 6, ST77XX_WHITE);
+    tft.fillCircle(cx - 6, EYE_Y + 7, 3, ST77XX_WHITE);
+
+    // 4. 눈 우상단 반짝임 별
+    tft.setTextColor(tft.color565(255, 220, 100));
+    tft.setTextSize(2);
+    tft.setCursor(cx + EW/2 - 4, EYE_Y - EH/2 - 8);
+    tft.print("*");
+  }
+}
+
+// 헷갈린 눈 — 한쪽 크고 한쪽 작음
+void confusedEyes() {
+  tft.fillScreen(LCD_BG_COLOR);
+  drawEye(LEX, EYE_Y, EW + 16, EH + 16, ER, 0, 0);  // 왼쪽 크게
+  drawEye(REX, EYE_Y, EW - 24, EH - 24, ER, 0, 0);  // 오른쪽 작게
+}
+
+// 좌우 둘러보기 애니메이션
+void lookAround() {
+  lookLeft();  delay(500);
+  idleEyes();  delay(200);
+  lookRight(); delay(500);
+  idleEyes();
+}
+
+// 고양이 얼굴 표정 (귀여운 ^ ^ 눈 + ▲w▲ 입 + 볼 홍조 + 수염)
+void catFace() {
+  tft.fillScreen(LCD_BG_COLOR);
+  uint16_t ec = EYE_COLOR;
+
+  // 1. 고양이 눈 (^ ^ 두꺼운 아치 라인)
+  for (int cx : {LEX, REX}) {
+    for (int t = 0; t < 14; t++) {
+      tft.drawCircle(cx, EYE_Y + 12, 38 - t, ec);
+    }
+    tft.fillRect(cx - 44, EYE_Y + 12, 88, 44, LCD_BG_COLOR);
+  }
+
+  // 2. 작은 코 (▲)
+  tft.fillTriangle(160, EYE_Y + 22, 153, EYE_Y + 34, 167, EYE_Y + 34, ec);
+
+  // 3. 고양이 입 (w 곡선 모양)
+  for (int t = 0; t < 4; t++) {
+    tft.drawCircle(145, EYE_Y + 38, 12 - t, ec);
+    tft.drawCircle(175, EYE_Y + 38, 12 - t, ec);
+  }
+  tft.fillRect(130, EYE_Y + 26, 70, 12, LCD_BG_COLOR);
+
+  // 4. 귀여운 분홍 볼 홍조 (핑크)
+  uint16_t pinkBlush = tft.color565(255, 130, 170);
+  tft.fillCircle(LEX - 45, EYE_Y + 26, 12, pinkBlush);
+  tft.fillCircle(REX + 45, EYE_Y + 26, 12, pinkBlush);
+
+  // 5. 양쪽 고양이 수염
+  tft.drawFastHLine(LEX - 65, EYE_Y + 15, 24, ec);
+  tft.drawFastHLine(LEX - 60, EYE_Y + 28, 22, ec);
+  tft.drawFastHLine(REX + 41, EYE_Y + 15, 24, ec);
+  tft.drawFastHLine(REX + 38, EYE_Y + 28, 22, ec);
+}
+
+void setupSpeaker() {
+  if (speakerReady) return;
+
+  i2s_config_t cfg = {
+    .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX),
+    .sample_rate = TTS_SAMPLE_RATE,
+    .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
+    .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
+    .communication_format = I2S_COMM_FORMAT_STAND_I2S,
+    .intr_alloc_flags = 0,
+    .dma_buf_count = 8,
+    .dma_buf_len = 512,
+    .use_apll = false
+  };
+  i2s_pin_config_t pins = {
+    .bck_io_num = I2S_SPK_BCLK,
+    .ws_io_num  = I2S_SPK_LRC,
+    .data_out_num = I2S_SPK_DOUT,
+    .data_in_num = I2S_PIN_NO_CHANGE
+  };
+  esp_err_t installResult = i2s_driver_install(I2S_NUM_0, &cfg, 0, NULL);
+  esp_err_t pinResult = installResult == ESP_OK
+    ? i2s_set_pin(I2S_NUM_0, &pins)
+    : installResult;
+  Serial.printf("Speaker I2S init: install=%s, pins=%s\n",
+                esp_err_to_name(installResult), esp_err_to_name(pinResult));
+  if (pinResult == ESP_OK) {
+    i2s_zero_dma_buffer(I2S_NUM_0);
+    speakerReady = true;
+  }
+}
+
+void finishSpeakerPlayback() {
+  int16_t silence[256] = {0};  // stereo 128 frames
+  size_t written = 0;
+
+  // 약 213ms 무음으로 DMA 전체를 밀어낸다. 마지막 write가 끝날 때는
+  // 기존 음성이 모두 출력되고 DMA에는 무음만 남아 안전하게 지울 수 있다.
+  for (int i = 0; i < 40; i++) {
+    i2s_write(I2S_NUM_0, silence, sizeof(silence), &written, portMAX_DELAY);
+  }
+  i2s_zero_dma_buffer(I2S_NUM_0);
+}
+
+void playToneI2S(int freqHz, int durationMs) {
+  if (!speakerReady) return;
+  int samples = (TTS_SAMPLE_RATE * durationMs) / 1000;
+  int16_t buffer[256];
+  size_t bytesWritten;
+
+  for (int i = 0; i < samples; i += 128) {
+    int chunkSize = min(128, samples - i);
+    for (int j = 0; j < chunkSize; j++) {
+      float t = (float)(i + j) / TTS_SAMPLE_RATE;
+      int16_t val = applySpeakerVolume(
+        (int16_t)(sin(2.0 * M_PI * freqHz * t) * 8000.0));
+      buffer[j * 2] = val;
+      buffer[j * 2 + 1] = val;
+    }
+    i2s_write(I2S_NUM_0, buffer, chunkSize * 4, &bytesWritten, portMAX_DELAY);
+  }
+  finishSpeakerPlayback();
+}
+
+// 소다톡 기존 조합형 한글 글꼴
+const uint16_t CHO_FONT_A[19][16] PROGMEM = {
+  {0x0000,0x3FE0,0x0060,0x0060,0x0060,0x0060,0x0060,0x0060,0x0060,0x0060,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000}, // ㄱ
+  {0x0000,0x3FE0,0x0660,0x0660,0x3FE0,0x0660,0x0660,0x0660,0x0660,0x0660,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000}, // ㄲ
+  {0x0000,0x0060,0x0060,0x0060,0x0060,0x0060,0x0060,0x0060,0x3FE0,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000}, // ㄴ
+  {0x0000,0x3FE0,0x0060,0x0060,0x0060,0x0060,0x0060,0x0060,0x3FE0,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000}, // ㄷ
+  {0x0000,0x3FE0,0x0660,0x0660,0x3FE0,0x0660,0x0660,0x0660,0x3FE0,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000}, // ㄸ
+  {0x0000,0x3FE0,0x0060,0x0060,0x3FE0,0x0600,0x0600,0x0600,0x3FE0,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000}, // ㄹ
+  {0x0000,0x3FE0,0x0660,0x0660,0x0660,0x0660,0x0660,0x0660,0x3FE0,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000}, // ㅁ
+  {0x0000,0x0660,0x0660,0x0660,0x3FE0,0x0660,0x0660,0x0660,0x3FE0,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000}, // ㅂ
+  {0x0000,0x0E70,0x0E70,0x0E70,0x3FF8,0x0E70,0x0E70,0x0E70,0x3FF8,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000}, // ㅃ
+  {0x0000,0x0180,0x03C0,0x0660,0x0C30,0x1818,0x300C,0x6006,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000}, // ㅅ
+  {0x0000,0x03C0,0x0660,0x0C30,0x1818,0x300C,0x0660,0x0C30,0x1818,0x300C,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000}, // ㅆ
+  {0x0000,0x07E0,0x0C30,0x1818,0x300C,0x300C,0x1818,0x0C30,0x07E0,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000}, // ㅇ
+  {0x0000,0x3FE0,0x0180,0x03C0,0x0660,0x0C30,0x1818,0x300C,0x6006,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000}, // ㅈ
+  {0x0000,0x3FE0,0x0000,0x3FE0,0x0180,0x03C0,0x0660,0x0C30,0x1818,0x300C,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000}, // ㅉ
+  {0x0000,0x0180,0x0000,0x3FE0,0x0180,0x03C0,0x0660,0x0C30,0x1818,0x300C,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000}, // ㅊ
+  {0x0000,0x3FE0,0x0060,0x0060,0x3FE0,0x0060,0x0060,0x0060,0x0060,0x0060,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000}, // ㅋ
+  {0x0000,0x3FE0,0x0060,0x0060,0x3FE0,0x0060,0x0060,0x0060,0x3FE0,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000}, // ㅌ
+  {0x0000,0x3FE0,0x0660,0x0660,0x3FE0,0x0660,0x0660,0x0660,0x3FE0,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000}, // ㅍ
+  {0x0000,0x0180,0x0000,0x3FE0,0x0000,0x07E0,0x0C30,0x1818,0x0C30,0x07E0,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000}  // ㅎ
+};
+
+// 2. 중성 21자 비트맵 (16x16: 모음 기둥 & 곁가지 정밀 도트)
+const uint16_t JUNG_FONT_A[21][16] PROGMEM = {
+  {0x0008,0x0008,0x0008,0x0008,0x0008,0x003E,0x0008,0x0008,0x0008,0x0008,0x0008,0x0008,0x0008,0x0008,0x0008,0x0000}, // 0: ㅏ
+  {0x0012,0x0012,0x0012,0x0012,0x0012,0x003E,0x0012,0x0012,0x0012,0x0012,0x0012,0x0012,0x0012,0x0012,0x0012,0x0000}, // 1: ㅐ
+  {0x0008,0x0008,0x0008,0x003E,0x0008,0x0008,0x003E,0x0008,0x0008,0x0008,0x0008,0x0008,0x0008,0x0008,0x0008,0x0000}, // 2: ㅑ
+  {0x0012,0x0012,0x0012,0x003E,0x0012,0x0012,0x003E,0x0012,0x0012,0x0012,0x0012,0x0012,0x0012,0x0012,0x0012,0x0000}, // 3: ㅒ
+  {0x0008,0x0008,0x0008,0x0008,0x0008,0x07C8,0x0008,0x0008,0x0008,0x0008,0x0008,0x0008,0x0008,0x0008,0x0008,0x0000}, // 4: ㅓ
+  {0x0012,0x0012,0x0012,0x0012,0x0012,0x07D2,0x0012,0x0012,0x0012,0x0012,0x0012,0x0012,0x0012,0x0012,0x0012,0x0000}, // 5: ㅔ
+  {0x0008,0x0008,0x0008,0x07C8,0x0008,0x0008,0x07C8,0x0008,0x0008,0x0008,0x0008,0x0008,0x0008,0x0008,0x0008,0x0000}, // 6: ㅕ
+  {0x0012,0x0012,0x0012,0x07D2,0x0012,0x0012,0x07D2,0x0012,0x0012,0x0012,0x0012,0x0012,0x0012,0x0012,0x0012,0x0000}, // 7: ㅖ
+  {0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0180,0x0180,0xFFFE,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000}, // 8: ㅗ
+  {0x0000,0x0000,0x0008,0x0008,0x0008,0x0008,0x0188,0x0188,0xFFFE,0x003E,0x0008,0x0008,0x0008,0x0008,0x0000,0x0000}, // 9: ㅘ
+  {0x0000,0x0000,0x0012,0x0012,0x0012,0x0012,0x0192,0x0192,0xFFFE,0x003E,0x0012,0x0012,0x0012,0x0012,0x0000,0x0000}, // 10: ㅙ
+  {0x0000,0x0000,0x0008,0x0008,0x0008,0x0008,0x0188,0x0188,0xFFFE,0x0008,0x0008,0x0008,0x0008,0x0008,0x0000,0x0000}, // 11: ㅚ
+  {0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0420,0x0420,0xFFFE,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000}, // 12: ㅛ
+  {0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0xFFFE,0x0180,0x0180,0x0000,0x0000,0x0000,0x0000}, // 13: ㅜ
+  {0x0000,0x0000,0x0008,0x0008,0x0008,0x0008,0x0008,0x07C8,0x0008,0xFFFE,0x0188,0x0188,0x0008,0x0008,0x0000,0x0000}, // 14: ㅝ
+  {0x0000,0x0000,0x0012,0x0012,0x0012,0x0012,0x0012,0x07D2,0x0012,0xFFFE,0x0192,0x0192,0x0012,0x0012,0x0000,0x0000}, // 15: ㅞ
+  {0x0000,0x0000,0x0008,0x0008,0x0008,0x0008,0x0008,0x0008,0x0008,0xFFFE,0x0188,0x0188,0x0008,0x0008,0x0000,0x0000}, // 16: ㅟ
+  {0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0xFFFE,0x0420,0x0420,0x0000,0x0000,0x0000,0x0000}, // 17: ㅠ
+  {0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000,0xFFFE,0x0000,0x0000,0x0000,0x0000,0x0000,0x0000}, // 18: ㅡ
+  {0x0000,0x0000,0x0008,0x0008,0x0008,0x0008,0x0008,0x0008,0x0008,0xFFFE,0x0008,0x0008,0x0008,0x0008,0x0000,0x0000}, // 19: ㅢ
+  {0x0008,0x0008,0x0008,0x0008,0x0008,0x0008,0x0008,0x0008,0x0008,0x0008,0x0008,0x0008,0x0008,0x0008,0x0008,0x0000}  // 20: ㅣ
+};
+
+// 3. 종성 28자 비트맵 (16x16: 하단 받침)
+const uint16_t JONG_FONT_A[28][16] PROGMEM = {
+  {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}, // 0: 없음
+  {0,0,0,0,0,0,0,0,0,0,0x3FE0,0x0060,0x0060,0x0060,0x0000,0}, // 1: ㄱ
+  {0,0,0,0,0,0,0,0,0,0,0x3FE0,0x0660,0x3FE0,0x0660,0x0000,0}, // 2: ㄲ
+  {0,0,0,0,0,0,0,0,0,0,0x3FE0,0x0060,0x03C0,0x0C30,0x0000,0}, // 3: ㄳ
+  {0,0,0,0,0,0,0,0,0,0,0x0060,0x0060,0x0060,0x3FE0,0x0000,0}, // 4: ㄴ
+  {0,0,0,0,0,0,0,0,0,0,0x0060,0x3FE0,0x03C0,0x0C30,0x0000,0}, // 5: ㄵ
+  {0,0,0,0,0,0,0,0,0,0,0x0060,0x3FE0,0x07E0,0x1818,0x0000,0}, // 6: ㄶ
+  {0,0,0,0,0,0,0,0,0,0,0x3FE0,0x0060,0x0060,0x3FE0,0x0000,0}, // 7: ㄷ
+  {0,0,0,0,0,0,0,0,0,0,0x3FE0,0x0060,0x3FE0,0x3FE0,0x0000,0}, // 8: ㄹ
+  {0,0,0,0,0,0,0,0,0,0,0x3EE0,0x0660,0x3EE0,0x0060,0x0000,0}, // 9: ㄺ
+  {0,0,0,0,0,0,0,0,0,0,0x3EE0,0x0660,0x3FE0,0x3FE0,0x0000,0}, // 10: ㄻ
+  {0,0,0,0,0,0,0,0,0,0,0x3EE0,0x0660,0x3FE0,0x3FE0,0x0000,0}, // 11: ㄼ
+  {0,0,0,0,0,0,0,0,0,0,0x3BC0,0x0660,0x0C30,0x1818,0x0000,0}, // 12: ㄽ
+  {0,0,0,0,0,0,0,0,0,0,0x3FE0,0x0060,0x3FE0,0x3FE0,0x0000,0}, // 13: ㄾ
+  {0,0,0,0,0,0,0,0,0,0,0x3FE0,0x0660,0x3FE0,0x3FE0,0x0000,0}, // 14: ㄿ
+  {0,0,0,0,0,0,0,0,0,0,0x3FE0,0x03C0,0x07E0,0x1818,0x0000,0}, // 15: ㅀ
+  {0,0,0,0,0,0,0,0,0,0,0x3FE0,0x0660,0x0660,0x3FE0,0x0000,0}, // 16: ㅁ
+  {0,0,0,0,0,0,0,0,0,0,0x0660,0x3FE0,0x0660,0x3FE0,0x0000,0}, // 17: ㅂ
+  {0,0,0,0,0,0,0,0,0,0,0x0660,0x3FE0,0x03C0,0x0C30,0x0000,0}, // 18: ㅄ
+  {0,0,0,0,0,0,0,0,0,0,0x03C0,0x0660,0x0C30,0x1818,0x0000,0}, // 19: ㅅ
+  {0,0,0,0,0,0,0,0,0,0,0x0660,0x0C30,0x1818,0x300C,0x0000,0}, // 20: ㅆ
+  {0,0,0,0,0,0,0,0,0,0,0x07E0,0x0C30,0x1818,0x07E0,0x0000,0}, // 21: ㅇ
+  {0,0,0,0,0,0,0,0,0,0,0x3FE0,0x03C0,0x0660,0x0C30,0x0000,0}, // 22: ㅈ
+  {0,0,0,0,0,0,0,0,0,0,0x0180,0x3FE0,0x03C0,0x0660,0x0000,0}, // 23: ㅊ
+  {0,0,0,0,0,0,0,0,0,0,0x3FE0,0x0060,0x3FE0,0x0060,0x0000,0}, // 24: ㅋ
+  {0,0,0,0,0,0,0,0,0,0,0x3FE0,0x0060,0x3FE0,0x3FE0,0x0000,0}, // 25: ㅌ
+  {0,0,0,0,0,0,0,0,0,0,0x3FE0,0x0660,0x3FE0,0x3FE0,0x0000,0}, // 26: ㅍ
+  {0,0,0,0,0,0,0,0,0,0,0x0180,0x3FE0,0x07E0,0x1818,0x0000,0}  // 27: ㅎ
+};
+
+// 단일 완성 한글 16x16 비트맵 렌더러
+void drawHangulChar(int16_t x, int16_t y, uint16_t unicode, uint16_t color, uint16_t bg, uint8_t size = 1) {
+  if (unicode < 0xAC00 || unicode > 0xD7A3) return;
+  uint16_t code = unicode - 0xAC00;
+  uint8_t cho = code / 588;          // 초성 0 ~ 18
+  uint8_t jung = (code % 588) / 28;  // 중성 0 ~ 20
+  uint8_t jong = code % 28;          // 종성 0 ~ 27
+
+  // 가로 모음 (ㅗ, ㅛ, ㅜ, ㅠ, ㅡ) 여부
+  bool isHoriz = (jung == 8 || jung == 12 || jung == 13 || jung == 17 || jung == 18);
+  int choShiftX = isHoriz ? 0 : 4;  // 세로 모음일 때는 초성을 왼쪽으로 이동 (x-4비트 = <<4)
+  int choShiftY = (jong > 0) ? -2 : 0; // 받침이 있을 때는 초성을 위로 약간 올림
+
+  for (int row = 0; row < 16; row++) {
+    uint16_t cLine = 0;
+    int srcRow = row - choShiftY;
+    if (srcRow >= 0 && srcRow < 16) {
+      uint16_t rawC = pgm_read_word(&(CHO_FONT_A[cho][srcRow]));
+      cLine = isHoriz ? rawC : (rawC << 4);
+    }
+
+    uint16_t uLine = pgm_read_word(&(JUNG_FONT_A[jung][row]));
+    uint16_t jLine = (jong > 0) ? pgm_read_word(&(JONG_FONT_A[jong][row])) : 0;
+
+    // 초성 + 중성 + 종성 비트 합성
+    uint16_t merged = cLine | uLine | jLine;
+
+    for (int col = 0; col < 16; col++) {
+      bool pixelOn = (merged & (0x8000 >> col)) != 0;
+      if (pixelOn) {
+        if (size == 1) {
+          tft.drawPixel(x + col, y + row, color);
+        } else {
+          tft.fillRect(x + col * size, y + row * size, size, size, color);
+        }
+      } else if (bg != 0) {
+        if (size == 1) {
+          tft.drawPixel(x + col, y + row, bg);
+        } else {
+          tft.fillRect(x + col * size, y + row * size, size, size, bg);
+        }
+      }
+    }
+  }
+}
+
+
+
+unsigned long expressionUntil = 0;
+bool customExpression = false;
+bool sleeping = false;
+uint32_t replyClient = 0;
+uint8_t replySource = 0;
+String replyId;
+
+void sendReply(const char* state, const char* reason = "", bool includeIp = false) {
+  StaticJsonDocument<256> doc;
+  doc["id"] = replyId;
+  doc["state"] = state;
+  if (reason[0]) doc["reason"] = reason;
+  if (includeIp) {
+    doc["protocol"] = 1;
+    if (WiFi.status() == WL_CONNECTED) doc["ip"] = WiFi.localIP().toString();
+  }
+  String json;
+  serializeJson(doc, json);
+  if (replySource == 2) ws.text(replyClient, json);
+  else if (replySource == 1 && deviceConnected) {
+    // 최소 BLE MTU에서도 응답이 잘리지 않도록 줄바꿈 단위로 분할한다.
+    json += "\n";
+    for (size_t i = 0; i < json.length(); i += 20) {
+      String chunk = json.substring(i, i + 20);
+      pNotifyCharacteristic->setValue(chunk.c_str());
+      pNotifyCharacteristic->notify();
+      delay(15);
+    }
+  } else Serial.println(json);
+}
+
+bool enqueueMessage(const char* data, size_t len, uint8_t source, uint32_t clientId = 0) {
+  if (len == 0 || len >= 1024) return false;
+  IncomingMessage message = {};
+  memcpy(message.json, data, len);
+  message.source = source;
+  message.clientId = clientId;
+  return xQueueSend(incomingQueue, &message, 0) == pdTRUE;
+}
+
+String bleInput;
+bool bleOverflow = false;
+class MyServerCallbacks: public BLEServerCallbacks {
+  void onConnect(BLEServer*) override { deviceConnected = true; }
+  void onDisconnect(BLEServer*) override {
+    deviceConnected = false;
+    bleInput = ""; bleOverflow = false;
+    BLEDevice::startAdvertising();
+  }
+};
+class MyWriteCallbacks: public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic* characteristic) override {
+    auto value = characteristic->getValue();
+    for (size_t i = 0; i < value.length(); ++i) {
+      char ch = value[i];
+      if (ch == '\n') {
+        if (!bleOverflow && bleInput.length()) enqueueMessage(bleInput.c_str(), bleInput.length(), 1);
+        bleInput = ""; bleOverflow = false;
+      } else if (!bleOverflow) {
+        if (bleInput.length() >= 1023) { bleInput = ""; bleOverflow = true; }
+        else bleInput += ch;
+      }
+    }
+    // 기존 JSON 전체 쓰기 클라이언트도 지원한다.
+    if (!bleOverflow && bleInput.endsWith("}")) {
+      StaticJsonDocument<1536> doc;
+      if (!deserializeJson(doc, bleInput)) {
+        enqueueMessage(bleInput.c_str(), bleInput.length(), 1);
+        bleInput = "";
+      }
+    }
+  }
+};
+
+void setupBLE() {
+  BLEDevice::init(__SODA_BLE_NAME__);
+  pServer = BLEDevice::createServer();
+  pServer->setCallbacks(new MyServerCallbacks());
+  BLEService* service = pServer->createService(SERVICE_UUID);
+  BLECharacteristic* write = service->createCharacteristic(CHAR_WRITE_UUID, BLECharacteristic::PROPERTY_WRITE);
+  write->setCallbacks(new MyWriteCallbacks());
+  pNotifyCharacteristic = service->createCharacteristic(CHAR_NOTIFY_UUID, BLECharacteristic::PROPERTY_NOTIFY);
+  pNotifyCharacteristic->addDescriptor(new BLE2902());
+  service->start();
+  BLEAdvertising* advertising = BLEDevice::getAdvertising();
+  advertising->addServiceUUID(SERVICE_UUID);
+  advertising->setScanResponse(true);
+  BLEDevice::startAdvertising();
+}
+
+void drawMessage(const String& message) {
+  tft.fillScreen(LCD_BG_COLOR);
+  tft.setTextWrap(false);
+  int x = 8, y = 16;
+  for (size_t i = 0; i < message.length() && y <= 216;) {
+    uint8_t c = message[i];
+    if (c == '\n') { x = 8; y += 20; ++i; continue; }
+    if (c == '\r') { ++i; continue; }
+    uint32_t code = c;
+    size_t count = 1;
+    if ((c & 0xE0) == 0xC0) { code = c & 0x1F; count = 2; }
+    else if ((c & 0xF0) == 0xE0) { code = c & 0x0F; count = 3; }
+    else if ((c & 0xF8) == 0xF0) { code = c & 0x07; count = 4; }
+    if (i + count > message.length()) break;
+    for (size_t n = 1; n < count; ++n) code = (code << 6) | (message[i + n] & 0x3F);
+    int width = (code >= 0xAC00 && code <= 0xD7A3) ? 16 : 12;
+    if (x + width > 312) { x = 8; y += 20; }
+    if (y > 216) break;
+    if (code >= 0xAC00 && code <= 0xD7A3) drawHangulChar(x, y, code, ST77XX_WHITE, LCD_BG_COLOR, 1);
+    else {
+      tft.setCursor(x, y); tft.setTextSize(2); tft.setTextColor(ST77XX_WHITE);
+      tft.print(code >= 32 && code <= 126 ? (char)code : '?');
+    }
+    x += width; i += count;
+  }
+}
+
+void startWebServerIfReady() {
+  if (!webServerStarted && WiFi.status() == WL_CONNECTED) {
+    server.begin();
+    webServerStarted = true;
+    Serial.println("명령 수신 주소: ws://" + WiFi.localIP().toString() + ":8080/soda/ws");
+  }
+}
+
+void processMessage(const IncomingMessage& message) {
+  replySource = message.source; replyClient = message.clientId; replyId = "";
+  DynamicJsonDocument doc(1536);
+  String raw(message.json); raw.trim();
+  String action, value;
+  if (raw.startsWith("{")) {
+    if (deserializeJson(doc, raw)) { sendReply("error", "invalid_json"); return; }
+    replyId = doc["id"] | "";
+    action = doc["action"] | ""; value = doc["value"] | "";
+  } else {
+    // 예전 웹의 HAPPY / MSG:내용 / SOUND:GREETING 형식도 수용한다.
+    int colon = raw.indexOf(':');
+    String prefix = colon < 0 ? raw : raw.substring(0, colon); prefix.toUpperCase();
+    if (prefix == "MSG" || prefix == "TEXT" || prefix == "TALK" || prefix == "WELCOME" || prefix == "PROFILE") {
+      action = "send_message"; value = raw.substring(colon + 1);
+    } else if (prefix == "SOUND") { action = "play_sound"; value = raw.substring(colon + 1); }
+    else if (prefix == "BEEP" || prefix == "GREETING" || prefix == "POWER_ON" || prefix == "BUTTON_CLICK" || prefix == "TOUCH_REACT") {
+      action = "play_sound"; value = prefix;
+    } else { action = "set_expression"; value = raw; }
+  }
+  if (action == "get_status") { sendReply("success", "", true); return; }
+  if (action == "configure_wifi" || doc["ssid"].is<const char*>()) {
+    if (!doc["ssid"].is<const char*>() || !doc["password"].is<const char*>()) { sendReply("error", "invalid_wifi"); return; }
+    WiFi.begin(doc["ssid"].as<const char*>(), doc["password"].as<const char*>());
+    unsigned long started = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - started < 15000) delay(20);
+    startWebServerIfReady(); // 성공 알림 전에 명령 수신 서버를 준비한다.
+    sendReply(WiFi.status() == WL_CONNECTED ? "success" : "error", WiFi.status() == WL_CONNECTED ? "" : "wifi_failed", true);
+    return;
+  }
+  if (action == "set_expression") {
+    value.toLowerCase();
+    if (value == "happy") happyEyes();
+    else if (value == "sad") sadEyes();
+    else if (value == "angry") angryEyes();
+    else if (value == "sleepy") sleepyEyes();
+    else if (value == "surprised") surprisedEyes();
+    else if (value == "wink") winkEyes();
+    else if (value == "heart") heartEyes();
+    else if (value == "confused") confusedEyes();
+    else if (value == "pupil") pupilEyes();
+    else if (value == "cat") catFace();
+    else if (value == "idle" || value == "default") idleEyes();
+    else { sendReply("error", "unsupported_expression"); return; }
+    sleeping = value == "sleepy";
+    customExpression = !sleeping && value != "idle" && value != "default";
+    expressionUntil = millis() + 3000;
+  } else if (action == "send_message" || action == "talk" || action == "set_welcome" || action == "set_profile" || action == "test_startup_prompt") {
+    if (value.length() == 0 || value.length() > 360) { sendReply("error", "text_length_1_to_360_bytes"); return; }
+    drawMessage(value);
+    sleeping = false; customExpression = true; expressionUntil = millis() + 10000;
+  } else if (action == "play_sound" || action == "beep") {
+    if (!speakerReady) { sendReply("error", "speaker_not_ready"); return; }
+    value.toLowerCase();
+    if (action == "beep" || value == "beep" || value == "button_click") playToneI2S(1000, 80);
+    else if (value == "power_on") { playToneI2S(440, 150); playToneI2S(880, 250); }
+    else if (value == "greeting") { playToneI2S(523, 120); playToneI2S(659, 120); playToneI2S(784, 200); }
+    else if (value == "touch_react") { playToneI2S(400, 100); playToneI2S(600, 150); }
+    else { sendReply("error", "unsupported_sound"); return; }
+  } else { sendReply("error", "unsupported_action"); return; }
+  sendReply("success");
+}
+
+void onWsEvent(AsyncWebSocket*, AsyncWebSocketClient* client, AwsEventType type, void* arg, uint8_t* data, size_t len) {
+  if (type != WS_EVT_DATA) return;
+  AwsFrameInfo* info = (AwsFrameInfo*)arg;
+  if (!info->final || info->index != 0 || info->len != len || info->opcode != WS_TEXT || !enqueueMessage((char*)data, len, 2, client->id())) {
+    client->text("{\"state\":\"error\",\"reason\":\"invalid_frame_or_busy\"}");
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+  incomingQueue = xQueueCreate(6, sizeof(IncomingMessage));
+  if (!incomingQueue) { Serial.println("큐 생성 실패"); while (true) delay(1000); }
+  hspi.begin(TFT_CLK, -1, TFT_MOSI, TFT_CS);
+  tft.init(240, 320); tft.setSPISpeed(40000000); tft.setRotation(3); tft.invertDisplay(true);
+  idleEyes();
+  Serial0.end(); // USB CDC Serial 유지, GPIO44는 스피커
+  setupSpeaker();
+  WiFi.mode(WIFI_STA); WiFi.setAutoReconnect(true);
+  setupBLE();
+  ws.onEvent(onWsEvent); server.addHandler(&ws);
+  if (ssid && ssid[0]) WiFi.begin(ssid, password);
+  Serial.println("SODABOT BASIC protocol=1 준비 완료");
+}
+
+void loop() {
+  startWebServerIfReady();
+  ws.cleanupClients();
+  static String serialInput;
+  static bool serialOverflow = false;
+  while (Serial.available()) {
+    char ch = Serial.read();
+    if (ch == '\n') {
+      if (!serialOverflow) enqueueMessage(serialInput.c_str(), serialInput.length(), 0);
+      serialInput = ""; serialOverflow = false;
+    } else if (!serialOverflow) {
+      if (serialInput.length() >= 1023) { serialInput = ""; serialOverflow = true; }
+      else serialInput += ch;
+    }
+  }
+  IncomingMessage message;
+  if (xQueueReceive(incomingQueue, &message, 0) == pdTRUE) processMessage(message);
+  if (customExpression && (int32_t)(millis() - expressionUntil) >= 0) {
+    customExpression = false; idleEyes();
+  }
+  static unsigned long lastBlink = 0;
+  if (!customExpression && !sleeping && millis() - lastBlink > 5000) { blinkOnce(); lastBlink = millis(); }
+  delay(5);
+}

@@ -95,7 +95,7 @@ void setupSpeaker() {
   config.bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT;
   config.channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT;
   config.communication_format = I2S_COMM_FORMAT_STAND_I2S;
-  config.intr_alloc_flags = ESP_INTR_FLAG_LEVEL1;
+  config.intr_alloc_flags = 0;
   config.dma_buf_count = 4;
   config.dma_buf_len = 256;
   config.use_apll = false;
@@ -111,8 +111,8 @@ void setupSpeaker() {
   i2s_driver_install(I2S_PORT, &config, 0, nullptr);
   i2s_set_pin(I2S_PORT, &pins);
   i2s_zero_dma_buffer(I2S_PORT);
-  xTaskCreatePinnedToCore(soundTask, "jumpSound", 2048, nullptr, 1,
-                         &soundTaskHandle, 0);
+  xTaskCreatePinnedToCore(soundTask, "jumpSound", 4096, nullptr, 1,
+                         &soundTaskHandle, 1);
 }
 
 void drawDino(int x, int y) {
@@ -154,9 +154,11 @@ void updateJump() {
 }
 
 void setup() {
+  Serial.begin(115200);
   pinMode(Pin::BUTTON, INPUT_PULLUP);
   pinMode(Pin::LED, OUTPUT);
-  setupSpeaker();
+
+  // 1. LCD 화면을 최우선으로 초기화 (스피커 오류로 인한 화면 먹통 방지)
   screenSPI.begin(Pin::CLK, -1, Pin::MOSI, Pin::CS);
   lcd.init(240, 320);
   lcd.setSPISpeed(20000000);
@@ -166,6 +168,9 @@ void setup() {
   lcd.fillScreen(ST77XX_WHITE);
   lcd.drawFastHLine(0, GROUND_Y, SCREEN_W, ST77XX_BLACK);
   drawDino(DINO_X, int(dinoY));
+
+  // 2. I2S 스피커 초기화
+  setupSpeaker();
 }
 
 void loop() {

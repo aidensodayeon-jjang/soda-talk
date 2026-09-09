@@ -1,3 +1,4 @@
+import { sodabotTransport } from './utils/sodabotTransport';
 import React, { useState, useEffect, useRef } from "react";
 import AuthScreen from "./components/AuthScreen";
 import SodabotConnectScreen from "./components/SodabotConnectScreen";
@@ -27,6 +28,7 @@ import {
   Info,
   Sun,
   ChevronDown,
+  ChevronRight,
   FileText,
   Zap,
   Users,
@@ -52,7 +54,7 @@ import { ChatRoom, Message, LMStudioConfig, CourseContent } from "./types";
 
 export default function App() {
   const [token, setToken] = useState<string | null>(localStorage.getItem("authSessionId"));
-  const [user, setUser] = useState<{ id: string; username: string; displayName: string; role?: string; canAccessChat?: boolean } | null>(null);
+  const [user, setUser] = useState<{ id: string; username: string; displayName: string; role?: string; canAccessChat?: boolean; personalApiKey?: string } | null>(null);
 
   // Main Navigation Tab: 'dev' (수업 & 펌웨어 개발실) vs 'chat' (소다봇 제어 & AI 코딩)
   const [mainNavTab, setMainNavTab] = useState<'dev' | 'chat'>('dev');
@@ -81,9 +83,124 @@ export default function App() {
   // Core Data States
   const [chats, setChats] = useState<ChatRoom[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
-  const [currentView, setCurrentView] = useState<'chat' | 'sodabot' | 'settings' | 'sodabot_builder'>('chat');
+  const [currentView, setCurrentView] = useState<'chat' | 'sodabot' | 'settings' | 'sodabot_builder'>('sodabot');
   const [inputText, setInputText] = useState("");
   const [sending, setSending] = useState(false);
+
+  // Real Hardware Connection States
+  const [sodabotIp, setSodabotIp] = useState<string | null>(localStorage.getItem("sodabot_robot_ip"));
+  const [connType, setConnType] = useState<'none' | 'wifi' | 'serial' | 'ble'>(sodabotTransport.type);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [serialPort, setSerialPort] = useState<any>(null);
+  const [manualIpInput, setManualIpInput] = useState("");
+  const [quickExprToast, setQuickExprToast] = useState<string | null>(null);
+
+  const isSodabotConnected = connType !== 'none';
+
+  // 1. Verify WebSocket Live Ping
+  const verifyWifiConnection = async (ipToCheck?: string | null) => {
+    const ip = ipToCheck || sodabotIp || localStorage.getItem('sodabot_robot_ip');
+    if (!ip) return;
+    setIsVerifying(true); setConnectionError(null);
+    try {
+      await sodabotTransport.connectWifi(ip);
+      await sodabotTransport.send('get_status');
+      setSodabotIp(ip);
+    } catch (error: any) { setConnectionError(error.message); }
+    finally { setIsVerifying(false); setConnType(sodabotTransport.type); }
+  };
+
+  // 2. Connect via Web Serial (Direct USB Cable)
+  const connectSerial = async () => {
+    if (!("serial" in navigator)) {
+      alert("현재 브라우저는 Web Serial을 지원하지 않습니다. Chrome 최신 버전을 사용해 주세요.");
+      return;
+    }
+    try {
+      setIsVerifying(true);
+      setConnectionError(null);
+      const port = await (navigator as any).serial.requestPort();
+      await port.open({ baudRate: 115200 });
+      setSerialPort(port);
+      void sodabotTransport.attachSerial(port).catch(error => setConnectionError(error.message));
+      setConnType('serial');
+      setIsVerifying(false);
+      setQuickExprToast("USB 시리얼 연결 성공!");
+      setTimeout(() => setQuickExprToast(null), 2500);
+    } catch (err: any) {
+      setIsVerifying(false);
+      if (err.name !== "NotFoundError") {
+        setConnectionError(`시리얼 연결 실패: ${err.message}`);
+      }
+    }
+  };
+
+  // 3. Send Hardware Command over Active Link (Serial or WebSocket)
+  const sendHardwareCommand = async (action: string, value: string, label?: string, detail?: any) => {
+    try {
+      await sodabotTransport.send(action, value, detail);
+      setConnectionError(null);
+      setQuickExprToast(`${label || "명령"} · 소다봇 처리 완료`); setTimeout(() => setQuickExprToast(null), 4000);
+    } catch (error: any) {
+      setConnectionError(error.message);
+      setQuickExprToast(error.message);
+      setTimeout(() => setQuickExprToast(null), 5000);
+    }
+    setConnType(sodabotTransport.type);
+  };
+
+  // Global listener for sodabot-send-command
+  useEffect(() => {
+    const handleCommandEvent = (e: any) => {
+      if (e.detail) {
+        sendHardwareCommand(e.detail.action, e.detail.value, e.detail.label, e.detail);
+      }
+    };
+    window.addEventListener("sodabot-send-command", handleCommandEvent);
+    return () => {
+      window.removeEventListener("sodabot-send-command", handleCommandEvent);
+    };
+  }, [connType, serialPort, sodabotIp]);
+
+  // 4. Disconnect Sodabot
+  const handleDisconnectSodabot = () => {
+    if (confirm("소다봇 연결을 해제하시겠습니까?")) {
+      sodabotTransport.disconnect();
+      setSerialPort(null);
+      localStorage.removeItem("sodabot_robot_ip");
+      setSodabotIp(null);
+      setConnType('none');
+      setConnectionError(null);
+      window.dispatchEvent(new Event("sodabot-status-changed"));
+      setCurrentView('sodabot');
+    }
+  };
+
+  // 5. Manual IP Direct Connect
+  const handleManualIpConnect = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manualIpInput.trim()) return;
+    const ip = manualIpInput.trim();
+    setManualIpInput("");
+    verifyWifiConnection(ip);
+  };
+
+  // Listen for storage / status events
+  useEffect(() => {
+    const handleStatus = () => {
+      const savedIp = localStorage.getItem("sodabot_robot_ip");
+      setSodabotIp(savedIp);
+      setConnType(sodabotTransport.type);
+    };
+    window.addEventListener("sodabot-status-changed", handleStatus);
+    window.addEventListener("storage", handleStatus);
+    handleStatus();
+    return () => {
+      window.removeEventListener("sodabot-status-changed", handleStatus);
+      window.removeEventListener("storage", handleStatus);
+    };
+  }, [serialPort]);
 
   // Settings Panel State
   const [showSettings, setShowSettings] = useState(false);
@@ -1347,7 +1464,7 @@ export default function App() {
         {monitoringChatId && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-fade-in">
             <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col border border-[#EAE6DF] overflow-hidden">
-              <div className="flex items-center justify-between p-5 border-b border-[#EAE6DF] bg-[#FAF9F6]">
+                  <div className="flex items-center justify-between p-5 border-b border-[#EAE6DF] bg-[#FAF9F6]">
                 <div>
                   <h3 className="text-lg font-bold text-[#1D1D1F]">대화 상세 내역</h3>
                   <p className="text-xs text-[#86868B]">실시간 모니터링 중입니다.</p>
@@ -1395,11 +1512,18 @@ export default function App() {
   return (
     <div className="flex h-screen bg-[#FAF9F6] text-[#2A2927] overflow-hidden font-sans selection:bg-[#9C282C]/10 selection:text-[#9C282C]">
 
+      {quickExprToast && (
+        <div role="status" aria-live="polite" className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] max-w-xl rounded-xl bg-slate-900 px-5 py-3 text-sm text-white shadow-lg">
+          {quickExprToast}
+        </div>
+      )}
+
       {/* 1. Sidebar Panel (Apple/Notion Vibe Left Section) */}
       <aside className="w-80 lg:w-[340px] border-r border-[#EAE6DF] bg-[#FAF9F6] flex flex-col justify-between shrink-0 h-screen select-none z-30">
 
         {/* Top Header & Main Navigation Tabs */}
-        <div className="p-4 flex flex-col gap-3">
+        {/* Top Header & Main Navigation Tabs */}
+        <div className="p-4 pb-2 flex flex-col gap-3">
           <div className="flex items-center gap-2 px-1">
             <div className="w-8 h-8 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-sm">
               <Cpu className="w-4 h-4" />
@@ -1411,7 +1535,7 @@ export default function App() {
           </div>
 
           {/* Primary Top Tab Switcher (수업/펌웨어 개발실 vs 소다봇 제어 & AI 코딩) */}
-          <div className="bg-[#EAE6DF]/70 p-1 rounded-2xl flex flex-col gap-1 shadow-inner mt-1">
+          <div className="bg-[#EAE6DF]/70 p-1 rounded-2xl flex flex-col gap-1 shadow-inner mt-0.5">
             <button
               id="tab-btn-dev-code"
               onClick={() => setMainNavTab("dev")}
@@ -1456,18 +1580,6 @@ export default function App() {
               )}
             </button>
           </div>
-
-          {/* Sub Menu when Chat Tab is Active */}
-          {mainNavTab === "chat" && user.canAccessChat && (
-            <button
-              id="new-chat-sidebar-btn"
-              onClick={() => { handleCreateNewChat(); setCurrentView('chat'); }}
-              className="w-full py-2 px-3 border border-dashed border-[#CFC9BF] hover:border-indigo-600 bg-white rounded-xl text-xs font-bold text-[#5C5B57] hover:text-indigo-600 flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-[0_1px_3px_rgba(0,0,0,0.02)] active:scale-[0.98]"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              새 코딩 & 제어 세션 시작
-            </button>
-          )}
         </div>
 
         {/* Sidebar Middle Section */}
@@ -1512,68 +1624,57 @@ export default function App() {
                       }}
                       className="w-full text-left px-2 py-1.5 rounded-xl text-xs font-bold flex items-center justify-between text-[#1D1D1F] hover:bg-[#EAE6DF]/40 transition-colors cursor-pointer group"
                     >
-                      <div className="flex items-center gap-1.5">
-                        <ChevronDown className={`w-3.5 h-3.5 text-[#86868B] transition-transform ${isExpanded ? '' : '-rotate-90'}`} />
+                      <div className="flex items-center gap-1.5 min-w-0">
                         {isExpanded ? (
-                          <FolderOpen className="w-4 h-4 text-amber-500 fill-amber-100" />
+                          <ChevronDown className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
                         ) : (
-                          <Folder className="w-4 h-4 text-amber-500 fill-amber-100" />
+                          <ChevronRight className="w-3.5 h-3.5 text-[#86868B] shrink-0" />
                         )}
-                        <span>{weekNum === 1 ? "1-2주차 실습" : `${weekNum}주차 실습`}</span>
+                        <span className="truncate">{weekNum}주차 실습</span>
                       </div>
-                      <span className="text-[10px] text-[#86868B] font-mono px-1.5 py-0.5 bg-[#FAF9F6] border border-[#EAE6DF] rounded-full">
-                        {weekCodes.length}
+                      <span className="text-[9px] text-[#86868B] font-mono bg-[#FAF9F6] px-1.5 py-0.5 rounded border border-[#EAE6DF]">
+                        {weekCodes.length}개
                       </span>
                     </button>
 
-                    {/* Files List Under This Week */}
+                    {/* File Children Rows */}
                     {isExpanded && (
-                      <div className="pl-3.5 pr-0.5 space-y-0.5 border-l-2 border-indigo-100 ml-3.5 my-0.5">
+                      <div className="pl-4 space-y-0.5 border-l-2 border-indigo-100 ml-3.5 my-1">
                         {weekCodes.map(codeItem => {
-                          const isSelected = selectedDevCodeId === codeItem.id;
-                          const isCircuit = codeItem.contentType === "circuit" || codeItem.title.includes("배선도");
-                          const isEditor = codeItem.contentType === "editor" || codeItem.title.includes("화면편집기");
-                          const ext = isCircuit ? "회로도" : isEditor ? "에디터" : (codeItem.filename.split(".").pop()?.toUpperCase() || "INO");
+                          const isSelected = selectedDevCodeId === codeItem.id && currentView === 'chat';
+                          const isCircuit = codeItem.category === 'circuit' || codeItem.title.includes('회로');
+                          const isEditor = codeItem.category === 'editor';
+                          const ext = codeItem.filename ? (codeItem.filename.split('.').pop() || 'ino') : 'ino';
 
                           return (
                             <button
                               key={codeItem.id}
                               onClick={() => {
                                 setSelectedDevCodeId(codeItem.id);
+                                setCurrentView('chat');
                               }}
-                              className={`w-full text-left px-2 py-1.5 rounded-lg text-xs transition-all flex items-center justify-between gap-1.5 cursor-pointer ${
+                              className={`w-full text-left px-2.5 py-1.5 rounded-xl text-xs flex items-center justify-between transition-all cursor-pointer ${
                                 isSelected
-                                  ? isCircuit
-                                    ? "bg-emerald-50 text-emerald-800 font-bold border border-emerald-200 shadow-2xs"
-                                    : isEditor
-                                      ? "bg-purple-50 text-purple-800 font-bold border border-purple-200 shadow-2xs"
-                                      : "bg-indigo-50 text-indigo-700 font-bold border border-indigo-200 shadow-2xs"
-                                  : "text-[#5C5B57] hover:text-[#1D1D1F] hover:bg-[#EAE6DF]/30"
+                                  ? 'bg-indigo-600 text-white font-bold shadow-xs'
+                                  : 'text-[#5C5B57] hover:bg-[#EAE6DF]/30 hover:text-[#1D1D1F]'
                               }`}
-                              title={`${codeItem.title} (${codeItem.filename})`}
                             >
-                              <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                                {isCircuit ? (
-                                  <ImageIcon className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-emerald-600' : 'text-emerald-500'}`} />
-                                ) : isEditor ? (
-                                  <Palette className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-purple-600' : 'text-purple-500'}`} />
-                                ) : (
-                                  <FileCode className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-indigo-600' : 'text-[#86868B]'}`} />
-                                )}
+                              <div className="flex items-center gap-1.5 min-w-0 pr-1">
+                                <FileCode className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-white' : 'text-indigo-500'}`} />
                                 <span className="truncate text-xs font-semibold">{codeItem.title}</span>
                               </div>
                               <span className={`text-[8px] px-1.5 py-0.5 rounded font-mono shrink-0 ${
                                 isSelected
                                   ? isCircuit
-                                    ? 'bg-emerald-100 text-emerald-800 font-extrabold'
-                                    : isEditor
-                                      ? 'bg-purple-100 text-purple-800 font-extrabold'
-                                      : 'bg-indigo-100 text-indigo-800 font-extrabold'
-                                  : isCircuit
-                                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/60'
-                                    : isEditor
-                                      ? 'bg-purple-50 text-purple-700 border border-purple-200/60 font-bold'
-                                      : 'bg-[#EAE6DF]/60 text-[#86868B]'
+                                  ? 'bg-emerald-100 text-emerald-800 font-extrabold'
+                                  : isEditor
+                                    ? 'bg-purple-100 text-purple-800 font-extrabold'
+                                    : 'bg-indigo-100 text-indigo-800 font-extrabold'
+                                : isCircuit
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/60'
+                                  : isEditor
+                                    ? 'bg-purple-50 text-purple-700 border border-purple-200/60 font-bold'
+                                    : 'bg-[#EAE6DF]/60 text-[#86868B]'
                               }`}>
                                 {ext}
                               </span>
@@ -1589,97 +1690,137 @@ export default function App() {
         ) : (
           <>
             {user.canAccessChat ? (
-              <>
-                {/* Categories */}
-                <div className="px-3 pb-2 space-y-0.5">
-                  <button onClick={() => setCurrentView('chat')} className={`w-full text-left px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-colors ${currentView === 'chat' ? 'bg-[#EAE6DF]/40 text-[#1D1D1F]' : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20'}`}>
-                    <MessageSquare className="w-3.5 h-3.5 text-indigo-600" /> AI 코딩 & 인터랙션
-                  </button>
-                  <button onClick={() => setCurrentView('sodabot_builder')} className={`w-full text-left px-3 py-2 rounded-xl text-xs font-medium text-[#5C5B57] hover:bg-[#EAE6DF]/20 flex items-center gap-2`}>
-                    <Sparkles className="w-3.5 h-3.5 text-amber-500" /> 소다봇빌더 (6주차)
-                  </button>
-                </div>
-
-                {/* Sodabot Management & Status Widget */}
-                <div className="px-3 py-2 space-y-1.5 border-t border-[#EAE6DF] mt-1">
-                  <div className="flex items-center justify-between px-3 py-1 text-[10px] font-semibold text-[#86868B] uppercase tracking-wider font-mono">
-                    <span>소다봇 관리</span>
-                    <span className={`w-1.5 h-1.5 rounded-full ${localStorage.getItem("sodabot_robot_ip") ? 'bg-emerald-500 animate-pulse' : 'bg-amber-400'}`}></span>
-                  </div>
-
-                  <button onClick={() => setCurrentView('sodabot')} className={`w-full text-left px-3 py-2 rounded-xl text-xs font-medium flex items-center justify-between transition-colors ${currentView === 'sodabot' ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20'}`}>
-                    <div className="flex items-center gap-2">
-                      <Bluetooth className="w-3.5 h-3.5 text-indigo-600" /> 
-                      <span>소다봇 연결</span>
-                    </div>
-                    {localStorage.getItem("sodabot_robot_ip") ? (
-                      <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-full">
-                        연결됨
+              <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2.5 scrollbar-thin">
+                {/* 소다봇 연결 상태 카드 (소다봇 제어 탭일 때만 2개 탭 바로 밑에 표시) */}
+                <button
+                  onClick={() => setCurrentView('sodabot')}
+                  className={`w-full text-left bg-white hover:bg-[#FAF9F6] border rounded-2xl p-2.5 shadow-xs transition-all cursor-pointer group ${
+                    currentView === 'sodabot' ? 'border-indigo-500 ring-2 ring-indigo-50 bg-indigo-50/20' : 'border-[#EAE6DF] hover:border-indigo-300'
+                  }`}
+                  title="클릭하여 소다봇 연결 및 펌웨어 관리 열기"
+                >
+                  <div className="flex items-center justify-between text-[10px] font-semibold text-[#86868B] font-mono mb-1.5 px-0.5">
+                    <span className="group-hover:text-indigo-600 transition-colors flex items-center gap-1">
+                      <span>소다봇 상태</span>
+                      <ChevronRight className="w-2.5 h-2.5 opacity-50 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
+                    </span>
+                    {isSodabotConnected ? (
+                      <span className="text-emerald-600 font-bold flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping" />
+                        {connType === 'wifi' ? 'Wi-Fi 온라인' : connType === 'ble' ? 'BLE 온라인' : 'USB 온라인'}
                       </span>
                     ) : (
-                      <span className="text-[9px] font-bold text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full">
-                        대기 중
+                      <span className="text-amber-600 font-bold flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                        미연결 (클릭하여 연결)
                       </span>
                     )}
-                  </button>
-
-                  <button onClick={() => setCurrentView('settings')} className={`w-full text-left px-3 py-2 rounded-xl text-xs font-medium flex items-center gap-2 transition-colors ${currentView === 'settings' ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20'}`}>
-                    <Settings className="w-3.5 h-3.5" /> 상태 & 설정
-                  </button>
-
-                  <button onClick={() => setCurrentView('sodabot_builder')} className={`w-full text-left px-3 py-2 rounded-xl text-xs font-medium flex items-center justify-between transition-colors ${currentView === 'sodabot_builder' ? 'bg-indigo-50 text-indigo-700 font-semibold' : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20'}`}>
-                    <div className="flex items-center gap-2">
-                      <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-                      <span>소다봇빌더</span>
-                    </div>
-                    <span className="text-[9px] font-extrabold text-indigo-600 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded-full">
-                      6주차
-                    </span>
-                  </button>
-                </div>
-
-                {/* Chat History List */}
-                <div className="flex-1 overflow-y-auto px-2 space-y-1 py-1 scrollbar-thin border-t border-[#EAE6DF] pt-3 mt-1">
-                  <div className="px-3 py-1 text-[10px] font-semibold text-[#86868B] uppercase tracking-wider font-mono">
-                    최근 대화 ({chats.length})
                   </div>
 
-                  {chats.length === 0 ? (
-                    <div className="p-4 text-center text-[11px] text-[#B0ACA5] font-mono leading-relaxed">
-                      작성된 대화가 없습니다.<br />새 대화를 시작해 보세요.
+                  <div className="flex items-center gap-2">
+                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-base shrink-0 ${
+                      isSodabotConnected 
+                        ? connType === 'serial' ? 'bg-blue-50 border border-blue-200' : 'bg-emerald-50 border border-emerald-200'
+                        : 'bg-[#FAF9F6] border border-[#EAE6DF] group-hover:border-indigo-200'
+                    }`}>
+                      {isSodabotConnected ? '🤖' : '💤'}
                     </div>
-                  ) : (
-                    chats.map((chat) => {
-                      const isActive = chat.id === activeChatId;
-                      return (
-                        <div
-                          key={chat.id}
-                          id={`chat-item-${chat.id}`}
-                          onClick={() => { setActiveChatId(chat.id); setCurrentView('chat'); }}
-                          className={`group flex items-center justify-between p-2.5 rounded-xl text-xs cursor-pointer transition-all ${isActive
-                              ? "bg-white border border-[#EAE6DF] text-[#1D1D1F] font-semibold shadow-sm"
-                              : "text-[#5C5B57] hover:bg-[#EAE6DF]/40 hover:text-[#1D1D1F]"
-                            }`}
-                        >
-                          <div className="flex items-center gap-2 truncate min-w-0 flex-1">
-                            <MessageSquare className={`w-3.5 h-3.5 shrink-0 ${isActive ? "text-[#9C282C]" : "text-[#86868B]"}`} />
-                            <span className="truncate">{chat.title}</span>
-                          </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between">
+                        <h5 className="text-xs font-bold text-[#1D1D1F] truncate group-hover:text-indigo-600 transition-colors">
+                          {isSodabotConnected 
+                            ? (localStorage.getItem("sodabot_device_name") || `SODABOT_${localStorage.getItem("sodabot_custom_name") || 'LUMI'}`)
+                            : '소다봇 연결하기'}
+                        </h5>
+                        {isSodabotConnected && <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />}
+                      </div>
+                      <p className="text-[10px] text-[#86868B] font-mono truncate">
+                        {isSodabotConnected 
+                          ? (connType === 'serial' ? 'USB @ 115200' : sodabotIp ? `IP: ${sodabotIp}` : 'Bluetooth LE')
+                          : '클릭하여 Wi-Fi/BLE 연결'}
+                      </p>
+                    </div>
+                  </div>
+                </button>
 
-                          <button
-                            id={`delete-chat-btn-${chat.id}`}
-                            onClick={(e) => handleDeleteChat(e, chat.id)}
-                            className="opacity-0 group-hover:opacity-100 p-1 hover:text-[#9C282C] transition-opacity cursor-pointer rounded"
-                            title="대화방 삭제"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        </div>
-                      );
-                    })
-                  )}
+                {/* Categories */}
+                <div className="space-y-1 pb-1 pt-0.5">
+                  <button
+                    onClick={() => setCurrentView('chat')}
+                    className={`w-full text-left px-3 py-2 rounded-xl text-xs font-semibold flex items-center justify-between transition-colors ${
+                      currentView === 'chat'
+                        ? 'bg-indigo-50 text-indigo-700 font-bold border border-indigo-200 shadow-2xs'
+                        : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <MessageSquare className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>소다와 대화하기</span>
+                    </div>
+                    <span className="text-[10px] text-indigo-600 font-bold">AI 대화</span>
+                  </button>
+
+                  <button
+                    onClick={() => setCurrentView('settings')}
+                    className={`w-full text-left px-3 py-2 rounded-xl text-xs font-medium flex items-center gap-2 transition-colors ${
+                      currentView === 'settings'
+                        ? 'bg-indigo-50 text-indigo-700 font-semibold border border-indigo-200 shadow-2xs'
+                        : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20'
+                    }`}
+                  >
+                    <Settings className="w-3.5 h-3.5 text-[#5C5B57]" />
+                    <span>상태 & 설정</span>
+                  </button>
+
+                  <button
+                    onClick={() => setCurrentView('sodabot_builder')}
+                    className={`w-full text-left px-3 py-2 rounded-xl text-xs font-medium flex items-center justify-between transition-colors ${
+                      currentView === 'sodabot_builder'
+                        ? 'bg-indigo-50 text-indigo-700 font-semibold border border-indigo-200 shadow-2xs'
+                        : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                      <span>소다봇빌더 (6주차)</span>
+                    </div>
+                  </button>
                 </div>
-              </>
+
+                {/* Chat Rooms List when in Chat View */}
+                {currentView === 'chat' && (
+                  <div className="pt-2 border-t border-[#EAE6DF] space-y-1.5">
+                    <div className="flex items-center justify-between px-1 text-[10px] font-semibold text-[#86868B] uppercase tracking-wider font-mono">
+                      <span>대화 기록</span>
+                      <button
+                        onClick={handleCreateNewChat}
+                        className="text-[10px] text-indigo-600 font-bold hover:underline cursor-pointer flex items-center gap-0.5"
+                      >
+                        <Plus className="w-3 h-3" /> 새 대화
+                      </button>
+                    </div>
+
+                    <div className="space-y-1 max-h-[220px] overflow-y-auto">
+                      {chats.map(chat => (
+                        <button
+                          key={chat.id}
+                          onClick={() => setActiveChatId(chat.id)}
+                          className={`w-full text-left px-2.5 py-2 rounded-xl text-xs flex items-center justify-between transition-colors cursor-pointer ${
+                            activeChatId === chat.id
+                              ? 'bg-indigo-100/70 text-indigo-900 font-bold'
+                              : 'text-[#5C5B57] hover:bg-[#EAE6DF]/30'
+                          }`}
+                        >
+                          <span className="truncate">{chat.title || '새로운 대화'}</span>
+                          <span className="text-[9px] text-[#86868B] font-mono shrink-0 ml-1">
+                            {new Date(chat.createdAt).toLocaleDateString([], { month: 'numeric', day: 'numeric' })}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             ) : (
               <div className="flex-1 p-4 flex flex-col justify-center items-center text-center space-y-3">
                 <div className="w-12 h-12 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600 shadow-sm">
@@ -1741,12 +1882,6 @@ export default function App() {
                     ⚡ [ ➔ ] 업로드 버튼 누르기!
                   </span>
                 </div>
-              </div>
-
-              {/* Bottom Tip Badge */}
-              <div className="text-[10px] text-[#5C5B57] font-medium flex items-center gap-1 bg-[#FAF9F6] p-1.5 rounded-lg border border-[#EAE6DF]">
-                <span>🤖</span>
-                <span className="leading-tight">업로드 완료 후 소다봇 스피커에서 소리가 납니다!</span>
               </div>
             </div>
           </div>
@@ -1840,7 +1975,58 @@ export default function App() {
       ) : (
         /* Normal Chat / Sodabot Connect / Builder View */
         <main className="flex-1 flex flex-col h-screen overflow-hidden bg-white relative">
-          {currentView === 'chat' ? (
+          {(!isSodabotConnected && currentView !== 'sodabot' && currentView !== 'settings') ? (
+            /* Connection Required Gate View */
+            <div className="flex-1 flex flex-col items-center justify-center h-full bg-[#FAF9F6] p-6 text-center select-none relative overflow-hidden">
+              <div className="absolute inset-0 bg-[linear-gradient(to_right,#EAE6DF_1px,transparent_1px),linear-gradient(to_bottom,#EAE6DF_1px,transparent_1px)] bg-[size:5rem_5rem] opacity-30 pointer-events-none" />
+
+              <div className="max-w-md w-full bg-white border border-[#EAE6DF] rounded-3xl p-8 shadow-xl space-y-6 relative z-10 animate-fade-in">
+                <div className="w-16 h-16 rounded-3xl bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-600 mx-auto shadow-sm text-3xl">
+                  🤖
+                </div>
+
+                <div className="space-y-2">
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-50 border border-amber-200 text-amber-700 rounded-full text-xs font-bold">
+                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                    소다봇 연결 필요
+                  </div>
+                  <h2 className="text-xl font-extrabold text-[#1D1D1F] tracking-tight">
+                    소다봇을 먼저 연결해 주세요
+                  </h2>
+                  <p className="text-xs text-[#5C5B57] leading-relaxed">
+                    <strong>AI 코딩 & 인터랙션</strong> 및 <strong>소다봇빌더</strong>를 사용하려면 실제 소다봇 하드웨어와의 연결이 필요합니다.
+                  </p>
+                </div>
+
+                <div className="p-4 bg-[#FAF9F6] border border-[#EAE6DF] rounded-2xl text-left space-y-2 text-xs">
+                  <div className="flex items-center gap-2 font-bold text-[#1D1D1F]">
+                    <Bluetooth className="w-4 h-4 text-indigo-600" />
+                    <span>원클릭 간편 연결 지원</span>
+                  </div>
+                  <p className="text-[11px] text-[#86868B] leading-relaxed">
+                    블루투스로 Wi-Fi를 1회 설정하면 이후 자동으로 실시간 WebSocket 연결이 활성화됩니다.
+                  </p>
+                </div>
+
+                <div className="flex flex-col gap-2 pt-2">
+                  <button
+                    onClick={() => setCurrentView('sodabot')}
+                    className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 active:scale-98 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Bluetooth className="w-4 h-4" />
+                    소다봇 연결하러 가기
+                  </button>
+                  <button
+                    onClick={() => setMainNavTab("dev")}
+                    className="w-full py-2.5 bg-white hover:bg-[#FAF9F6] border border-[#EAE6DF] text-[#5C5B57] rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <FolderCode className="w-3.5 h-3.5" />
+                    수업 & 펌웨어 개발실로 이동
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : currentView === 'chat' ? (
             <>
               {/* Apple style Minimal Header */}
               <header className="h-14 border-b border-[#EAE6DF] bg-white flex items-center justify-between px-6 shrink-0 z-10 select-none">
@@ -2031,7 +2217,7 @@ export default function App() {
         </div>
           </>
         ) : currentView === 'sodabot' ? (
-          <SodabotConnectScreen />
+          <SodabotConnectScreen currentUser={user} />
         ) : currentView === 'sodabot_builder' ? (
           <SodaAiLabScreen />
         ) : (

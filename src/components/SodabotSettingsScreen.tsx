@@ -1,3 +1,4 @@
+import { sodabotTransport } from '../utils/sodabotTransport';
 import React, { useState } from 'react';
 import { 
   Bot, Edit3, Save, Smile, Volume2, Sparkles, Sliders, Play, Plus, 
@@ -8,6 +9,13 @@ import {
 } from 'lucide-react';
 
 export default function SodabotSettingsScreen() {
+  const [connectionType, setConnectionType] = useState(sodabotTransport.type);
+  React.useEffect(() => {
+    const update = () => setConnectionType(sodabotTransport.type);
+    window.addEventListener('sodabot-status-changed', update);
+    return () => window.removeEventListener('sodabot-status-changed', update);
+  }, []);
+
   // State variables for interactive UI controls
   const [profileName, setProfileName] = useState('루미');
   const [profileDesc, setProfileDesc] = useState('항상 옆에서 응원해주는 친구');
@@ -15,27 +23,8 @@ export default function SodabotSettingsScreen() {
   const [exprTab, setExprTab] = useState<'basic' | 'custom'>('basic');
   const [selectedExpr, setSelectedExpr] = useState('happy');
   const exprTimeoutRef = React.useRef<any>(null);
-  const activeWsRef = React.useRef<WebSocket | null>(null);
-
-  // Persistent WebSocket Connection Handler for Low Latency
-  const sendWsCommand = (action: string, value: string) => {
-    const savedIp = localStorage.getItem("sodabot_robot_ip");
-    if (!savedIp) return;
-
-    try {
-      if (activeWsRef.current && activeWsRef.current.readyState === WebSocket.OPEN) {
-        activeWsRef.current.send(JSON.stringify({ type: "command", action, value }));
-      } else {
-        const ws = new WebSocket(`ws://${savedIp}:8080/soda/ws`);
-        activeWsRef.current = ws;
-        ws.onopen = () => {
-          ws.send(JSON.stringify({ type: "command", action, value }));
-        };
-        ws.onerror = (err) => console.log("Sodabot WS connect error", err);
-      }
-    } catch (e) {
-      console.error("WS Command Error", e);
-    }
+  const sendWsCommand = (action: string, value: string, label?: string) => {
+    window.dispatchEvent(new CustomEvent('sodabot-send-command', { detail: { action, value, label } }));
   };
 
   // Immediate Expression Execution with 3-Second Auto-Reset to Default
@@ -43,16 +32,16 @@ export default function SodabotSettingsScreen() {
     // 1. Update preview screen immediately
     setSelectedExpr(exprId);
 
-    // 2. Send command to real hardware instantly over WebSocket
-    sendWsCommand("set_expression", exprId);
+    // 2. Send command to real hardware instantly
+    sendWsCommand("set_expression", exprId, `${label} 표정 전송`);
 
-    showToast(`'${label}' 표정이 3초간 소다봇으로 즉시 전송됩니다!`);
+    showToast(`'${label}' 표정 요청 중…`);
 
     // 3. Reset to default/idle (happy) after 3 seconds
     if (exprTimeoutRef.current) clearTimeout(exprTimeoutRef.current);
     exprTimeoutRef.current = setTimeout(() => {
       setSelectedExpr('happy');
-      sendWsCommand("set_expression", "happy");
+      // 로봇 펌웨어가 기본 표정으로 복귀하므로 명령을 중복 전송하지 않는다.
     }, 3000);
   };
 
@@ -83,6 +72,42 @@ export default function SodabotSettingsScreen() {
   const [editColor, setEditColor] = useState('#22D3EE');
   const [editEffect, setEditEffect] = useState<'none' | 'pulse' | 'bounce' | 'glow'>('pulse');
 
+  // Real-time Dynamic Hardware Sync
+  const syncFaceToHardware = (overrideParams?: any) => {
+    const params = {
+      type: "render_face",
+      eyeWidth,
+      eyeHeight,
+      pupilX,
+      pupilY,
+      eyebrowTilt,
+      eyeRadius,
+      hasSparkle,
+      hasGloss,
+      shape: editShape,
+      mouth: editMouth,
+      color: editColor,
+      effect: editEffect,
+      ...overrideParams
+    };
+    sendWsCommand("render_face", JSON.stringify(params));
+  };
+
+  const syncPixelsToHardware = (grid: string[]) => {
+    const payload = JSON.stringify({
+      type: "render_pixels",
+      pixels: grid
+    });
+    sendWsCommand("render_pixels", payload);
+  };
+
+  // Sync to hardware in realtime when editor sliders / shapes change
+  React.useEffect(() => {
+    if (showExprEditor && editorTab === 'slider') {
+      syncFaceToHardware();
+    }
+  }, [eyeWidth, eyeHeight, pupilX, pupilY, eyebrowTilt, eyeRadius, hasSparkle, hasGloss, editShape, editMouth, editColor, editEffect, showExprEditor, editorTab]);
+
   // Handle Pixel Drawing Click & Mirroring
   const handlePixelClick = (index: number) => {
     const nextGrid = [...pixelGrid];
@@ -96,10 +121,13 @@ export default function SodabotSettingsScreen() {
       nextGrid[mirroredIndex] = drawColor;
     }
     setPixelGrid(nextGrid);
+    syncPixelsToHardware(nextGrid);
   };
 
   const handleClearPixelGrid = () => {
-    setPixelGrid(Array(256).fill('#090D16'));
+    const emptyGrid = Array(256).fill('#090D16');
+    setPixelGrid(emptyGrid);
+    syncPixelsToHardware(emptyGrid);
     showToast('픽셀 캔버스가 초기화되었습니다.');
   };
 
@@ -132,7 +160,8 @@ export default function SodabotSettingsScreen() {
       starIndices.forEach(i => grid[i] = '#FACC15');
     }
     setPixelGrid(grid);
-    showToast(`'${preset}' 픽셀 도안이 캔버스에 로드되었습니다!`);
+    syncPixelsToHardware(grid);
+    showToast(`'${preset}' 픽셀 도안이 소다봇으로 실시간 전송되었습니다!`);
   };
 
   // Custom Created Expression List State
@@ -536,11 +565,11 @@ export default function SodabotSettingsScreen() {
                 </button>
                 <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-indigo-50 text-indigo-600 border border-indigo-200">
                   <Bluetooth className="w-3.5 h-3.5 mr-1 text-indigo-500" />
-                  BLE / WS 대기중
+                  {connectionType === 'none' ? '연결 대기중' : connectionType.toUpperCase()}
                 </span>
                 <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-600 border border-emerald-200">
                   <span className="w-2 h-2 rounded-full bg-emerald-500 mr-1.5 animate-pulse"></span>
-                  소다봇 연결됨 (v1.2.3)
+                  {connectionType === 'none' ? '소다봇 미연결' : '소다봇 연결됨'}
                 </span>
               </div>
             </div>
@@ -609,7 +638,7 @@ export default function SodabotSettingsScreen() {
                       onClick={() => {
                         localStorage.setItem("sodabot_startup_prompt", startupPrompt);
                         sendWsCommand("test_startup_prompt", startupPrompt);
-                        showToast("소다봇으로 시작 인사 테스트 요청을 전송했습니다!");
+                        showToast("소다봇 텍스트 표시 요청 중…");
                       }}
                       className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[9px] font-bold rounded-lg transition-colors flex items-center gap-1 shadow-sm"
                     >
@@ -636,7 +665,10 @@ export default function SodabotSettingsScreen() {
             </div>
 
             <button 
-              onClick={() => showToast('소다봇 프로필 정보가 저장되었습니다!')}
+              onClick={() => {
+                sendWsCommand("set_profile", profileName, "프로필 정보 저장");
+                showToast('소다봇 프로필 정보가 저장되었습니다!');
+              }}
               className="mt-6 w-full py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold rounded-xl transition-colors shadow-sm flex items-center justify-center gap-1.5"
             >
               <Save className="w-3.5 h-3.5" />
@@ -790,7 +822,10 @@ export default function SodabotSettingsScreen() {
             </div>
 
             <button 
-              onClick={() => showToast('환영 인사 및 대기 화면 설정이 저장 후 전송되었습니다!')}
+              onClick={() => {
+                sendWsCommand("set_welcome", welcomeMsg, "대기화면 설정 전송");
+                showToast('환영 인사 및 대기 화면 설정이 저장 후 전송되었습니다!');
+              }}
               className="mt-6 w-full py-2.5 bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold rounded-xl transition-colors shadow-sm flex items-center justify-center gap-1.5"
             >
               <Save className="w-3.5 h-3.5" />
@@ -863,7 +898,10 @@ export default function SodabotSettingsScreen() {
             </div>
 
             <button 
-              onClick={() => showToast('소리 설정이 소다봇으로 성공적으로 전송되었습니다!')}
+              onClick={() => {
+                sendWsCommand("play_sound", "greeting", "소리 설정 소다봇 전송");
+                showToast('소리 설정이 소다봇으로 성공적으로 전송되었습니다!');
+              }}
               className="mt-6 w-full py-2.5 bg-purple-500 hover:bg-purple-600 text-white text-xs font-bold rounded-xl transition-colors shadow-sm flex items-center justify-center gap-1.5"
             >
               <Volume2 className="w-3.5 h-3.5" />
@@ -924,7 +962,10 @@ export default function SodabotSettingsScreen() {
             </div>
 
             <button 
-              onClick={() => showToast('동작 반응 설정이 저장 및 적용되었습니다!')}
+              onClick={() => {
+                sendWsCommand("set_reaction", "touch", "동작 반응 설정 전송");
+                showToast('동작 반응 설정이 저장 및 적용되었습니다!');
+              }}
               className="mt-6 w-full py-2.5 bg-rose-400 hover:bg-rose-500 text-white text-xs font-bold rounded-xl transition-colors shadow-sm flex items-center justify-center gap-1.5"
             >
               <Save className="w-3.5 h-3.5" />
@@ -1161,11 +1202,11 @@ export default function SodabotSettingsScreen() {
                 <span className="text-[10px] font-bold text-[#86868B]">연결 상태</span>
                 <div className="flex items-center gap-2 mt-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping"></span>
-                  <span className="text-sm font-bold text-emerald-600">⚡ 연결됨</span>
+                  <span className="text-sm font-bold text-emerald-600">{connectionType === 'none' ? '미연결' : '⚡ 연결됨'}</span>
                 </div>
               </div>
               <button 
-                onClick={() => showToast('소다봇과의 WebSocket 연결을 재시도합니다.')}
+                onClick={() => { sodabotTransport.disconnect(); showToast('소다봇 연결을 해제했습니다.'); }}
                 className="w-full py-1.5 bg-white border border-[#EAE6DF] text-xs font-semibold text-[#5C5B57] hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 rounded-xl transition-colors"
               >
                 연결 해제
