@@ -51,13 +51,13 @@ Adafruit_ST7789 tft = Adafruit_ST7789(&hspi, TFT_CS, TFT_DC, TFT_RST);
 #define EH      68
 #define ER      20
 
-// 스피커 (I2S_NUM_0) — J2: DIN=GPIO44(RX), LRC=GPIO1, BCLK=GPIO2
-#define I2S_SPK_BCLK 2
-#define I2S_SPK_LRC  1
+// 스피커 (I2S_NUM_0) — MAX98357A: DIN=GPIO44(RX), LRC=GPIO3, BCLK=GPIO5
+#define I2S_SPK_BCLK 5
+#define I2S_SPK_LRC  3
 #define I2S_SPK_DOUT 44
 #define TTS_SAMPLE_RATE 24000
-#define SPEAKER_VOLUME_PERCENT 55
-#define SPEAKER_SAFE_PEAK 20000
+#define SPEAKER_VOLUME_PERCENT 85
+#define SPEAKER_SAFE_PEAK 28000
 
 
 bool speakerReady = false;
@@ -397,7 +397,8 @@ void setupSpeaker() {
     .intr_alloc_flags = 0,
     .dma_buf_count = 8,
     .dma_buf_len = 512,
-    .use_apll = false
+    .use_apll = false,
+    .tx_desc_auto_clear = true
   };
   i2s_pin_config_t pins = {
     .bck_io_num = I2S_SPK_BCLK,
@@ -440,7 +441,7 @@ void playToneI2S(int freqHz, int durationMs) {
     for (int j = 0; j < chunkSize; j++) {
       float t = (float)(i + j) / TTS_SAMPLE_RATE;
       int16_t val = applySpeakerVolume(
-        (int16_t)(sin(2.0 * M_PI * freqHz * t) * 8000.0));
+        (int16_t)(sin(2.0 * M_PI * freqHz * t) * 16000.0));
       buffer[j * 2] = val;
       buffer[j * 2 + 1] = val;
     }
