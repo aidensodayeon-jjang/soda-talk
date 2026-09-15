@@ -667,30 +667,139 @@ void setupBLE() {
   BLEDevice::startAdvertising();
 }
 
-void drawMessage(const String& message) {
+inline uint32_t getUtf8Code(const String& s, size_t& i) {
+  if (i >= s.length()) return 0;
+  uint8_t c = (uint8_t)s[i];
+  if (c < 0x80) { ++i; return c; }
+  uint32_t code = c;
+  size_t count = 1;
+  if ((c & 0xE0) == 0xC0) { code = c & 0x1F; count = 2; }
+  else if ((c & 0xF0) == 0xE0) { code = c & 0x0F; count = 3; }
+  else if ((c & 0xF8) == 0xF0) { code = c & 0x07; count = 4; }
+  if (i + count > s.length()) { i = s.length(); return 0; }
+  for (size_t n = 1; n < count; ++n) {
+    code = (code << 6) | ((uint8_t)s[i + n] & 0x3F);
+  }
+  i += count;
+  return code;
+}
+
+inline int getGlyphWidth(uint32_t code, uint8_t size) {
+  if (code >= 0xAC00 && code <= 0xD7A3) return 16 * size; // 한글: 16px * size
+  if (code == ' ') return 10 * size;                      // 공백: 10px * size
+  if (code == '\t') return 20 * size;
+  return 12 * size;                                       // 영문/기호: 12px * size
+}
+
+void drawMessage(const String& message, uint8_t reqSize = 0) {
   tft.fillScreen(LCD_BG_COLOR);
   tft.setTextWrap(false);
-  int x = 8, y = 16;
-  for (size_t i = 0; i < message.length() && y <= 216;) {
-    uint8_t c = message[i];
-    if (c == '\n') { x = 8; y += 20; ++i; continue; }
+  if (message.length() == 0) return;
+
+  // 1. 전체 글자 수 및 개행 여부 분석
+  int totalGlyphs = 0;
+  bool hasNewline = false;
+  for (size_t i = 0; i < message.length();) {
+    uint8_t c = (uint8_t)message[i];
     if (c == '\r') { ++i; continue; }
-    uint32_t code = c;
-    size_t count = 1;
-    if ((c & 0xE0) == 0xC0) { code = c & 0x1F; count = 2; }
-    else if ((c & 0xF0) == 0xE0) { code = c & 0x0F; count = 3; }
-    else if ((c & 0xF8) == 0xF0) { code = c & 0x07; count = 4; }
-    if (i + count > message.length()) break;
-    for (size_t n = 1; n < count; ++n) code = (code << 6) | (message[i + n] & 0x3F);
-    int width = (code >= 0xAC00 && code <= 0xD7A3) ? 16 : 12;
-    if (x + width > 312) { x = 8; y += 20; }
-    if (y > 216) break;
-    if (code >= 0xAC00 && code <= 0xD7A3) drawHangulChar(x, y, code, ST77XX_WHITE, LCD_BG_COLOR, 1);
-    else {
-      tft.setCursor(x, y); tft.setTextSize(2); tft.setTextColor(ST77XX_WHITE);
-      tft.print(code >= 32 && code <= 126 ? (char)code : '?');
+    if (c == '\n') { hasNewline = true; ++i; continue; }
+    getUtf8Code(message, i);
+    totalGlyphs++;
+  }
+
+  // 2. 글자 크기(size) 결정 (요청 크기 reqSize가 0이면 스마트 자동 조절)
+  // 1~6자(짧은 문구, 예: "하이요"): size 3 (48x48px)
+  // 7~18자(보통 문장, 예: "오늘 날씨 좋다!"): size 2 (32x32px)
+  // 19자 이상(긴 글): size 1 (16x16px)
+  uint8_t size = reqSize;
+  if (size == 0) {
+    if (totalGlyphs <= 6 && !hasNewline) {
+      size = 3;
+    } else if (totalGlyphs <= 18) {
+      size = 2;
+    } else {
+      size = 1;
     }
-    x += width; i += count;
+  }
+  if (size < 1) size = 1;
+  if (size > 3) size = 3;
+
+  int lineH = (16 * size) + (size == 1 ? 4 : (size == 2 ? 8 : 10));
+  int maxW = 310;
+
+  // 3. 줄 분할 정보 구조체
+  struct LineInfo {
+    size_t startByte;
+    size_t endByte;
+    int width;
+  };
+  constexpr int MAX_LINES = 12;
+  LineInfo lines[MAX_LINES];
+  int lineCount = 0;
+
+  size_t currentLineStart = 0;
+  int currentLineW = 0;
+
+  for (size_t i = 0; i < message.length() && lineCount < MAX_LINES;) {
+    size_t charStart = i;
+    uint8_t c = (uint8_t)message[i];
+    if (c == '\r') { ++i; continue; }
+    if (c == '\n') {
+      lines[lineCount++] = { currentLineStart, charStart, currentLineW };
+      ++i;
+      currentLineStart = i;
+      currentLineW = 0;
+      continue;
+    }
+
+    uint32_t code = getUtf8Code(message, i);
+    if (code == 0) break;
+    int gw = getGlyphWidth(code, size);
+
+    // 가로 폭 초과 시 다음 줄로 넘김
+    if (currentLineW + gw > maxW && currentLineW > 0) {
+      lines[lineCount++] = { currentLineStart, charStart, currentLineW };
+      currentLineStart = charStart;
+      currentLineW = gw;
+    } else {
+      currentLineW += gw;
+    }
+  }
+  if (currentLineStart < message.length() && lineCount < MAX_LINES) {
+    lines[lineCount++] = { currentLineStart, message.length(), currentLineW };
+  }
+  if (lineCount == 0) return;
+
+  // 4. 수직 중앙 정렬 (startY) 계산
+  int totalH = lineCount * lineH - (size == 1 ? 4 : (size == 2 ? 8 : 10));
+  int startY = (240 - totalH) / 2;
+  if (startY < 8) startY = 8;
+
+  // 5. 각 줄 렌더링 (수평 중앙 정렬)
+  for (int l = 0; l < lineCount; l++) {
+    int startX = (320 - lines[l].width) / 2;
+    if (startX < 6) startX = 6;
+    int curX = startX;
+    int curY = startY + l * lineH;
+    if (curY + (16 * size) > 236) break;
+
+    for (size_t i = lines[l].startByte; i < lines[l].endByte;) {
+      uint8_t c = (uint8_t)message[i];
+      if (c == '\r' || c == '\n') { ++i; continue; }
+      uint32_t code = getUtf8Code(message, i);
+      if (code == 0) break;
+      int gw = getGlyphWidth(code, size);
+
+      if (code >= 0xAC00 && code <= 0xD7A3) {
+        drawHangulChar(curX, curY, code, ST77XX_WHITE, LCD_BG_COLOR, size);
+      } else if (code != ' ') {
+        tft.setCursor(curX, curY);
+        tft.setTextSize(size * 2);
+        tft.setTextColor(ST77XX_WHITE, LCD_BG_COLOR);
+        tft.print(code >= 32 && code <= 126 ? (char)code : '?');
+      }
+      curX += gw;
+    }
   }
 }
 
@@ -751,7 +860,8 @@ void processMessage(const IncomingMessage& message) {
     expressionUntil = millis() + 3000;
   } else if (action == "send_message" || action == "talk" || action == "set_welcome" || action == "set_profile" || action == "test_startup_prompt") {
     if (value.length() == 0 || value.length() > 360) { sendReply("error", "text_length_1_to_360_bytes"); return; }
-    drawMessage(value);
+    uint8_t reqSize = doc["size"] | 0;
+    drawMessage(value, reqSize);
     sleeping = false; customExpression = true; expressionUntil = millis() + 10000;
   } else if (action == "play_sound" || action == "beep") {
     if (!speakerReady) { sendReply("error", "speaker_not_ready"); return; }

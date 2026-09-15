@@ -87,6 +87,7 @@ export default function SodabotConnectScreen({ currentUser }: SodabotConnectScre
   const [robotIp, setRobotIp] = useState<string | null>(localStorage.getItem("sodabot_robot_ip"));
   const [copiedCode, setCopiedCode] = useState(false);
   const [messageText, setMessageText] = useState('');
+  const [textSize, setTextSize] = useState<number>(0);
   const [manualIpInput, setManualIpInput] = useState('');
 
   const bleDeviceRef = useRef<any>(null);
@@ -575,17 +576,68 @@ export default function SodabotConnectScreen({ currentUser }: SodabotConnectScre
                   ))}
                 </div>
 
-                <label className="block text-xs font-bold text-[#1D1D1F] pt-2">
-                  소다봇 화면에 보낼 텍스트
-                  <textarea value={messageText} onChange={event => setMessageText(event.target.value)}
-                    placeholder="예: 안녕하세요!" rows={3}
-                    className="mt-2 w-full rounded-xl border border-[#EAE6DF] p-3 text-sm font-normal" />
-                </label>
-                <button disabled={!messageText.trim()} className="rounded-xl bg-indigo-600 px-4 py-2 text-xs text-white disabled:opacity-40"
-                  onClick={() => window.dispatchEvent(new CustomEvent('sodabot-send-command', {
-                    detail: { action: 'send_message', value: messageText, label: '텍스트 표시' }
-                  }))}>텍스트 표시</button>
-                <p className="text-[10px] text-[#86868B]">한글 텍스트를 10초간 표시합니다. 최대 360바이트(한글 약 120자).</p>
+                <div className="pt-2 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-[#1D1D1F]">
+                      소다봇 화면에 보낼 텍스트
+                    </label>
+                    <span className="text-[10px] text-indigo-600 font-semibold bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100">
+                      스마트 자동 확대 & 중앙 정렬 지원
+                    </span>
+                  </div>
+
+                  <textarea 
+                    value={messageText} 
+                    onChange={event => setMessageText(event.target.value)}
+                    placeholder="예: 하이요! 반갑습니다." 
+                    rows={3}
+                    className="w-full rounded-xl border border-[#EAE6DF] p-3 text-sm font-normal focus:outline-none focus:border-indigo-500 bg-[#FAF9F6]" 
+                  />
+
+                  {/* 글자 크기 선택 세그먼트 */}
+                  <div className="space-y-1">
+                    <div className="text-[11px] font-bold text-[#5C5B57] flex items-center justify-between">
+                      <span>화면 글자 크기</span>
+                      <span className="text-[10px] text-[#86868B]">
+                        {textSize === 0 ? '길이에 맞춰 최적 크기 자동 계산' : textSize === 3 ? '짧은 단어용 (48×48px)' : textSize === 2 ? '일반 문장용 (32×32px)' : '긴 본문용 (16×16px)'}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-4 gap-1 p-1 bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl text-xs">
+                      {[
+                        { size: 0, label: '✨ 자동' },
+                        { size: 3, label: '3x 초대형' },
+                        { size: 2, label: '2x 대형' },
+                        { size: 1, label: '1x 기본' }
+                      ].map(item => (
+                        <button
+                          key={item.size}
+                          type="button"
+                          onClick={() => setTextSize(item.size)}
+                          className={`py-1.5 px-1 rounded-lg font-bold text-[11px] transition-all cursor-pointer text-center ${
+                            textSize === item.size
+                              ? 'bg-indigo-600 text-white shadow-xs'
+                              : 'text-[#5C5B57] hover:text-[#1D1D1F] hover:bg-white'
+                          }`}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <button 
+                    disabled={!messageText.trim()} 
+                    className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-98 text-xs font-bold text-white transition-all shadow-md shadow-indigo-100 disabled:opacity-40 cursor-pointer flex items-center justify-center gap-1.5"
+                    onClick={() => window.dispatchEvent(new CustomEvent('sodabot-send-command', {
+                      detail: { action: 'send_message', value: messageText, size: textSize, label: '텍스트 표시' }
+                    }))}
+                  >
+                    <span>화면에 텍스트 표시하기</span>
+                  </button>
+                  <p className="text-[10px] text-[#86868B] leading-relaxed">
+                    1~6자("하이요" 등)는 화면 중앙에 3배(48px), 일반 문장은 2배(32px)로 또렷하게 표시됩니다.
+                  </p>
+                </div>
 
                 {/* Sound Test Buttons */}
                 <div className="text-xs font-bold text-[#1D1D1F] pt-2">
