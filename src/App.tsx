@@ -137,9 +137,9 @@ export default function App() {
   };
 
   // 3. Send Hardware Command over Active Link (Serial or WebSocket)
-  const sendHardwareCommand = async (action: string, value: string, label?: string, detail?: any) => {
+  const sendHardwareCommand = async (action: string, value: string, label?: string, extra: Record<string, unknown> = {}) => {
     try {
-      await sodabotTransport.send(action, value, detail);
+      await sodabotTransport.send(action, value, extra);
       setConnectionError(null);
       setQuickExprToast(`${label || "명령"} · 소다봇 처리 완료`); setTimeout(() => setQuickExprToast(null), 4000);
     } catch (error: any) {
@@ -154,7 +154,8 @@ export default function App() {
   useEffect(() => {
     const handleCommandEvent = (e: any) => {
       if (e.detail) {
-        sendHardwareCommand(e.detail.action, e.detail.value, e.detail.label, e.detail);
+        const { action, value, label, ...extra } = e.detail;
+        sendHardwareCommand(action, value, label, extra);
       }
     };
     window.addEventListener("sodabot-send-command", handleCommandEvent);

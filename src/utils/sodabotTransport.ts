@@ -123,7 +123,7 @@ class SodabotTransport {
     const id = String(++this.sequence);
     const payload = JSON.stringify({ ...extra, action, value, id });
     const bytes = new TextEncoder().encode(payload + '\n');
-    if (bytes.length > 1024) throw new Error('명령이 너무 깁니다. 텍스트를 줄여 주세요.');
+    if (bytes.length > 4096) throw new Error('명령이 너무 깁니다. 텍스트를 줄여 주세요.');
     const result = new Promise<Reply>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);

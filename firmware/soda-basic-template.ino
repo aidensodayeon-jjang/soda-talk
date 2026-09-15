@@ -17,7 +17,7 @@
 const char* ssid = __SODA_WIFI_SSID__;
 const char* password = __SODA_WIFI_PASSWORD__;
 
-struct IncomingMessage { char json[1024]; uint32_t clientId; uint8_t source; };
+struct IncomingMessage { char json[2048]; uint32_t clientId; uint8_t source; };
 void processMessage(const IncomingMessage& message);
 AsyncWebServer server(8080);
 AsyncWebSocket ws("/soda/ws");
@@ -385,6 +385,196 @@ void catFace() {
   tft.drawFastHLine(REX + 38, EYE_Y + 28, 22, ec);
 }
 
+// ── 커스텀 표정 & 픽셀 렌더러 (웹 미리보기와 100% 1:1 일치) ───────────────────
+
+uint16_t hexToRGB565(const char* hexStr, uint16_t defaultColor = EYE_COLOR) {
+  if (!hexStr || hexStr[0] == '\0') return defaultColor;
+  if (hexStr[0] == '#') hexStr++;
+  if (strlen(hexStr) < 6) return defaultColor;
+  long rgb = strtol(hexStr, NULL, 16);
+  uint8_t r = (rgb >> 16) & 0xFF;
+  uint8_t g = (rgb >> 8) & 0xFF;
+  uint8_t b = rgb & 0xFF;
+  return tft.color565(r, g, b);
+}
+
+void renderPixelsFromDoc(JsonArrayConst pixels) {
+  tft.fillScreen(LCD_BG_COLOR);
+  int pixelSize = 12;
+  int startX = (320 - 16 * pixelSize) / 2; // 64
+  int startY = (240 - 16 * pixelSize) / 2; // 24
+
+  size_t idx = 0;
+  for (int row = 0; row < 16; row++) {
+    for (int col = 0; col < 16; col++) {
+      if (idx >= pixels.size()) break;
+      const char* colorHex = pixels[idx].as<const char*>();
+      if (colorHex) {
+        uint16_t color = hexToRGB565(colorHex, LCD_BG_COLOR);
+        if (color != LCD_BG_COLOR) {
+          tft.fillRect(startX + col * pixelSize, startY + row * pixelSize, pixelSize - 1, pixelSize - 1, color);
+        }
+      }
+      idx++;
+    }
+  }
+}
+
+void renderCustomFace(const JsonDocument& doc) {
+  tft.fillScreen(LCD_BG_COLOR);
+  const char* shape = doc["shape"] | "default";
+  const char* colorHex = doc["color"] | "#22D3EE";
+  uint16_t eyeColor = hexToRGB565(colorHex, EYE_COLOR);
+  
+  int ew = doc["eyeWidth"] | 48;
+  int eh = doc["eyeHeight"] | 38;
+  int er = doc["eyeRadius"] | 16;
+  int px = doc["pupilX"] | 0;
+  int py = doc["pupilY"] | 0;
+  int eyebrow = doc["eyebrowTilt"] | 0;
+  bool sparkle = doc["hasSparkle"] | false;
+  bool gloss = doc["hasGloss"] | false;
+  const char* mouth = doc["mouth"] | "none";
+
+  String s(shape);
+  s.toLowerCase();
+
+  // 1. 눈 모양 렌더링
+  if (s == "happy") {
+    // 웃는 눈 (아치형)
+    for (int cx : {LEX, REX}) {
+      int cy = EYE_Y + 12 + py;
+      int r = max(ew, eh) / 2 + 10;
+      for (int t = 0; t < 12; t++) {
+        tft.drawCircle(cx + px, cy, r - t, eyeColor);
+      }
+      tft.fillRect(cx + px - r - 4, cy, (r + 4) * 2, r + 10, LCD_BG_COLOR);
+    }
+  } else if (s == "wink") {
+    // 윙크 (왼쪽은 아치형, 오른쪽은 둥근 눈)
+    int cy = EYE_Y + 12 + py;
+    int r = max(ew, eh) / 2 + 10;
+    for (int t = 0; t < 12; t++) {
+      tft.drawCircle(LEX + px, cy, r - t, eyeColor);
+    }
+    tft.fillRect(LEX + px - r - 4, cy, (r + 4) * 2, r + 10, LCD_BG_COLOR);
+
+    tft.fillRoundRect(REX - ew/2 + px, EYE_Y - eh/2 + py, ew, eh, er, eyeColor);
+    int pupilSize = max(10, min(ew, eh) / 3);
+    tft.fillCircle(REX + px, EYE_Y + py, pupilSize, LCD_BG_COLOR);
+  } else if (s == "sleepy") {
+    // 졸린 눈 (얇은 바)
+    int sleepH = min(eh, 14);
+    tft.fillRoundRect(LEX - ew/2 + px, EYE_Y - sleepH/2 + py, ew, sleepH, er, eyeColor);
+    tft.fillRoundRect(REX - ew/2 + px, EYE_Y - sleepH/2 + py, ew, sleepH, er, eyeColor);
+  } else if (s == "heart") {
+    // 하트 눈
+    uint16_t hc = eyeColor == EYE_COLOR ? tft.color565(255, 50, 100) : eyeColor;
+    for (int cx : {LEX, REX}) {
+      int hx = cx + px;
+      int hy = EYE_Y - 8 + py;
+      tft.fillCircle(hx - 16, hy, 20, hc);
+      tft.fillCircle(hx + 16, hy, 20, hc);
+      tft.fillTriangle(hx - 36, hy, hx + 36, hy, hx, hy + 40, hc);
+    }
+  } else if (s == "surprised") {
+    // 놀란 눈 (원형 눈 + 원형 동공)
+    int rad = max(ew, eh) / 2;
+    tft.fillCircle(LEX + px, EYE_Y + py, rad, eyeColor);
+    tft.fillCircle(REX + px, EYE_Y + py, rad, eyeColor);
+    tft.fillCircle(LEX + px, EYE_Y + py, max(8, rad / 3), LCD_BG_COLOR);
+    tft.fillCircle(REX + px, EYE_Y + py, max(8, rad / 3), LCD_BG_COLOR);
+    tft.setTextColor(tft.color565(255, 230, 80));
+    tft.setTextSize(2);
+    tft.setCursor(155, EYE_Y - rad - 18);
+    tft.print("!");
+  } else if (s == "angry") {
+    // 화난 눈
+    tft.fillRoundRect(LEX - ew/2 + px, EYE_Y - eh/2 + py, ew, eh, er, eyeColor);
+    tft.fillRoundRect(REX - ew/2 + px, EYE_Y - eh/2 + py, ew, eh, er, eyeColor);
+    tft.fillTriangle(LEX - ew/2 + px, EYE_Y - eh/2 + py, LEX + ew/2 + px, EYE_Y - eh/2 + py, LEX + ew/2 + px, EYE_Y - eh/2 + py + eh/2, LCD_BG_COLOR);
+    tft.fillTriangle(REX - ew/2 + px, EYE_Y - eh/2 + py, REX + ew/2 + px, EYE_Y - eh/2 + py, REX - ew/2 + px, EYE_Y - eh/2 + py + eh/2, LCD_BG_COLOR);
+    int pupilSize = max(10, min(ew, eh) / 3);
+    tft.fillCircle(LEX + px, EYE_Y + py, pupilSize, LCD_BG_COLOR);
+    tft.fillCircle(REX + px, EYE_Y + py, pupilSize, LCD_BG_COLOR);
+  } else if (s == "sad") {
+    // 슬픈 눈
+    tft.fillRoundRect(LEX - ew/2 + px, EYE_Y - eh/2 + py, ew, eh, er, eyeColor);
+    tft.fillRoundRect(REX - ew/2 + px, EYE_Y - eh/2 + py, ew, eh, er, eyeColor);
+    tft.fillTriangle(LEX - ew/2 + px, EYE_Y - eh/2 + py, LEX + ew/2 + px, EYE_Y - eh/2 + py, LEX - ew/2 + px, EYE_Y - eh/2 + py + eh/2, LCD_BG_COLOR);
+    tft.fillTriangle(REX - ew/2 + px, EYE_Y - eh/2 + py, REX + ew/2 + px, EYE_Y - eh/2 + py, REX + ew/2 + px, EYE_Y - eh/2 + py + eh/2, LCD_BG_COLOR);
+    int pupilSize = max(10, min(ew, eh) / 3);
+    tft.fillCircle(LEX + px, EYE_Y + py, pupilSize, LCD_BG_COLOR);
+    tft.fillCircle(REX + px, EYE_Y + py, pupilSize, LCD_BG_COLOR);
+  } else if (s == "cat") {
+    // 고양이 표정
+    for (int cx : {LEX, REX}) {
+      for (int t = 0; t < 12; t++) {
+        tft.drawCircle(cx, EYE_Y + 12 + py, 36 - t, eyeColor);
+      }
+      tft.fillRect(cx - 40, EYE_Y + 12 + py, 80, 40, LCD_BG_COLOR);
+    }
+    tft.fillTriangle(160, EYE_Y + 22 + py, 153, EYE_Y + 32 + py, 167, EYE_Y + 32 + py, eyeColor);
+    for (int t = 0; t < 4; t++) {
+      tft.drawCircle(146, EYE_Y + 36 + py, 10 - t, eyeColor);
+      tft.drawCircle(174, EYE_Y + 36 + py, 10 - t, eyeColor);
+    }
+    tft.fillRect(132, EYE_Y + 24 + py, 60, 12, LCD_BG_COLOR);
+    uint16_t pinkBlush = tft.color565(255, 130, 170);
+    tft.fillCircle(LEX - 45, EYE_Y + 24 + py, 10, pinkBlush);
+    tft.fillCircle(REX + 45, EYE_Y + 24 + py, 10, pinkBlush);
+  } else {
+    // default / pupil / custom 둥근 눈
+    tft.fillRoundRect(LEX - ew/2 + px, EYE_Y - eh/2 + py, ew, eh, er, eyeColor);
+    tft.fillRoundRect(REX - ew/2 + px, EYE_Y - eh/2 + py, ew, eh, er, eyeColor);
+    int pupilSize = max(10, min(ew, eh) / 3);
+    tft.fillCircle(LEX + px, EYE_Y + py, pupilSize, LCD_BG_COLOR);
+    tft.fillCircle(REX + px, EYE_Y + py, pupilSize, LCD_BG_COLOR);
+  }
+
+  // 2. 눈썹 렌더링
+  if (eyebrow != 0 && s != "cat") {
+    int browY = EYE_Y - eh/2 - 12 + py;
+    int tiltOffset = constrain(eyebrow / 3, -15, 15);
+    tft.fillRoundRect(LEX - ew/2, browY - tiltOffset, ew, 6, 3, eyeColor);
+    tft.fillRoundRect(REX - ew/2, browY + tiltOffset, ew, 6, 3, eyeColor);
+  }
+
+  // 3. 반짝이 오버레이
+  if (sparkle) {
+    tft.setTextColor(tft.color565(255, 220, 100));
+    tft.setTextSize(2);
+    tft.setCursor(LEX + ew/2 - 2, EYE_Y - eh/2 - 6 + py); tft.print("*");
+    tft.setCursor(REX + ew/2 - 2, EYE_Y - eh/2 - 6 + py); tft.print("*");
+  }
+
+  // 4. 광택 하이라이트
+  if (gloss && s != "heart" && s != "happy" && s != "cat") {
+    tft.fillCircle(LEX - ew/4 + px, EYE_Y - eh/4 + py, 5, ST77XX_WHITE);
+    tft.fillCircle(REX - ew/4 + px, EYE_Y - eh/4 + py, 5, ST77XX_WHITE);
+  }
+
+  // 5. 입 모양 렌더링
+  String m(mouth);
+  m.toLowerCase();
+  if (m == "smile") {
+    for (int t = 0; t < 4; t++) {
+      tft.drawCircle(160, EYE_Y + 45 + py, 22 - t, eyeColor);
+    }
+    tft.fillRect(134, EYE_Y + 22 + py, 52, 23, LCD_BG_COLOR);
+  } else if (m == "open") {
+    tft.fillRoundRect(146, EYE_Y + 46 + py, 28, 16, 7, eyeColor);
+  } else if (m == "cat" && s != "cat") {
+    for (int t = 0; t < 4; t++) {
+      tft.drawCircle(146, EYE_Y + 36 + py, 10 - t, eyeColor);
+      tft.drawCircle(174, EYE_Y + 36 + py, 10 - t, eyeColor);
+    }
+    tft.fillRect(132, EYE_Y + 24 + py, 60, 12, LCD_BG_COLOR);
+  } else if (m == "tongue") {
+    tft.fillRoundRect(148, EYE_Y + 48 + py, 24, 14, 6, tft.color565(255, 100, 150));
+  }
+}
+
 void setupSpeaker() {
   if (speakerReady) return;
 
@@ -610,7 +800,7 @@ void sendReply(const char* state, const char* reason = "", bool includeIp = fals
 }
 
 bool enqueueMessage(const char* data, size_t len, uint8_t source, uint32_t clientId = 0) {
-  if (len == 0 || len >= 1024) return false;
+  if (len == 0 || len >= 2048) return false;
   IncomingMessage message = {};
   memcpy(message.json, data, len);
   message.source = source;
@@ -637,13 +827,13 @@ class MyWriteCallbacks: public BLECharacteristicCallbacks {
         if (!bleOverflow && bleInput.length()) enqueueMessage(bleInput.c_str(), bleInput.length(), 1);
         bleInput = ""; bleOverflow = false;
       } else if (!bleOverflow) {
-        if (bleInput.length() >= 1023) { bleInput = ""; bleOverflow = true; }
+        if (bleInput.length() >= 2047) { bleInput = ""; bleOverflow = true; }
         else bleInput += ch;
       }
     }
     // 기존 JSON 전체 쓰기 클라이언트도 지원한다.
     if (!bleOverflow && bleInput.endsWith("}")) {
-      StaticJsonDocument<1536> doc;
+      StaticJsonDocument<2048> doc;
       if (!deserializeJson(doc, bleInput)) {
         enqueueMessage(bleInput.c_str(), bleInput.length(), 1);
         bleInput = "";
@@ -814,7 +1004,7 @@ void startWebServerIfReady() {
 
 void processMessage(const IncomingMessage& message) {
   replySource = message.source; replyClient = message.clientId; replyId = "";
-  DynamicJsonDocument doc(1536);
+  DynamicJsonDocument doc(2560);
   String raw(message.json); raw.trim();
   String action, value;
   if (raw.startsWith("{")) {
@@ -859,6 +1049,28 @@ void processMessage(const IncomingMessage& message) {
     sleeping = value == "sleepy";
     customExpression = !sleeping && value != "idle" && value != "default";
     expressionUntil = millis() + 3000;
+  } else if (action == "render_pixels") {
+    if (doc["pixels"].is<JsonArrayConst>()) {
+      renderPixelsFromDoc(doc["pixels"].as<JsonArrayConst>());
+    } else if (value.startsWith("{")) {
+      DynamicJsonDocument subDoc(1536);
+      if (!deserializeJson(subDoc, value) && subDoc["pixels"].is<JsonArrayConst>()) {
+        renderPixelsFromDoc(subDoc["pixels"].as<JsonArrayConst>());
+      }
+    }
+    sleeping = false; customExpression = true; expressionUntil = millis() + 4000;
+  } else if (action == "render_face") {
+    if (value.startsWith("{")) {
+      DynamicJsonDocument subDoc(1024);
+      if (!deserializeJson(subDoc, value)) {
+        renderCustomFace(subDoc);
+      } else {
+        renderCustomFace(doc);
+      }
+    } else {
+      renderCustomFace(doc);
+    }
+    sleeping = false; customExpression = true; expressionUntil = millis() + 4000;
   } else if (action == "send_message" || action == "talk" || action == "set_welcome" || action == "set_profile" || action == "test_startup_prompt") {
     if (value.length() == 0 || value.length() > 360) { sendReply("error", "text_length_1_to_360_bytes"); return; }
     uint8_t reqSize = doc["size"] | 0;

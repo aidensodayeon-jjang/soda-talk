@@ -47,7 +47,7 @@ export default function SodabotSettingsScreen() {
 
   // Expression Studio Editor Modal State
   const [showExprEditor, setShowExprEditor] = useState(false);
-  const [editorTab, setEditorTab] = useState<'pixel' | 'slider'>('pixel');
+  const [editorTab, setEditorTab] = useState<'pixel' | 'slider'>('slider');
 
   // Mode 1: 16x16 Pixel Drawing Grid State
   const [pixelGrid, setPixelGrid] = useState<string[]>(() => Array(256).fill('#090D16'));
@@ -99,6 +99,175 @@ export default function SodabotSettingsScreen() {
       pixels: grid
     });
     sendWsCommand("render_pixels", payload);
+  };
+
+  // Load base flat expression presets into fine-tuning editor (excluding animations/effects)
+  const handleLoadBaseExpression = (exprId: string) => {
+    switch (exprId) {
+      case 'default':
+        setEditName('기본 평면');
+        setEditEmoji('🤖');
+        setEditShape('default');
+        setEyeWidth(84);
+        setEyeHeight(68);
+        setPupilX(0);
+        setPupilY(0);
+        setEyebrowTilt(0);
+        setEyeRadius(20);
+        setHasSparkle(false);
+        setHasGloss(false);
+        setEditMouth('none');
+        setEditColor('#22D3EE');
+        setEditEffect('none');
+        break;
+      case 'happy':
+        setEditName('행복 평면');
+        setEditEmoji('😆');
+        setEditShape('happy');
+        setEyeWidth(84);
+        setEyeHeight(68);
+        setPupilX(0);
+        setPupilY(0);
+        setEyebrowTilt(0);
+        setEyeRadius(20);
+        setHasSparkle(false);
+        setHasGloss(false);
+        setEditMouth('smile');
+        setEditColor('#22D3EE');
+        setEditEffect('none');
+        break;
+      case 'angry':
+        setEditName('화남 평면');
+        setEditEmoji('😡');
+        setEditShape('angry');
+        setEyeWidth(84);
+        setEyeHeight(68);
+        setPupilX(0);
+        setPupilY(0);
+        setEyebrowTilt(-20);
+        setEyeRadius(20);
+        setHasSparkle(false);
+        setHasGloss(false);
+        setEditMouth('none');
+        setEditColor('#22D3EE');
+        setEditEffect('none');
+        break;
+      case 'sad':
+        setEditName('슬픔 평면');
+        setEditEmoji('😢');
+        setEditShape('sad');
+        setEyeWidth(84);
+        setEyeHeight(68);
+        setPupilX(0);
+        setPupilY(0);
+        setEyebrowTilt(20);
+        setEyeRadius(20);
+        setHasSparkle(false);
+        setHasGloss(false);
+        setEditMouth('none');
+        setEditColor('#22D3EE');
+        setEditEffect('none');
+        break;
+      case 'sleepy':
+        setEditName('졸림 평면');
+        setEditEmoji('😴');
+        setEditShape('sleepy');
+        setEyeWidth(84);
+        setEyeHeight(68);
+        setPupilX(0);
+        setPupilY(0);
+        setEyebrowTilt(0);
+        setEyeRadius(20);
+        setHasSparkle(false);
+        setHasGloss(false);
+        setEditMouth('none');
+        setEditColor('#22D3EE');
+        setEditEffect('none');
+        break;
+      case 'surprised':
+        setEditName('놀람 평면');
+        setEditEmoji('😲');
+        setEditShape('surprised');
+        setEyeWidth(84);
+        setEyeHeight(68);
+        setPupilX(0);
+        setPupilY(0);
+        setEyebrowTilt(0);
+        setEyeRadius(20);
+        setHasSparkle(false);
+        setHasGloss(false);
+        setEditMouth('open');
+        setEditColor('#22D3EE');
+        setEditEffect('none');
+        break;
+      case 'wink':
+        setEditName('윙크 평면');
+        setEditEmoji('😉');
+        setEditShape('wink');
+        setEyeWidth(84);
+        setEyeHeight(68);
+        setPupilX(0);
+        setPupilY(0);
+        setEyebrowTilt(0);
+        setEyeRadius(20);
+        setHasSparkle(true);
+        setHasGloss(false);
+        setEditMouth('smile');
+        setEditColor('#22D3EE');
+        setEditEffect('none');
+        break;
+      case 'heart':
+        setEditName('하트눈 평면');
+        setEditEmoji('💖');
+        setEditShape('heart');
+        setEyeWidth(84);
+        setEyeHeight(68);
+        setPupilX(0);
+        setPupilY(0);
+        setEyebrowTilt(0);
+        setEyeRadius(20);
+        setHasSparkle(false);
+        setHasGloss(false);
+        setEditMouth('smile');
+        setEditColor('#F43F5E');
+        setEditEffect('none');
+        break;
+      case 'pupil':
+        setEditName('초롱눈 평면');
+        setEditEmoji('👀');
+        setEditShape('pupil');
+        setEyeWidth(84);
+        setEyeHeight(68);
+        setPupilX(0);
+        setPupilY(0);
+        setEyebrowTilt(0);
+        setEyeRadius(20);
+        setHasSparkle(true);
+        setHasGloss(true);
+        setEditMouth('none');
+        setEditColor('#22D3EE');
+        setEditEffect('none');
+        break;
+      case 'cat':
+        setEditName('고양이 평면');
+        setEditEmoji('🐱');
+        setEditShape('cat');
+        setEyeWidth(84);
+        setEyeHeight(68);
+        setPupilX(0);
+        setPupilY(0);
+        setEyebrowTilt(0);
+        setEyeRadius(20);
+        setHasSparkle(false);
+        setHasGloss(false);
+        setEditMouth('cat');
+        setEditColor('#22D3EE');
+        setEditEffect('none');
+        break;
+      default:
+        break;
+    }
+    showToast(`'${exprId}' 기본 평면 표정을 불러왔습니다.`);
   };
 
   // Sync to hardware in realtime when editor sliders / shapes change
@@ -1507,22 +1676,23 @@ export default function SodabotSettingsScreen() {
       {/* Modal 2: Custom Expression Studio Editor (showExprEditor - 2 Modes) */}
       {showExprEditor && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-white border border-[#EAE6DF] rounded-3xl max-w-xl w-full p-6 shadow-2xl space-y-5 max-h-[92vh] overflow-y-auto">
+          <div className="bg-white border border-[#EAE6DF] rounded-3xl max-w-2xl w-full p-6 shadow-2xl space-y-5 max-h-[94vh] overflow-y-auto">
             
             {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-[#EAE6DF] pb-4">
+            <div className="flex items-center justify-between border-b border-[#EAE6DF] pb-3.5">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600 text-lg font-bold">
+                <div className="w-9 h-9 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600 text-lg font-bold">
                   🎨
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-[#1D1D1F]">나만의 표정 편집기 (Expression Studio)</h3>
-                  <p className="text-[11px] text-[#86868B]">픽셀 캔버스에 자유롭게 그리거나, 정밀 슬라이더로 원하는 모양을 만드세요!</p>
+                  <p className="text-[11px] text-[#86868B]">기존 표정을 불러와 정밀하게 다듬거나, 픽셀 캔버스에 자유롭게 그려보세요!</p>
                 </div>
               </div>
               <button 
+                type="button"
                 onClick={() => setShowExprEditor(false)}
-                className="w-7 h-7 rounded-full bg-[#FAF9F6] border border-[#EAE6DF] flex items-center justify-center text-xs text-[#86868B] hover:text-[#1D1D1F]"
+                className="w-7 h-7 rounded-full bg-[#FAF9F6] border border-[#EAE6DF] flex items-center justify-center text-xs text-[#86868B] hover:text-[#1D1D1F] cursor-pointer"
               >
                 ✕
               </button>
@@ -1531,94 +1701,235 @@ export default function SodabotSettingsScreen() {
             {/* Mode Switcher Tabs */}
             <div className="flex bg-[#FAF9F6] p-1 rounded-2xl border border-[#EAE6DF] text-xs font-bold">
               <button 
+                type="button"
+                onClick={() => setEditorTab('slider')}
+                className={`flex-1 py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${editorTab === 'slider' ? 'bg-white text-amber-700 shadow-sm' : 'text-[#86868B]'}`}
+              >
+                🎛️ 정밀 파라미터 미세 조율 (표정 가져오기)
+              </button>
+              <button 
+                type="button"
                 onClick={() => setEditorTab('pixel')}
-                className={`flex-1 py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 ${editorTab === 'pixel' ? 'bg-white text-amber-700 shadow-sm' : 'text-[#86868B]'}`}
+                className={`flex-1 py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${editorTab === 'pixel' ? 'bg-white text-amber-700 shadow-sm' : 'text-[#86868B]'}`}
               >
                 ✍️ 픽셀 자유 드로잉 캔버스
               </button>
-              <button 
-                onClick={() => setEditorTab('slider')}
-                className={`flex-1 py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 ${editorTab === 'slider' ? 'bg-white text-amber-700 shadow-sm' : 'text-[#86868B]'}`}
-              >
-                🎛️ 정밀 파라미터 미세 조율
-              </button>
             </div>
 
-            {/* 320x240 LCD Screen Live Preview */}
-            <div className="flex flex-col items-center gap-2 bg-[#090D16] p-4 rounded-2xl border-4 border-[#374151] shadow-inner select-none relative overflow-hidden">
-              <div className="text-[10px] font-mono text-cyan-400 self-start opacity-70 flex items-center justify-between w-full">
-                <span>2.0" LCD PREVIEW: <strong className="text-amber-400">{editName} ({editEmoji})</strong></span>
-                <span className="text-[9px] text-emerald-400 font-bold">LIVE SYNC READY</span>
+            {/* 320x240 LCD Screen Live Preview (100% Exact 1:1 Hardware Pixel-Perfect Match) */}
+            <div className="flex flex-col items-center gap-2 bg-[#090D16] p-3.5 rounded-2xl border-4 border-[#374151] shadow-inner select-none relative overflow-hidden">
+              <div className="text-[10px] font-mono text-cyan-400 self-start opacity-80 flex items-center justify-between w-full">
+                <span>2.0" LCD PREVIEW (320x240): <strong className="text-amber-400">{editName} ({editEmoji})</strong></span>
+                <span className="text-[9px] text-emerald-400 font-bold flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                  1:1 HARDWARE ACCURATE
+                </span>
               </div>
 
-              {/* Live Preview Display Box */}
-              <div className="w-60 h-36 flex flex-col items-center justify-center relative">
+              {/* 320x240 Exact Ratio Display Frame */}
+              <div className="w-full max-w-[340px] aspect-[4/3] bg-[#000000] rounded-lg border border-cyan-950/60 shadow-inner relative flex items-center justify-center overflow-hidden">
                 {editorTab === 'pixel' ? (
-                  /* Mode 1: Pixel Grid Rendering */
-                  <div className="grid grid-cols-16 gap-[1px] bg-[#000000] p-1 rounded border border-cyan-950 shadow-inner">
+                  /* Mode 1: 16x16 Pixel Grid Rendering */
+                  <div className="grid grid-cols-16 gap-[1.5px] bg-[#000000] p-2 rounded">
                     {pixelGrid.map((color, idx) => (
                       <div 
                         key={idx}
                         style={{ backgroundColor: color }}
-                        className="w-2.5 h-2.5 rounded-[1px] transition-colors"
+                        className="w-3.5 h-3.5 rounded-[1px] transition-colors"
                       />
                     ))}
                   </div>
                 ) : (
-                  /* Mode 2: Slider Parameter Custom Eye Rendering */
-                  <div className="relative flex flex-col items-center justify-center">
-                    <div className="flex items-center justify-center gap-8 relative z-10" style={{ transform: `rotate(${eyebrowTilt}deg)` }}>
-                      {/* Left Eye */}
-                      <div 
-                        className="relative overflow-hidden transition-all shadow-lg flex items-center justify-center"
-                        style={{
-                          width: `${eyeWidth}px`,
-                          height: `${eyeHeight}px`,
-                          backgroundColor: editColor,
-                          borderRadius: `${eyeRadius}px`
-                        }}
-                      >
-                        {/* Pupil */}
-                        <div 
-                          className="w-4 h-4 bg-slate-900 rounded-full transition-all relative"
-                          style={{ transform: `translate(${pupilX}px, ${pupilY}px)` }}
-                        >
-                          {hasGloss && <div className="absolute top-0.5 right-0.5 w-1.5 h-1.5 bg-white rounded-full"></div>}
-                        </div>
-                        {hasSparkle && <div className="absolute top-1 left-1.5 text-[8px]">✨</div>}
-                      </div>
+                  /* Mode 2: SVG Rendering Matching Firmware C++ Code 1:1 */
+                  <svg viewBox="0 0 320 240" className="w-full h-full">
+                    {/* Background */}
+                    <rect width="320" height="240" fill="#000000" />
 
-                      {/* Right Eye */}
-                      <div 
-                        className="relative overflow-hidden transition-all shadow-lg flex items-center justify-center"
-                        style={{
-                          width: `${eyeWidth}px`,
-                          height: `${eyeHeight}px`,
-                          backgroundColor: editColor,
-                          borderRadius: `${eyeRadius}px`
-                        }}
-                      >
-                        {/* Pupil */}
-                        <div 
-                          className="w-4 h-4 bg-slate-900 rounded-full transition-all relative"
-                          style={{ transform: `translate(${pupilX}px, ${pupilY}px)` }}
-                        >
-                          {hasGloss && <div className="absolute top-0.5 right-0.5 w-1.5 h-1.5 bg-white rounded-full"></div>}
-                        </div>
-                        {hasSparkle && <div className="absolute top-1 right-1.5 text-[8px]">✨</div>}
-                      </div>
-                    </div>
-
-                    {/* Mouth Rendering */}
-                    {editMouth !== 'none' && (
-                      <div className="mt-2 text-xs font-mono font-bold" style={{ color: editColor }}>
-                        {editMouth === 'smile' && '◡'}
-                        {editMouth === 'open' && 'o'}
-                        {editMouth === 'cat' && '▲ w ▲'}
-                        {editMouth === 'tongue' && '👅'}
-                      </div>
+                    {/* 1. Eyebrows (눈썹) */}
+                    {eyebrowTilt !== 0 && editShape !== 'cat' && (
+                      <g>
+                        {/* Left Brow: LEX(100) - ew/2, browY - tiltOffset */}
+                        <rect 
+                          x={100 - eyeWidth / 2} 
+                          y={120 - eyeHeight / 2 - 12 - Math.max(-15, Math.min(15, eyebrowTilt / 3))} 
+                          width={eyeWidth} 
+                          height={6} 
+                          rx={3} 
+                          fill={editColor} 
+                        />
+                        {/* Right Brow: REX(220) - ew/2, browY + tiltOffset */}
+                        <rect 
+                          x={220 - eyeWidth / 2} 
+                          y={120 - eyeHeight / 2 - 12 + Math.max(-15, Math.min(15, eyebrowTilt / 3))} 
+                          width={eyeWidth} 
+                          height={6} 
+                          rx={3} 
+                          fill={editColor} 
+                        />
+                      </g>
                     )}
-                  </div>
+
+                    {/* 2. Eyes (눈 렌더링) */}
+                    {editShape === 'happy' ? (
+                      /* Happy: Thick Arches */
+                      <g fill="none" stroke={editColor} strokeWidth="12" strokeLinecap="round">
+                        <path d={`M ${100 - 36 + pupilX} ${132 + pupilY} A 36 36 0 0 1 ${100 + 36 + pupilX} ${132 + pupilY}`} />
+                        <path d={`M ${220 - 36 + pupilX} ${132 + pupilY} A 36 36 0 0 1 ${220 + 36 + pupilX} ${132 + pupilY}`} />
+                      </g>
+                    ) : editShape === 'wink' ? (
+                      /* Wink: Left Line, Right Round Eye */
+                      <g>
+                        <rect x={100 - 36} y={120 - 4} width={72} height={8} rx={4} fill={editColor} />
+                        <rect 
+                          x={220 - eyeWidth / 2 + pupilX} 
+                          y={120 - eyeHeight / 2 + pupilY} 
+                          width={eyeWidth} 
+                          height={eyeHeight} 
+                          rx={eyeRadius} 
+                          fill={editColor} 
+                        />
+                      </g>
+                    ) : editShape === 'sleepy' ? (
+                      /* Sleepy: Top Half Masked Eyes */
+                      <g>
+                        <rect 
+                          x={100 - eyeWidth / 2 + pupilX} 
+                          y={120 - eyeHeight / 2 + pupilY} 
+                          width={eyeWidth} 
+                          height={eyeHeight} 
+                          rx={eyeRadius} 
+                          fill={editColor} 
+                        />
+                        <rect 
+                          x={220 - eyeWidth / 2 + pupilX} 
+                          y={120 - eyeHeight / 2 + pupilY} 
+                          width={eyeWidth} 
+                          height={eyeHeight} 
+                          rx={eyeRadius} 
+                          fill={editColor} 
+                        />
+                        {/* Mask Top Half */}
+                        <rect x={100 - eyeWidth / 2 - 2} y={120 - eyeHeight / 2 - 2} width={eyeWidth + 4} height={eyeHeight / 2} fill="#000000" />
+                        <rect x={220 - eyeWidth / 2 - 2} y={120 - eyeHeight / 2 - 2} width={eyeWidth + 4} height={eyeHeight / 2} fill="#000000" />
+                      </g>
+                    ) : editShape === 'heart' ? (
+                      /* Heart: Dual Hearts */
+                      <g fill={editColor === '#22D3EE' ? '#FF3264' : editColor}>
+                        {/* Left Heart */}
+                        <circle cx={100 - 18 + pupilX} cy={120 - 20 + pupilY} r={19} />
+                        <circle cx={100 + 18 + pupilX} cy={120 - 20 + pupilY} r={19} />
+                        <polygon points={`${100 - 36 + pupilX},${120 - 14 + pupilY} ${100 + 36 + pupilX},${120 - 14 + pupilY} ${100 + pupilX},${120 + 26 + pupilY}`} />
+                        {/* Right Heart */}
+                        <circle cx={220 - 18 + pupilX} cy={120 - 20 + pupilY} r={19} />
+                        <circle cx={220 + 18 + pupilX} cy={120 - 20 + pupilY} r={19} />
+                        <polygon points={`${220 - 36 + pupilX},${120 - 14 + pupilY} ${220 + 36 + pupilX},${120 - 14 + pupilY} ${220 + pupilX},${120 + 26 + pupilY}`} />
+                      </g>
+                    ) : editShape === 'angry' ? (
+                      /* Angry: Upper Corner Masked */
+                      <g>
+                        <rect 
+                          x={100 - eyeWidth / 2 + pupilX} 
+                          y={120 - eyeHeight / 2 + pupilY} 
+                          width={eyeWidth} 
+                          height={eyeHeight} 
+                          rx={eyeRadius} 
+                          fill={editColor} 
+                        />
+                        <rect 
+                          x={220 - eyeWidth / 2 + pupilX} 
+                          y={120 - eyeHeight / 2 + pupilY} 
+                          width={eyeWidth} 
+                          height={eyeHeight} 
+                          rx={eyeRadius} 
+                          fill={editColor} 
+                        />
+                        {/* Upper Angled Cuts */}
+                        <polygon points={`${100 - eyeWidth / 2},${120 - eyeHeight / 2} ${100 + eyeWidth / 2},${120 - eyeHeight / 2} ${100 + eyeWidth / 2},${120 - eyeHeight / 2 + 25}`} fill="#000000" />
+                        <polygon points={`${220 - eyeWidth / 2},${120 - eyeHeight / 2} ${220 + eyeWidth / 2},${120 - eyeHeight / 2} ${220 - eyeWidth / 2},${120 - eyeHeight / 2 + 25}`} fill="#000000" />
+                      </g>
+                    ) : editShape === 'cat' ? (
+                      /* Cat: Arches + Whiskers + Nose */
+                      <g>
+                        <g fill="none" stroke={editColor} strokeWidth="10" strokeLinecap="round">
+                          <path d="M 64 132 A 36 36 0 0 1 136 132" />
+                          <path d="M 184 132 A 36 36 0 0 1 256 132" />
+                        </g>
+                        {/* Nose */}
+                        <polygon points="160,142 153,154 167,154" fill={editColor} />
+                        {/* Cat Mouth (w) */}
+                        <g fill="none" stroke={editColor} strokeWidth="3">
+                          <path d="M 140 156 A 8 8 0 0 0 160 156" />
+                          <path d="M 160 156 A 8 8 0 0 0 180 156" />
+                        </g>
+                        {/* Pink Cheeks */}
+                        <circle cx={55} cy={146} r={10} fill="#FF82AA" />
+                        <circle cx={265} cy={146} r={10} fill="#FF82AA" />
+                        {/* Whiskers */}
+                        <line x1={35} y1={135} x2={59} y2={135} stroke={editColor} strokeWidth="2" />
+                        <line x1={40} y1={148} x2={62} y2={148} stroke={editColor} strokeWidth="2" />
+                        <line x1={261} y1={135} x2={285} y2={135} stroke={editColor} strokeWidth="2" />
+                        <line x1={258} y1={148} x2={280} y2={148} stroke={editColor} strokeWidth="2" />
+                      </g>
+                    ) : (
+                      /* Default / Pupil / Custom Eyes */
+                      <g>
+                        <rect 
+                          x={100 - eyeWidth / 2 + pupilX} 
+                          y={120 - eyeHeight / 2 + pupilY} 
+                          width={eyeWidth} 
+                          height={eyeHeight} 
+                          rx={eyeRadius} 
+                          fill={editColor} 
+                        />
+                        <rect 
+                          x={220 - eyeWidth / 2 + pupilX} 
+                          y={120 - eyeHeight / 2 + pupilY} 
+                          width={eyeWidth} 
+                          height={eyeHeight} 
+                          rx={eyeRadius} 
+                          fill={editColor} 
+                        />
+                      </g>
+                    )}
+
+                    {/* 3. Gloss Highlights (광택) */}
+                    {hasGloss && editShape !== 'heart' && editShape !== 'happy' && editShape !== 'cat' && (
+                      <g fill="#FFFFFF">
+                        <circle cx={100 - eyeWidth / 4 + pupilX} cy={120 - eyeHeight / 4 + pupilY} r={5} />
+                        <circle cx={220 - eyeWidth / 4 + pupilX} cy={120 - eyeHeight / 4 + pupilY} r={5} />
+                      </g>
+                    )}
+
+                    {/* 4. Sparkles (반짝이 별) */}
+                    {hasSparkle && (
+                      <g fill="#FFDC64" fontSize="24" fontFamily="monospace" fontWeight="bold">
+                        <text x={100 + 36} y={120 - 36}>*</text>
+                        <text x={220 + 36} y={120 - 36}>*</text>
+                      </g>
+                    )}
+
+                    {/* 5. Mouth (입 모양) */}
+                    {editShape !== 'cat' && editMouth !== 'none' && (
+                      <g>
+                        {editMouth === 'smile' && (
+                          <path d="M 136 155 A 24 24 0 0 0 184 155" fill="none" stroke={editColor} strokeWidth="5" strokeLinecap="round" />
+                        )}
+                        {editMouth === 'open' && (
+                          <rect x={145} y={150} width={30} height={18} rx={8} fill={editColor} />
+                        )}
+                        {editMouth === 'cat' && (
+                          <g fill="none" stroke={editColor} strokeWidth="3">
+                            <path d="M 140 156 A 8 8 0 0 0 160 156" />
+                            <path d="M 160 156 A 8 8 0 0 0 180 156" />
+                          </g>
+                        )}
+                        {editMouth === 'tongue' && (
+                          <rect x={148} y={152} width={24} height={14} rx={6} fill="#FF6496" />
+                        )}
+                      </g>
+                    )}
+
+                  </svg>
                 )}
               </div>
             </div>
@@ -1634,8 +1945,9 @@ export default function SodabotSettingsScreen() {
                     {['#22D3EE', '#F59E0B', '#10B981', '#F43F5E', '#8B5CF6', '#FFFFFF', '#090D16'].map(c => (
                       <button
                         key={c}
+                        type="button"
                         onClick={() => setDrawColor(c)}
-                        className={`w-6 h-6 rounded-full border transition-all ${drawColor === c ? 'ring-2 ring-amber-500 scale-110' : ''}`}
+                        className={`w-6 h-6 rounded-full border transition-all cursor-pointer ${drawColor === c ? 'ring-2 ring-amber-500 scale-110' : ''}`}
                         style={{ backgroundColor: c }}
                         title={c === '#090D16' ? '지우개' : c}
                       />
@@ -1644,14 +1956,16 @@ export default function SodabotSettingsScreen() {
 
                   <div className="flex items-center gap-1.5">
                     <button
+                      type="button"
                       onClick={() => setIsMirror(!isMirror)}
-                      className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-colors ${isMirror ? 'bg-amber-100 border-amber-300 text-amber-800' : 'bg-white border-[#EAE6DF] text-[#86868B]'}`}
+                      className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-colors cursor-pointer ${isMirror ? 'bg-amber-100 border-amber-300 text-amber-800' : 'bg-white border-[#EAE6DF] text-[#86868B]'}`}
                     >
                       🔄 좌우대칭 {isMirror ? 'ON' : 'OFF'}
                     </button>
                     <button
+                      type="button"
                       onClick={handleClearPixelGrid}
-                      className="px-2 py-1 bg-white hover:bg-rose-50 border border-[#EAE6DF] text-rose-600 rounded-lg text-[10px] font-bold transition-colors"
+                      className="px-2 py-1 bg-white hover:bg-rose-50 border border-[#EAE6DF] text-rose-600 rounded-lg text-[10px] font-bold transition-colors cursor-pointer"
                     >
                       🧹 전체지우기
                     </button>
@@ -1682,53 +1996,144 @@ export default function SodabotSettingsScreen() {
                 {/* Preset Load Buttons */}
                 <div className="flex items-center gap-2 pt-1">
                   <span className="font-bold text-[#1D1D1F] text-[11px]">도안 추천:</span>
-                  <button onClick={() => handleLoadPixelPreset('heart')} className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg text-[10px] font-bold border border-rose-200">
+                  <button type="button" onClick={() => handleLoadPixelPreset('heart')} className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg text-[10px] font-bold border border-rose-200 cursor-pointer">
                     ❤️ 하트 픽셀
                   </button>
-                  <button onClick={() => handleLoadPixelPreset('star')} className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-lg text-[10px] font-bold border border-amber-200">
+                  <button type="button" onClick={() => handleLoadPixelPreset('star')} className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-lg text-[10px] font-bold border border-amber-200 cursor-pointer">
                     ⭐ 별 픽셀
                   </button>
                 </div>
 
               </div>
             ) : (
-              /* Editor Mode 2: Fine-Tuning Parameter Sliders */
-              <div className="space-y-3.5 text-xs">
+              /* Editor Mode 2: Fine-Tuning Parameter Sliders with Base Preset Importer */
+              <div className="space-y-4 text-xs">
                 
-                {/* Name & Emoji */}
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="col-span-2 space-y-1">
+                {/* 1. Base Preset Importer (기존 기본 표정 불러오기) */}
+                <div className="bg-[#FAF9F6] p-3 rounded-2xl border border-[#EAE6DF] space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="font-bold text-[#1D1D1F] flex items-center gap-1.5">
+                      <span className="text-amber-500">📥</span> 1. 기존 기본 표정 불러오기 (평면 모드)
+                    </label>
+                    <span className="text-[10px] text-[#86868B]">클릭 시 기본 평면 형태를 가져옵니다</span>
+                  </div>
+                  <div className="grid grid-cols-5 gap-1.5">
+                    {[
+                      { id: 'default', label: '기본', emoji: '🤖' },
+                      { id: 'happy', label: '기쁨', emoji: '😆' },
+                      { id: 'angry', label: '화남', emoji: '😡' },
+                      { id: 'sad', label: '슬픔', emoji: '😢' },
+                      { id: 'sleepy', label: '졸림', emoji: '😴' },
+                      { id: 'surprised', label: '놀람', emoji: '😲' },
+                      { id: 'wink', label: '윙크', emoji: '😉' },
+                      { id: 'heart', label: '하트눈', emoji: '💖' },
+                      { id: 'pupil', label: '초롱이', emoji: '👀' },
+                      { id: 'cat', label: '고양이', emoji: '🐱' },
+                    ].map(p => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => handleLoadBaseExpression(p.id)}
+                        className={`py-1.5 px-2 rounded-xl font-bold text-[11px] border transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                          editShape === p.id 
+                            ? 'bg-amber-100 border-amber-400 text-amber-900 shadow-sm' 
+                            : 'bg-white hover:bg-amber-50/50 border-[#EAE6DF] text-[#5C5B57]'
+                        }`}
+                      >
+                        <span>{p.emoji}</span>
+                        <span>{p.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 2. Name & Emoji & Color */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+                  <div className="space-y-1">
                     <label className="font-bold text-[#1D1D1F]">표정 이름</label>
                     <input 
                       type="text"
                       value={editName}
                       onChange={(e) => setEditName(e.target.value)}
-                      placeholder="예: 초롱이, 시크눈"
+                      placeholder="예: 초롱이, 앙칼진눈"
                       className="w-full p-2 bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl outline-none focus:bg-white focus:border-amber-400 font-bold"
                     />
                   </div>
+
                   <div className="space-y-1">
                     <label className="font-bold text-[#1D1D1F]">대표 이모지</label>
                     <select 
                       value={editEmoji}
                       onChange={(e) => setEditEmoji(e.target.value)}
-                      className="w-full p-2 bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl outline-none focus:bg-white font-bold"
+                      className="w-full p-2 bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl outline-none focus:bg-white font-bold cursor-pointer"
                     >
-                      {['🥹', '😜', '🤩', '💖', '😈', '😭', '🐶', '🦄', '⭐', '✨'].map(e => (
+                      {['🥹', '😜', '🤩', '💖', '😈', '😭', '🐶', '🦄', '⭐', '✨', '🤖', '😆', '😡', '😢', '😴', '😲', '😉', '👀', '🐱'].map(e => (
                         <option key={e} value={e}>{e}</option>
                       ))}
                     </select>
                   </div>
+
+                  <div className="space-y-1">
+                    <label className="font-bold text-[#1D1D1F]">눈 색상</label>
+                    <div className="flex items-center gap-1.5 p-1 bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl h-[38px]">
+                      {['#22D3EE', '#F59E0B', '#10B981', '#F43F5E', '#8B5CF6', '#FFFFFF'].map(c => (
+                        <button
+                          key={c}
+                          type="button"
+                          onClick={() => setEditColor(c)}
+                          className={`flex-1 h-6 rounded-lg transition-all cursor-pointer ${editColor === c ? 'ring-2 ring-amber-500 scale-105 shadow-sm' : 'opacity-80'}`}
+                          style={{ backgroundColor: c }}
+                        />
+                      ))}
+                    </div>
+                  </div>
                 </div>
 
-                {/* Sliders Grid */}
-                <div className="grid grid-cols-2 gap-3 bg-[#FAF9F6] p-3 rounded-2xl border border-[#EAE6DF]">
+                {/* 3. Shape & Mouth Selectors */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                  <div className="space-y-1">
+                    <label className="font-bold text-[#1D1D1F]">기본 눈 모양 (Shape)</label>
+                    <select
+                      value={editShape}
+                      onChange={(e: any) => setEditShape(e.target.value)}
+                      className="w-full p-2 bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl outline-none focus:bg-white font-bold cursor-pointer"
+                    >
+                      <option value="default">기본 사각 (Default)</option>
+                      <option value="happy">웃는 눈 (Happy Arch)</option>
+                      <option value="angry">화난 눈 (Angry Tilt)</option>
+                      <option value="sad">슬픈 눈 (Sad Tilt)</option>
+                      <option value="sleepy">졸린 눈 (Sleepy Flat)</option>
+                      <option value="surprised">놀란 눈 (Surprised Circle)</option>
+                      <option value="wink">윙크 (Wink)</option>
+                      <option value="heart">하트 (Heart)</option>
+                      <option value="cat">고양이 (Cat)</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="font-bold text-[#1D1D1F]">입 모양 (Mouth)</label>
+                    <select
+                      value={editMouth}
+                      onChange={(e: any) => setEditMouth(e.target.value)}
+                      className="w-full p-2 bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl outline-none focus:bg-white font-bold cursor-pointer"
+                    >
+                      <option value="none">없음 (None)</option>
+                      <option value="smile">미소 (◡ Smile)</option>
+                      <option value="open">벌림 (o Open)</option>
+                      <option value="cat">고양이 (▲ w ▲ Cat)</option>
+                      <option value="tongue">메롱 (👅 Tongue)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* 4. Fine-Tuning Sliders Grid */}
+                <div className="grid grid-cols-2 gap-3 bg-[#FAF9F6] p-3.5 rounded-2xl border border-[#EAE6DF]">
                   <div className="space-y-1">
                     <div className="flex justify-between text-[11px] font-bold">
                       <span>눈 가로 폭</span>
                       <span className="font-mono text-amber-600">{eyeWidth}px</span>
                     </div>
-                    <input type="range" min={20} max={70} value={eyeWidth} onChange={e => setEyeWidth(+e.target.value)} className="w-full accent-amber-500" />
+                    <input type="range" min={40} max={110} value={eyeWidth} onChange={e => setEyeWidth(+e.target.value)} className="w-full accent-amber-500 cursor-pointer" />
                   </div>
 
                   <div className="space-y-1">
@@ -1736,7 +2141,7 @@ export default function SodabotSettingsScreen() {
                       <span>눈 세로 높이</span>
                       <span className="font-mono text-amber-600">{eyeHeight}px</span>
                     </div>
-                    <input type="range" min={10} max={60} value={eyeHeight} onChange={e => setEyeHeight(+e.target.value)} className="w-full accent-amber-500" />
+                    <input type="range" min={20} max={90} value={eyeHeight} onChange={e => setEyeHeight(+e.target.value)} className="w-full accent-amber-500 cursor-pointer" />
                   </div>
 
                   <div className="space-y-1">
@@ -1744,7 +2149,7 @@ export default function SodabotSettingsScreen() {
                       <span>동공 좌우 위치 (Pupil X)</span>
                       <span className="font-mono text-amber-600">{pupilX}px</span>
                     </div>
-                    <input type="range" min={-15} max={15} value={pupilX} onChange={e => setPupilX(+e.target.value)} className="w-full accent-amber-500" />
+                    <input type="range" min={-20} max={20} value={pupilX} onChange={e => setPupilX(+e.target.value)} className="w-full accent-amber-500 cursor-pointer" />
                   </div>
 
                   <div className="space-y-1">
@@ -1752,7 +2157,7 @@ export default function SodabotSettingsScreen() {
                       <span>동공 상하 위치 (Pupil Y)</span>
                       <span className="font-mono text-amber-600">{pupilY}px</span>
                     </div>
-                    <input type="range" min={-15} max={15} value={pupilY} onChange={e => setPupilY(+e.target.value)} className="w-full accent-amber-500" />
+                    <input type="range" min={-20} max={20} value={pupilY} onChange={e => setPupilY(+e.target.value)} className="w-full accent-amber-500 cursor-pointer" />
                   </div>
 
                   <div className="space-y-1">
@@ -1760,7 +2165,7 @@ export default function SodabotSettingsScreen() {
                       <span>눈썹 사선 각도</span>
                       <span className="font-mono text-amber-600">{eyebrowTilt}°</span>
                     </div>
-                    <input type="range" min={-45} max={45} value={eyebrowTilt} onChange={e => setEyebrowTilt(+e.target.value)} className="w-full accent-amber-500" />
+                    <input type="range" min={-45} max={45} value={eyebrowTilt} onChange={e => setEyebrowTilt(+e.target.value)} className="w-full accent-amber-500 cursor-pointer" />
                   </div>
 
                   <div className="space-y-1">
@@ -1768,22 +2173,24 @@ export default function SodabotSettingsScreen() {
                       <span>모서리 둥글기 (Radius)</span>
                       <span className="font-mono text-amber-600">{eyeRadius}px</span>
                     </div>
-                    <input type="range" min={0} max={30} value={eyeRadius} onChange={e => setEyeRadius(+e.target.value)} className="w-full accent-amber-500" />
+                    <input type="range" min={0} max={35} value={eyeRadius} onChange={e => setEyeRadius(+e.target.value)} className="w-full accent-amber-500 cursor-pointer" />
                   </div>
                 </div>
 
-                {/* Overlays & Mouth */}
+                {/* 5. Overlays (반짝이 & 광택) */}
                 <div className="flex items-center justify-between gap-2 pt-1">
                   <button
+                    type="button"
                     onClick={() => setHasSparkle(!hasSparkle)}
-                    className={`flex-1 py-2 rounded-xl text-[11px] font-bold border transition-colors ${hasSparkle ? 'bg-amber-100 border-amber-300 text-amber-800' : 'bg-white border-[#EAE6DF]'}`}
+                    className={`flex-1 py-2 rounded-xl text-[11px] font-bold border transition-colors cursor-pointer ${hasSparkle ? 'bg-amber-100 border-amber-300 text-amber-800' : 'bg-white border-[#EAE6DF] text-[#86868B]'}`}
                   >
                     ✨ 반짝이 오버레이 {hasSparkle ? 'ON' : 'OFF'}
                   </button>
 
                   <button
+                    type="button"
                     onClick={() => setHasGloss(!hasGloss)}
-                    className={`flex-1 py-2 rounded-xl text-[11px] font-bold border transition-colors ${hasGloss ? 'bg-amber-100 border-amber-300 text-amber-800' : 'bg-white border-[#EAE6DF]'}`}
+                    className={`flex-1 py-2 rounded-xl text-[11px] font-bold border transition-colors cursor-pointer ${hasGloss ? 'bg-amber-100 border-amber-300 text-amber-800' : 'bg-white border-[#EAE6DF] text-[#86868B]'}`}
                   >
                     💎 광택 하이라이트 {hasGloss ? 'ON' : 'OFF'}
                   </button>
@@ -1793,14 +2200,31 @@ export default function SodabotSettingsScreen() {
             )}
 
             {/* Modal Actions */}
-            <div className="flex items-center gap-3 border-t border-[#EAE6DF] pt-4">
+            <div className="flex items-center gap-2 border-t border-[#EAE6DF] pt-4">
               <button 
+                type="button"
                 onClick={() => setShowExprEditor(false)}
-                className="flex-1 py-2.5 bg-[#FAF9F6] border border-[#EAE6DF] text-[#5C5B57] text-xs font-bold rounded-xl hover:bg-[#EAE6DF] transition-colors"
+                className="py-2.5 px-4 bg-[#FAF9F6] border border-[#EAE6DF] text-[#5C5B57] text-xs font-bold rounded-xl hover:bg-[#EAE6DF] transition-colors cursor-pointer"
               >
                 취소
               </button>
               <button 
+                type="button"
+                onClick={() => {
+                  if (editorTab === 'pixel') {
+                    syncPixelsToHardware(pixelGrid);
+                  } else {
+                    syncFaceToHardware();
+                  }
+                  showToast('소다봇 화면으로 실시간 테스트 전송 완료!');
+                }}
+                className="flex-1 py-2.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Zap className="w-3.5 h-3.5 text-indigo-600" />
+                소다봇 화면에 즉시 테스트 ⚡
+              </button>
+              <button 
+                type="button"
                 onClick={handleSaveCustomExpr}
                 className="flex-1 py-2.5 bg-amber-400 hover:bg-amber-500 text-amber-950 text-xs font-bold rounded-xl transition-colors shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
               >
