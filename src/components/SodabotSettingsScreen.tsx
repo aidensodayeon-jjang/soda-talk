@@ -821,7 +821,10 @@ export default function SodabotSettingsScreen() {
       setCustomFunctions(updatedList);
       localStorage.setItem('sodabot_custom_functions', JSON.stringify(updatedList));
 
-      showToast(`✨ '${parts.name}' 펌웨어가 성공적으로 생성되었습니다!`);
+      // 생성된 전체 펌웨어 코드를 클립보드에 즉시 복사
+      navigator.clipboard.writeText(result.mergedCode);
+      setIsCopiedCode(true);
+      showToast(`📋 '${parts.name}' 전체 펌웨어 코드가 클립보드에 복사되었습니다!`);
     } catch (err: any) {
       setValidationErrors([`펌웨어 생성 중 오류가 발생했습니다: ${err.message || '알 수 없는 오류'}`]);
     }
@@ -2564,24 +2567,29 @@ export default function SodabotSettingsScreen() {
                         ✓
                       </div>
                       <span className="text-sm font-bold text-emerald-950">
-                        펌웨어 준비 완료
+                        기능 등록 & 전체 코드 복사 완료!
                       </span>
                     </div>
 
+                    <p className="text-xs text-emerald-800 leading-relaxed">
+                      기본 펌웨어 전체와 커스텀 코드가 하나로 합쳐져 <strong>클립보드에 복사</strong>되었습니다.<br className="hidden sm:inline" />
+                      Arduino IDE로 이동하여 <kbd className="px-1.5 py-0.5 bg-white border border-emerald-300 rounded font-mono text-[10px] font-bold text-emerald-900">Cmd+V</kbd> (또는 <kbd className="px-1.5 py-0.5 bg-white border border-emerald-300 rounded font-mono text-[10px] font-bold text-emerald-900">Ctrl+V</kbd>)로 붙여넣고 업로드하세요!
+                    </p>
+
                     <div className="grid grid-cols-2 gap-2 text-xs pt-1">
                       <div className="bg-white/80 p-2.5 rounded-xl border border-emerald-100 space-y-0.5">
-                        <span className="text-[10px] text-neutral-500">기능</span>
+                        <span className="text-[10px] text-neutral-500">등록된 기능</span>
                         <div className="font-bold text-[#191919] truncate">{funcNameInput}</div>
                       </div>
                       <div className="bg-white/80 p-2.5 rounded-xl border border-emerald-100 space-y-0.5">
-                        <span className="text-[10px] text-neutral-500">파일명</span>
-                        <div className="font-bold text-[#191919] font-mono text-[11px] truncate">{generationResult.fileName}</div>
+                        <span className="text-[10px] text-neutral-500">저장 슬롯</span>
+                        <div className="font-bold text-[#191919] font-mono text-[11px] truncate">{selectedSlot}</div>
                       </div>
                     </div>
 
                     {/* Included Parts Checklist */}
                     <div className="bg-white/80 p-2.5 rounded-xl border border-emerald-100 space-y-1.5">
-                      <span className="text-[10px] font-bold text-neutral-600">추가된 코드:</span>
+                      <span className="text-[10px] font-bold text-neutral-600">병합된 코드 파트:</span>
                       <div className="grid grid-cols-4 gap-1 text-[11px]">
                         <span className={`px-1.5 py-0.5 rounded text-center font-medium ${generationResult.includedParts.headers ? 'bg-emerald-100 text-emerald-800' : 'bg-neutral-100 text-neutral-400'}`}>
                           HEADERS {generationResult.includedParts.headers ? '✓' : '-'}
@@ -2608,7 +2616,7 @@ export default function SodabotSettingsScreen() {
                         className="text-xs font-semibold text-neutral-700 hover:text-blue-600 flex items-center gap-1 cursor-pointer transition-colors"
                       >
                         <Code className="w-3.5 h-3.5" />
-                        {showCodePreview ? '코드 미리보기 접기' : '코드 미리보기'}
+                        {showCodePreview ? '코드 미리보기 접기' : '전체 코드 미리보기'}
                       </button>
                       {showCodePreview && (
                         <button
@@ -2652,27 +2660,26 @@ export default function SodabotSettingsScreen() {
                     form="new-func-form"
                     className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow-2xs transition-colors cursor-pointer flex items-center justify-center gap-1.5"
                   >
-                    <Zap className="w-3.5 h-3.5" />
-                    펌웨어 만들기
+                    <Copy className="w-3.5 h-3.5" />
+                    전체 코드 생성 & 복사
                   </button>
                 </>
               ) : (
                 <>
                   <button
                     type="button"
-                    onClick={() => setShowCodePreview(!showCodePreview)}
-                    className="flex-1 py-2.5 bg-white hover:bg-neutral-50 text-neutral-700 border border-[#E5E5E3] text-xs font-medium rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                    onClick={() => setShowFuncModal(false)}
+                    className="flex-1 py-2.5 bg-white hover:bg-neutral-50 text-neutral-700 border border-[#E5E5E3] text-xs font-medium rounded-xl transition-colors cursor-pointer"
                   >
-                    <Code className="w-3.5 h-3.5" />
-                    {showCodePreview ? '코드 닫기' : '코드 미리보기'}
+                    닫기
                   </button>
                   <button
                     type="button"
-                    onClick={handleDownloadIno}
-                    className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow-2xs transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                    onClick={handleCopyMergedCode}
+                    className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow-2xs transition-colors cursor-pointer flex items-center justify-center gap-1.5 active:scale-95"
                   >
-                    <Download className="w-3.5 h-3.5" />
-                    .ino 다운로드
+                    {isCopiedCode ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{isCopiedCode ? '전체 코드 복사 완료!' : '전체 코드 다시 복사'}</span>
                   </button>
                 </>
               )}
