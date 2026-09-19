@@ -15,8 +15,15 @@
 #include <ESPAsyncWebServer.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
+
+// === CUSTOM_HEADERS_START ===
+// === CUSTOM_HEADERS_END ===
+
 const char* ssid = __SODA_WIFI_SSID__;
 const char* password = __SODA_WIFI_PASSWORD__;
+
+// === CUSTOM_GLOBALS_START ===
+// === CUSTOM_GLOBALS_END ===
 
 struct IncomingMessage { char json[2048]; uint32_t clientId; uint8_t source; };
 void processMessage(const IncomingMessage& message);
@@ -1356,9 +1363,11 @@ void triggerExpressionByName(const String& name) {
 }
 
 // ==============================================================================
-// 🎓 학생 실습용 사용자 정의 함수 슬롯 (Arduino Custom Function Slots)
-// 학생이 개발한 새로운 기능을 아래 함수(customFunction1, 2, 3) 내부에 직접 작성하세요!
+// 🎓 커스텀 아두이노 기능 (사용자 함수 삽입 영역)
 // ==============================================================================
+
+// === CUSTOM_FUNCTIONS_START ===
+// === CUSTOM_FUNCTIONS_END ===
 
 // 사용자 함수 슬롯 1 (SODA TALK: CUSTOM_1)
 void customFunction1() {
@@ -1701,6 +1710,9 @@ void setup() {
   ws.onEvent(onWsEvent); server.addHandler(&ws);
   if (ssid && ssid[0]) WiFi.begin(ssid, password);
   Serial.println("SODABOT BASIC protocol=1 준비 완료");
+
+  // === CUSTOM_SETUP_START ===
+  // === CUSTOM_SETUP_END ===
 }
 
 void loop() {

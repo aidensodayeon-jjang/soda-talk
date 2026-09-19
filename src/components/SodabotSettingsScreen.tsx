@@ -5,8 +5,15 @@ import {
   Wifi, Clock, MapPin, Download, Upload, Share2, Link, RefreshCw, 
   Check, Power, Battery, Cpu, HardDrive, Thermometer, Droplets, Sun, 
   ChevronRight, HelpCircle, MessageCircle, FileText, MoveUp, MoveDown,
-  ChevronDown, Layers, ShieldCheck, Zap, Bluetooth, Usb, Trash2
+  ChevronDown, Layers, ShieldCheck, Zap, Bluetooth, Usb, Trash2,
+  Copy, Code
 } from 'lucide-react';
+import { 
+  generateCustomFirmware, 
+  validateCustomCode, 
+  CustomCodeParts, 
+  GeneratedFirmwareResult 
+} from '../utils/sodabotFirmwareGenerator';
 
 const expressionsList = [
   { id: 'default', label: '기본', emoji: '🤖', bg: 'bg-[#FAF9F6]' },
@@ -608,6 +615,16 @@ export default function SodabotSettingsScreen() {
   const [funcDescInput, setFuncDescInput] = useState('');
   const [connectTargetFunc, setConnectTargetFunc] = useState<{ id: string; name: string; slot: string; arduinoFunction: string; description: string } | null>(null);
 
+  // 커스텀 코드 4개 파트 및 펌웨어 생성 상태
+  const [headersInput, setHeadersInput] = useState('');
+  const [globalsInput, setGlobalsInput] = useState('');
+  const [setupInput, setSetupInput] = useState('');
+  const [functionInput, setFunctionInput] = useState('');
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  const [generationResult, setGenerationResult] = useState<GeneratedFirmwareResult | null>(null);
+  const [showCodePreview, setShowCodePreview] = useState(false);
+  const [isCopiedCode, setIsCopiedCode] = useState(false);
+
   const [btnSingleClick, setBtnSingleClick] = useState(() => {
     const saved = localStorage.getItem('sodabot_btn_single');
     return saved && saved !== 'show_time' ? saved : 'random_face';
@@ -654,48 +671,103 @@ export default function SodabotSettingsScreen() {
     }
   };
 
-  // 1. 새 기능 등록 모달 열기 (비어 있는 첫 번째 슬롯 자동 선택)
+  // 1. 새 기능 등록 모달 열기 (비어 있는 첫 번째 슬롯 자동 선택 및 초기화)
   const handleOpenNewFuncModal = () => {
     setFuncNameInput('');
     setFuncDescInput('');
+    setHeadersInput('');
+    setGlobalsInput('');
+    setSetupInput('');
+    setFunctionInput('');
+    setValidationErrors([]);
+    setGenerationResult(null);
+    setShowCodePreview(false);
+    setIsCopiedCode(false);
+
     const usedSlots = customFunctions.map(f => f.slot);
     const availableSlot = USER_FUNCTION_SLOTS.find(s => !usedSlots.includes(s.slot)) || USER_FUNCTION_SLOTS[0];
     setSelectedSlot(availableSlot.slot);
     setShowFuncModal(true);
   };
 
-  // 새 기능 등록 제출
-  const handleSaveNewFunction = (e: React.FormEvent) => {
+  // 펌웨어 빌드 및 기능 등록
+  const handleBuildFirmware = (e: React.FormEvent) => {
     e.preventDefault();
-    const trimmedName = funcNameInput.trim();
-    const trimmedDesc = funcDescInput.trim();
+    setValidationErrors([]);
 
-    if (!trimmedName) {
-      alert('기능 이름을 입력해주세요.');
-      return;
-    }
-
-    // 이미 사용 중인 슬롯인지 확인
-    if (customFunctions.some(f => f.slot === selectedSlot)) {
-      alert('이미 다른 기능이 저장된 슬롯입니다. 비어 있는 슬롯을 선택해주세요.');
-      return;
-    }
-
-    const slotObj = USER_FUNCTION_SLOTS.find(s => s.slot === selectedSlot) || USER_FUNCTION_SLOTS[0];
-    const newItem = {
-      id: `func_${Date.now()}`,
-      name: trimmedName,
-      slot: slotObj.slot,
-      arduinoFunction: slotObj.arduinoFunction,
-      description: trimmedDesc,
-      createdAt: Date.now()
+    const parts: CustomCodeParts = {
+      name: funcNameInput.trim(),
+      description: funcDescInput.trim(),
+      headers: headersInput,
+      globals: globalsInput,
+      setup: setupInput,
+      functionCode: functionInput,
+      targetSlot: selectedSlot
     };
 
-    const updatedList = [...customFunctions, newItem];
-    setCustomFunctions(updatedList);
-    localStorage.setItem('sodabot_custom_functions', JSON.stringify(updatedList));
-    setShowFuncModal(false);
-    showToast(`✨ 새 기능 '${trimmedName}'이(가) 등록되었습니다!`);
+    // 검증 수행
+    const validation = validateCustomCode(parts);
+    if (!validation.valid) {
+      setValidationErrors(validation.errors);
+      return;
+    }
+
+    try {
+      const wifiSsid = localStorage.getItem('sodabot_wifi_ssid') || '';
+      const wifiPass = localStorage.getItem('sodabot_wifi_pass') || '';
+      const result = generateCustomFirmware(parts, profileName || 'LUMI', wifiSsid, wifiPass);
+      setGenerationResult(result);
+
+      // SODA TALK 내 기능 목록에 등록
+      const slotObj = USER_FUNCTION_SLOTS.find(s => s.slot === selectedSlot) || USER_FUNCTION_SLOTS[0];
+      const newItem = {
+        id: `func_${Date.now()}`,
+        name: parts.name,
+        slot: slotObj.slot,
+        arduinoFunction: result.mainFunctionName || slotObj.arduinoFunction,
+        functionName: result.mainFunctionName,
+        description: parts.description || '',
+        firmwareFileName: result.fileName,
+        headers: parts.headers,
+        globals: parts.globals,
+        setupCode: parts.setup,
+        functionCode: parts.functionCode,
+        createdAt: Date.now()
+      };
+
+      const filtered = customFunctions.filter(item => item.slot !== selectedSlot);
+      const updatedList = [...filtered, newItem];
+      setCustomFunctions(updatedList);
+      localStorage.setItem('sodabot_custom_functions', JSON.stringify(updatedList));
+
+      showToast(`✨ '${parts.name}' 펌웨어가 성공적으로 생성되었습니다!`);
+    } catch (err: any) {
+      setValidationErrors([`펌웨어 생성 중 오류가 발생했습니다: ${err.message || '알 수 없는 오류'}`]);
+    }
+  };
+
+  // .ino 파일 다운로드
+  const handleDownloadIno = () => {
+    if (!generationResult) return;
+    const blob = new Blob([generationResult.mergedCode], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = generationResult.fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast(`📥 '${generationResult.fileName}' 다운로드를 시작합니다.`);
+  };
+
+  // 병합된 코드 복사
+  const handleCopyMergedCode = () => {
+    if (!generationResult) return;
+    navigator.clipboard.writeText(generationResult.mergedCode);
+    setIsCopiedCode(true);
+    showToast('📋 전체 .ino 코드가 클립보드에 복사되었습니다.');
+    setTimeout(() => setIsCopiedCode(false), 2000);
   };
 
   // 2. 기능 수정 모달 열기
@@ -2152,143 +2224,317 @@ export default function SodabotSettingsScreen() {
 
 
 
-      {/* 1. Modal: 새 기능 등록 (showFuncModal) */}
+      {/* 1. Modal: 새 기능 등록 & 펌웨어 빌더 (showFuncModal) */}
       {showFuncModal && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-white border border-[#E5E5E3] rounded-2xl max-w-sm sm:max-w-md w-full p-5 sm:p-6 shadow-xl space-y-4">
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 animate-fade-in overflow-y-auto">
+          <div className="bg-white border border-[#E5E5E3] rounded-2xl max-w-lg w-full p-5 sm:p-6 shadow-xl space-y-4 my-auto max-h-[92vh] flex flex-col">
             
             {/* Header */}
-            <div className="flex items-center justify-between border-b border-[#E5E5E3] pb-3">
+            <div className="flex items-center justify-between border-b border-[#E5E5E3] pb-3 shrink-0">
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-neutral-100 border border-neutral-200 flex items-center justify-center text-neutral-800 text-sm font-bold">
-                  ✨
+                <div className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 text-sm font-bold">
+                  ⚡
                 </div>
                 <div>
                   <h3 className="text-sm sm:text-base font-bold text-[#191919]">
-                    새 기능 등록
+                    {generationResult ? '펌웨어 준비 완료' : '새 기능 등록'}
                   </h3>
                   <p className="text-[11px] text-[#787774]">
-                    Arduino에서 만든 기능을 SODA TALK에 등록해요.
+                    {generationResult 
+                      ? '병합된 펌웨어를 다운로드하여 소다봇에 업로드하세요.' 
+                      : '내가 만든 기능 코드를 추가하고 새 펌웨어를 만들어요.'}
                   </p>
                 </div>
               </div>
               <button 
                 type="button"
                 onClick={() => setShowFuncModal(false)}
-                className="w-7 h-7 rounded-lg bg-[#FBFBFA] border border-[#E5E5E3] flex items-center justify-center text-xs text-[#787774] hover:text-[#191919] cursor-pointer"
+                className="w-7 h-7 rounded-lg bg-[#FBFBFA] border border-[#E5E5E3] flex items-center justify-center text-xs text-[#787774] hover:text-[#191919] cursor-pointer transition-colors"
               >
                 ✕
               </button>
             </div>
 
-            {/* Form */}
-            <form onSubmit={handleSaveNewFunction} className="space-y-4">
+            {/* Scrollable Content Body */}
+            <div className="overflow-y-auto pr-1 space-y-4 flex-1">
               
-              {/* 1. 기능 이름 */}
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-[#191919] flex items-center justify-between">
-                  <span>기능 이름</span>
-                  <span className="text-[10px] text-rose-500 font-normal">* 필수</span>
-                </label>
-                <input
-                  type="text"
-                  value={funcNameInput}
-                  onChange={(e) => setFuncNameInput(e.target.value)}
-                  placeholder="예: 인터넷 시계"
-                  className="w-full px-3 py-2 bg-white border border-[#E5E5E3] focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 rounded-xl text-xs font-medium text-[#191919] outline-none transition-all placeholder:text-[#A1A1A0]"
-                  required
-                  autoFocus
-                />
-              </div>
+              {!generationResult ? (
+                /* === [Step 1: 코드 입력 화면] === */
+                <form id="new-func-form" onSubmit={handleBuildFirmware} className="space-y-4">
+                  
+                  {/* Validation Errors Notice */}
+                  {validationErrors.length > 0 && (
+                    <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl space-y-1">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-rose-700">
+                        <span>⚠️</span>
+                        <span>입력 내용을 확인해주세요:</span>
+                      </div>
+                      <ul className="text-[11px] text-rose-600 list-disc list-inside space-y-0.5 pl-1">
+                        {validationErrors.map((err, i) => (
+                          <li key={i}>{err}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
 
-              {/* 2. 어디에 저장할까요? (3개 슬롯 카드 선택) */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-[#191919] flex items-center justify-between">
-                  <span>어디에 저장할까요?</span>
-                  <span className="text-[10px] text-rose-500 font-normal">* 필수</span>
-                </label>
+                  {/* 1. 기능 이름 */}
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-[#191919] flex items-center justify-between">
+                      <span>기능 이름</span>
+                      <span className="text-[10px] text-rose-500 font-normal">* 필수</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={funcNameInput}
+                      onChange={(e) => setFuncNameInput(e.target.value)}
+                      placeholder="예: 인터넷 시계"
+                      className="w-full px-3 py-2 bg-white border border-[#E5E5E3] focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 rounded-xl text-xs font-medium text-[#191919] outline-none transition-all placeholder:text-[#A1A1A0]"
+                      required
+                      autoFocus
+                    />
+                  </div>
 
-                <div className="grid grid-cols-3 gap-2">
-                  {USER_FUNCTION_SLOTS.map((slot) => {
-                    const existingFn = customFunctions.find(fn => fn.slot === slot.slot);
-                    const isSelected = selectedSlot === slot.slot;
-                    const isUsed = !!existingFn;
+                  {/* 2. 기능 설명 (선택) */}
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-[#191919]">
+                      기능 설명 (선택)
+                    </label>
+                    <input
+                      type="text"
+                      value={funcDescInput}
+                      onChange={(e) => setFuncDescInput(e.target.value)}
+                      placeholder="예: 인터넷에서 현재 시간을 가져와 화면에 표시"
+                      className="w-full px-3 py-2 bg-white border border-[#E5E5E3] focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 rounded-xl text-xs font-medium text-[#191919] outline-none transition-all placeholder:text-[#A1A1A0]"
+                    />
+                  </div>
 
-                    return (
+                  {/* 3. 커스텀 코드 4개 영역 */}
+                  <div className="space-y-3 pt-1 border-t border-[#E5E5E3]">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-[#191919]">
+                        커스텀 코드 (4개 파트)
+                      </span>
+                      <span className="text-[10px] text-[#787774]">
+                        순서대로 필요한 코드를 작성해요
+                      </span>
+                    </div>
+
+                    {/* ① HEADERS */}
+                    <div className="p-3 bg-[#FBFBFA] border border-[#EBEBEA] rounded-xl space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-[#191919] flex items-center gap-1.5">
+                          <span className="px-1.5 py-0.5 bg-neutral-200 text-neutral-700 text-[9px] font-mono rounded">1</span>
+                          HEADERS (헤더 / 라이브러리)
+                        </span>
+                        <span className="text-[9px] text-[#787774]">선택</span>
+                      </div>
+                      <p className="text-[10px] text-[#787774]">
+                        필요한 라이브러리 코드를 붙여넣어요.
+                      </p>
+                      <textarea
+                        value={headersInput}
+                        onChange={(e) => setHeadersInput(e.target.value)}
+                        placeholder={`#include <time.h>`}
+                        rows={2}
+                        className="w-full px-3 py-2 bg-white border border-[#E5E5E3] focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 rounded-lg font-mono text-[11px] text-[#191919] outline-none transition-all placeholder:text-[#A1A1A0] resize-y"
+                        spellCheck={false}
+                      />
+                    </div>
+
+                    {/* ② GLOBALS */}
+                    <div className="p-3 bg-[#FBFBFA] border border-[#EBEBEA] rounded-xl space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-[#191919] flex items-center gap-1.5">
+                          <span className="px-1.5 py-0.5 bg-neutral-200 text-neutral-700 text-[9px] font-mono rounded">2</span>
+                          GLOBALS (전역 변수 / 설정값)
+                        </span>
+                        <span className="text-[9px] text-[#787774]">선택</span>
+                      </div>
+                      <p className="text-[10px] text-[#787774]">
+                        함수 밖에서 사용할 변수와 설정값을 넣어요.
+                      </p>
+                      <textarea
+                        value={globalsInput}
+                        onChange={(e) => setGlobalsInput(e.target.value)}
+                        placeholder={`const char* ntpServer = "pool.ntp.org";`}
+                        rows={2}
+                        className="w-full px-3 py-2 bg-white border border-[#E5E5E3] focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 rounded-lg font-mono text-[11px] text-[#191919] outline-none transition-all placeholder:text-[#A1A1A0] resize-y"
+                        spellCheck={false}
+                      />
+                    </div>
+
+                    {/* ③ SETUP */}
+                    <div className="p-3 bg-[#FBFBFA] border border-[#EBEBEA] rounded-xl space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-[#191919] flex items-center gap-1.5">
+                          <span className="px-1.5 py-0.5 bg-neutral-200 text-neutral-700 text-[9px] font-mono rounded">3</span>
+                          SETUP (초기화 코드)
+                        </span>
+                        <span className="text-[9px] text-[#787774]">선택</span>
+                      </div>
+                      <p className="text-[10px] text-[#787774]">
+                        소다봇이 시작할 때 한 번 실행할 코드를 넣어요.
+                      </p>
+                      <textarea
+                        value={setupInput}
+                        onChange={(e) => setSetupInput(e.target.value)}
+                        placeholder={`configTime(9 * 3600, 0, ntpServer);`}
+                        rows={2}
+                        className="w-full px-3 py-2 bg-white border border-[#E5E5E3] focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 rounded-lg font-mono text-[11px] text-[#191919] outline-none transition-all placeholder:text-[#A1A1A0] resize-y"
+                        spellCheck={false}
+                      />
+                    </div>
+
+                    {/* ④ FUNCTION */}
+                    <div className="p-3 bg-[#FBFBFA] border border-[#EBEBEA] rounded-xl space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-[#191919] flex items-center gap-1.5">
+                          <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-[9px] font-mono rounded font-bold">4</span>
+                          FUNCTION (실행 함수)
+                        </span>
+                        <span className="text-[9px] text-rose-500 font-bold">* 필수</span>
+                      </div>
+                      <p className="text-[10px] text-[#787774]">
+                        실제 기능을 실행하는 함수를 작성해요.
+                      </p>
+                      <textarea
+                        value={functionInput}
+                        onChange={(e) => setFunctionInput(e.target.value)}
+                        placeholder={`void showClock() {\n  // 기능 코드\n}`}
+                        rows={4}
+                        className="w-full px-3 py-2 bg-white border border-[#E5E5E3] focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 rounded-lg font-mono text-[11px] text-[#191919] outline-none transition-all placeholder:text-[#A1A1A0] resize-y"
+                        spellCheck={false}
+                        required
+                      />
+                    </div>
+
+                  </div>
+
+                </form>
+              ) : (
+                /* === [Step 2: 펌웨어 생성 완료 화면] === */
+                <div className="space-y-4 animate-fade-in">
+                  
+                  {/* Status Card */}
+                  <div className="p-4 bg-emerald-50/70 border border-emerald-200 rounded-2xl space-y-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs font-bold">
+                        ✓
+                      </div>
+                      <span className="text-sm font-bold text-emerald-950">
+                        펌웨어 준비 완료
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs pt-1">
+                      <div className="bg-white/80 p-2.5 rounded-xl border border-emerald-100 space-y-0.5">
+                        <span className="text-[10px] text-neutral-500">기능</span>
+                        <div className="font-bold text-[#191919] truncate">{funcNameInput}</div>
+                      </div>
+                      <div className="bg-white/80 p-2.5 rounded-xl border border-emerald-100 space-y-0.5">
+                        <span className="text-[10px] text-neutral-500">파일명</span>
+                        <div className="font-bold text-[#191919] font-mono text-[11px] truncate">{generationResult.fileName}</div>
+                      </div>
+                    </div>
+
+                    {/* Included Parts Checklist */}
+                    <div className="bg-white/80 p-2.5 rounded-xl border border-emerald-100 space-y-1.5">
+                      <span className="text-[10px] font-bold text-neutral-600">추가된 코드:</span>
+                      <div className="grid grid-cols-4 gap-1 text-[11px]">
+                        <span className={`px-1.5 py-0.5 rounded text-center font-medium ${generationResult.includedParts.headers ? 'bg-emerald-100 text-emerald-800' : 'bg-neutral-100 text-neutral-400'}`}>
+                          HEADERS {generationResult.includedParts.headers ? '✓' : '-'}
+                        </span>
+                        <span className={`px-1.5 py-0.5 rounded text-center font-medium ${generationResult.includedParts.globals ? 'bg-emerald-100 text-emerald-800' : 'bg-neutral-100 text-neutral-400'}`}>
+                          GLOBALS {generationResult.includedParts.globals ? '✓' : '-'}
+                        </span>
+                        <span className={`px-1.5 py-0.5 rounded text-center font-medium ${generationResult.includedParts.setup ? 'bg-emerald-100 text-emerald-800' : 'bg-neutral-100 text-neutral-400'}`}>
+                          SETUP {generationResult.includedParts.setup ? '✓' : '-'}
+                        </span>
+                        <span className={`px-1.5 py-0.5 rounded text-center font-medium ${generationResult.includedParts.function ? 'bg-emerald-100 text-emerald-800' : 'bg-neutral-100 text-neutral-400'}`}>
+                          FUNCTION {generationResult.includedParts.function ? '✓' : '-'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Code Preview Section */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
                       <button
-                        key={slot.slot}
                         type="button"
-                        disabled={isUsed}
-                        onClick={() => !isUsed && setSelectedSlot(slot.slot)}
-                        className={`p-2.5 rounded-xl border text-left flex flex-col justify-between gap-1.5 transition-all ${
-                          isUsed 
-                            ? 'bg-neutral-100/80 border-neutral-200 opacity-60 cursor-not-allowed'
-                            : isSelected 
-                              ? 'border-blue-600 bg-blue-50/50 ring-2 ring-blue-500/20 cursor-pointer' 
-                              : 'border-[#E5E5E3] bg-white hover:border-neutral-300 hover:bg-[#FBFBFA] cursor-pointer'
-                        }`}
+                        onClick={() => setShowCodePreview(!showCodePreview)}
+                        className="text-xs font-semibold text-neutral-700 hover:text-blue-600 flex items-center gap-1 cursor-pointer transition-colors"
                       >
-                        <div className="space-y-0.5 w-full">
-                          <div className={`text-xs font-bold truncate ${isSelected && !isUsed ? 'text-blue-700' : isUsed ? 'text-neutral-500' : 'text-[#191919]'}`}>
-                            {slot.displayName}
-                          </div>
-                          
-                          {/* Slot Status */}
-                          <div className="text-[10px] truncate">
-                            {isUsed ? (
-                              <span className="font-semibold text-neutral-500 truncate block">
-                                {existingFn.name} (사용 중)
-                              </span>
-                            ) : (
-                              <span className="text-neutral-400 font-normal">
-                                비어 있음
-                              </span>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Arduino Function Subtext */}
-                        <div className="text-[9px] font-mono text-[#86868B] truncate pt-1 border-t border-neutral-100">
-                          {slot.arduinoFunction}()
-                        </div>
+                        <Code className="w-3.5 h-3.5" />
+                        {showCodePreview ? '코드 미리보기 접기' : '코드 미리보기'}
                       </button>
-                    );
-                  })}
+                      {showCodePreview && (
+                        <button
+                          type="button"
+                          onClick={handleCopyMergedCode}
+                          className="text-[10px] text-neutral-600 hover:text-neutral-900 flex items-center gap-1 px-2 py-1 bg-[#FBFBFA] border border-[#E5E5E3] rounded-lg cursor-pointer"
+                        >
+                          {isCopiedCode ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                          {isCopiedCode ? '복사됨' : '전체 복사'}
+                        </button>
+                      )}
+                    </div>
+
+                    {showCodePreview && (
+                      <div className="relative rounded-xl border border-[#E5E5E3] bg-[#FBFBFA] p-3 max-h-56 overflow-y-auto">
+                        <pre className="font-mono text-[10px] text-neutral-800 leading-relaxed whitespace-pre-wrap">
+                          {generationResult.mergedCode}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
+
                 </div>
-              </div>
+              )}
 
-              {/* 3. 기능 설명 (선택) */}
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-[#191919]">
-                  기능 설명 (선택)
-                </label>
-                <input
-                  type="text"
-                  value={funcDescInput}
-                  onChange={(e) => setFuncDescInput(e.target.value)}
-                  placeholder="예: 현재 시간을 화면에 표시"
-                  className="w-full px-3 py-2 bg-white border border-[#E5E5E3] focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 rounded-xl text-xs font-medium text-[#191919] outline-none transition-all placeholder:text-[#A1A1A0]"
-                />
-              </div>
+            </div>
 
-              {/* Action Buttons */}
-              <div className="pt-2 flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowFuncModal(false)}
-                  className="flex-1 py-2.5 bg-white hover:bg-neutral-50 text-neutral-700 border border-[#E5E5E3] text-xs font-medium rounded-xl transition-colors cursor-pointer"
-                >
-                  취소
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow-2xs transition-colors cursor-pointer"
-                >
-                  기능 등록
-                </button>
-              </div>
-
-            </form>
+            {/* Footer Buttons */}
+            <div className="pt-3 border-t border-[#E5E5E3] flex items-center gap-2 shrink-0">
+              {!generationResult ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setShowFuncModal(false)}
+                    className="flex-1 py-2.5 bg-white hover:bg-neutral-50 text-neutral-700 border border-[#E5E5E3] text-xs font-medium rounded-xl transition-colors cursor-pointer"
+                  >
+                    취소
+                  </button>
+                  <button
+                    type="submit"
+                    form="new-func-form"
+                    className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow-2xs transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <Zap className="w-3.5 h-3.5" />
+                    펌웨어 만들기
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setShowCodePreview(!showCodePreview)}
+                    className="flex-1 py-2.5 bg-white hover:bg-neutral-50 text-neutral-700 border border-[#E5E5E3] text-xs font-medium rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <Code className="w-3.5 h-3.5" />
+                    {showCodePreview ? '코드 닫기' : '코드 미리보기'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDownloadIno}
+                    className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow-2xs transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    .ino 다운로드
+                  </button>
+                </>
+              )}
+            </div>
 
           </div>
         </div>
