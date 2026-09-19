@@ -30,6 +30,70 @@ const expressionsList = [
   { id: 'idle', label: '평온', emoji: '😊', bg: 'bg-emerald-50' },
 ];
 
+const GPT_CUSTOM_CODE_PROMPT = `나는 ESP32-S3 기반의 SODABOT에 새로운 기능을 추가하려고 합니다.
+
+원하는 기능:
+[여기에 만들고 싶은 기능을 설명하세요]
+
+예:
+인터넷에서 현재 시간을 가져와
+SODABOT LCD 화면에 HH:MM 형식으로 표시하고 싶습니다.
+
+기존 SODABOT 펌웨어에 코드를 자동으로 합칠 예정이므로
+반드시 아래 4개 파트로 나누어 코드를 작성해주세요.
+
+1. HEADERS
+필요한 #include 코드만 작성해주세요.
+
+2. GLOBALS
+전역 변수, 상수, 서버 주소, 설정값 등
+함수 밖에 필요한 코드만 작성해주세요.
+
+3. SETUP
+기존 setup() 함수 안에 추가할 초기화 코드만 작성해주세요.
+setup() 함수 전체를 새로 작성하지 마세요.
+
+4. FUNCTION
+실제 기능을 수행하는 함수 전체를 작성해주세요.
+
+중요 규칙:
+- ESP32-S3 Arduino 환경 기준으로 작성해주세요.
+- setup() 전체를 만들지 마세요.
+- loop() 전체를 만들지 마세요.
+- 기존 SODABOT 펌웨어를 수정한다고 가정해주세요.
+- 각 파트는 독립적으로 복사할 수 있게 구분해주세요.
+- 필요하지 않은 파트는 "없음"이라고 표시해주세요.
+- FUNCTION에는 실행 가능한 대표 함수가 최소 1개 있어야 합니다.
+- 함수 이름은 기능을 이해하기 쉬운 이름으로 작성해주세요.
+- 외부 라이브러리가 필요한 경우 HEADERS에 포함해주세요.
+- Wi-Fi가 이미 연결되어 있다고 가정해도 됩니다.
+- LCD 출력, 표정 출력, 소리 출력 등 SODABOT 전용 함수가 필요하다면
+  임의로 함수명을 만들지 말고
+  "SODABOT의 기존 출력 함수에 연결 필요"라고 주석으로 표시해주세요.
+- 코드 뒤에는 각 파트가 어떤 역할을 하는지 한 줄씩 간단히 설명해주세요.
+
+출력 형식은 반드시 다음과 같이 해주세요.
+
+=== HEADERS ===
+\`\`\`cpp
+// 필요한 include (없으면 "없음")
+\`\`\`
+
+=== GLOBALS ===
+\`\`\`cpp
+// 전역 변수 / 상수
+\`\`\`
+
+=== SETUP ===
+\`\`\`cpp
+// setup() 내부에 들어갈 초기화 코드
+\`\`\`
+
+=== FUNCTION ===
+\`\`\`cpp
+// 실행 함수 정의
+\`\`\``;
+
 export default function SodabotSettingsScreen() {
   const [connectionType, setConnectionType] = useState(sodabotTransport.type);
   React.useEffect(() => {
@@ -625,6 +689,17 @@ export default function SodabotSettingsScreen() {
   const [showCodePreview, setShowCodePreview] = useState(false);
   const [isCopiedCode, setIsCopiedCode] = useState(false);
 
+  // GPT 프롬프트 가이드 상태
+  const [showGptHelp, setShowGptHelp] = useState(false);
+  const [isCopiedGptPrompt, setIsCopiedGptPrompt] = useState(false);
+
+  const handleCopyGptPrompt = () => {
+    navigator.clipboard.writeText(GPT_CUSTOM_CODE_PROMPT);
+    setIsCopiedGptPrompt(true);
+    showToast('📋 GPT 프롬프트가 클립보드에 복사되었습니다!');
+    setTimeout(() => setIsCopiedGptPrompt(false), 2000);
+  };
+
   const [btnSingleClick, setBtnSingleClick] = useState(() => {
     const saved = localStorage.getItem('sodabot_btn_single');
     return saved && saved !== 'show_time' ? saved : 'random_face';
@@ -683,6 +758,8 @@ export default function SodabotSettingsScreen() {
     setGenerationResult(null);
     setShowCodePreview(false);
     setIsCopiedCode(false);
+    setShowGptHelp(false);
+    setIsCopiedGptPrompt(false);
 
     const usedSlots = customFunctions.map(f => f.slot);
     const availableSlot = USER_FUNCTION_SLOTS.find(s => !usedSlots.includes(s.slot)) || USER_FUNCTION_SLOTS[0];
@@ -2310,14 +2387,68 @@ export default function SodabotSettingsScreen() {
 
                   {/* 3. 커스텀 코드 4개 영역 */}
                   <div className="space-y-3 pt-1 border-t border-[#E5E5E3]">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-[#191919]">
-                        커스텀 코드 (4개 파트)
-                      </span>
+                    <div className="flex items-center justify-between flex-wrap gap-1.5">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-[#191919]">
+                          커스텀 코드 (4개 파트)
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setShowGptHelp(!showGptHelp)}
+                          className="px-2 py-0.5 bg-blue-50 hover:bg-blue-100 text-blue-600 border border-blue-200/80 rounded-full text-[10px] font-semibold flex items-center gap-1 transition-all cursor-pointer shadow-2xs group"
+                          title="GPT에게 코드 요청하는 프롬프트 보기"
+                        >
+                          <Sparkles className="w-3 h-3 text-blue-600 group-hover:scale-110 transition-transform" />
+                          <span>GPT에게 코드 만들기</span>
+                        </button>
+                      </div>
                       <span className="text-[10px] text-[#787774]">
                         순서대로 필요한 코드를 작성해요
                       </span>
                     </div>
+
+                    {/* GPT 프롬프트 가이드 팝오버 카드 */}
+                    {showGptHelp && (
+                      <div className="p-3.5 bg-blue-50/50 border border-blue-200 rounded-2xl space-y-2.5 animate-fade-in shadow-xs">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-start gap-2">
+                            <span className="text-base leading-none mt-0.5">🤖</span>
+                            <div>
+                              <h4 className="text-xs font-bold text-[#191919]">
+                                GPT에게 이렇게 요청해보세요
+                              </h4>
+                              <p className="text-[10px] text-[#787774] mt-0.5">
+                                아래 프롬프트를 복사해서 GPT에 붙여넣고, 만들고 싶은 기능만 바꿔 입력하세요.
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={handleCopyGptPrompt}
+                              className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-semibold rounded-lg flex items-center gap-1 shadow-2xs transition-all cursor-pointer active:scale-95"
+                            >
+                              {isCopiedGptPrompt ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                              {isCopiedGptPrompt ? '복사됨!' : '프롬프트 복사'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setShowGptHelp(false)}
+                              className="w-6 h-6 rounded-lg bg-white border border-[#E5E5E3] flex items-center justify-center text-xs text-neutral-500 hover:text-neutral-900 cursor-pointer transition-colors"
+                              title="닫기"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="relative bg-[#FBFBFA] border border-[#EBEBEA] rounded-xl p-2.5 max-h-48 overflow-y-auto">
+                          <pre className="font-mono text-[10px] text-neutral-700 whitespace-pre-wrap leading-relaxed select-all">
+                            {GPT_CUSTOM_CODE_PROMPT}
+                          </pre>
+                        </div>
+                      </div>
+                    )}
 
                     {/* ① HEADERS */}
                     <div className="p-3 bg-[#FBFBFA] border border-[#EBEBEA] rounded-xl space-y-1.5">
