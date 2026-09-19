@@ -559,9 +559,9 @@ export default function SodabotSettingsScreen() {
 
   // 미리 준비된 아두이노 사용자 함수 슬롯 정의 (확장 가능)
   const USER_FUNCTION_SLOTS = [
-    { slot: 'CUSTOM_1', arduinoFunction: 'customFunction1', label: 'customFunction1()' },
-    { slot: 'CUSTOM_2', arduinoFunction: 'customFunction2', label: 'customFunction2()' },
-    { slot: 'CUSTOM_3', arduinoFunction: 'customFunction3', label: 'customFunction3()' },
+    { slot: 'CUSTOM_1', arduinoFunction: 'customFunction1', label: 'customFunction1()', displayName: '사용자 함수 1' },
+    { slot: 'CUSTOM_2', arduinoFunction: 'customFunction2', label: 'customFunction2()', displayName: '사용자 함수 2' },
+    { slot: 'CUSTOM_3', arduinoFunction: 'customFunction3', label: 'customFunction3()', displayName: '사용자 함수 3' },
   ];
 
   // 사용자 정의 아두이노 기능 (MY FUNCTIONS) 상태 관리
@@ -2159,20 +2159,20 @@ export default function SodabotSettingsScreen() {
       {/* Modal: 새 기능 등록 / 수정 모달 (showFuncModal) */}
       {showFuncModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-white border border-[#EAE6DF] rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5">
+          <div className="bg-white border border-[#EAE6DF] rounded-3xl max-w-sm sm:max-w-md w-full p-5 sm:p-6 shadow-2xl space-y-4">
             
             {/* Header */}
-            <div className="flex items-center justify-between border-b border-[#EAE6DF] pb-3.5">
+            <div className="flex items-center justify-between border-b border-[#EAE6DF] pb-3">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-2xl bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-600 text-lg font-bold">
+                <div className="w-8 h-8 rounded-xl bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-600 text-base font-bold">
                   ✨
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-[#1D1D1F]">
+                  <h3 className="text-sm sm:text-base font-bold text-[#1D1D1F]">
                     {editingFunc ? '기능 정보 수정' : '새 기능 등록'}
                   </h3>
                   <p className="text-[11px] text-[#86868B]">
-                    Arduino에서 만든 기능을 SODA TALK에 등록해요.
+                    Arduino에서 만든 기능을 등록해요.
                   </p>
                 </div>
               </div>
@@ -2186,10 +2186,10 @@ export default function SodabotSettingsScreen() {
             </div>
 
             {/* Form */}
-            <form onSubmit={handleSaveCustomFunction} className="space-y-4">
+            <form onSubmit={handleSaveCustomFunction} className="space-y-3.5">
               
               {/* 1. 기능 이름 */}
-              <div className="space-y-1.5">
+              <div className="space-y-1">
                 <label className="text-xs font-bold text-[#1D1D1F] flex items-center justify-between">
                   <span>기능 이름</span>
                   <span className="text-[10px] text-rose-500 font-normal">* 필수</span>
@@ -2198,58 +2198,53 @@ export default function SodabotSettingsScreen() {
                   type="text"
                   value={funcNameInput}
                   onChange={(e) => setFuncNameInput(e.target.value)}
-                  placeholder="예: 인터넷 시계, 날씨 정보, 공부 타이머"
-                  className="w-full px-3.5 py-2.5 bg-[#FAF9F6] border border-[#EAE6DF] focus:border-indigo-500 focus:bg-white rounded-xl text-xs font-medium text-[#1D1D1F] outline-none transition-all"
+                  placeholder="예: 인터넷 시계"
+                  className="w-full px-3 py-2 bg-[#FAF9F6] border border-[#EAE6DF] focus:border-indigo-500 focus:bg-white rounded-xl text-xs font-medium text-[#1D1D1F] outline-none transition-all"
                   required
                 />
               </div>
 
-              {/* 2. 연결할 사용자 함수 (슬롯 드롭다운) */}
-              <div className="space-y-1.5">
+              {/* 2. 사용자 함수 선택 */}
+              <div className="space-y-1">
                 <label className="text-xs font-bold text-[#1D1D1F] flex items-center justify-between">
-                  <span>연결할 사용자 함수</span>
+                  <span>사용자 함수 선택</span>
                   <span className="text-[10px] text-rose-500 font-normal">* 필수</span>
                 </label>
                 <div className="relative">
                   <select
                     value={selectedSlot}
                     onChange={(e) => setSelectedSlot(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-[#FAF9F6] border border-[#EAE6DF] focus:border-indigo-500 focus:bg-white rounded-xl text-xs font-mono font-bold text-indigo-700 outline-none transition-all appearance-none cursor-pointer"
+                    className="w-full px-3 py-2 bg-[#FAF9F6] border border-[#EAE6DF] focus:border-indigo-500 focus:bg-white rounded-xl text-xs font-bold text-[#1D1D1F] outline-none transition-all appearance-none cursor-pointer"
                   >
                     {USER_FUNCTION_SLOTS.map((slot) => (
                       <option key={slot.slot} value={slot.slot}>
-                        {slot.label}
+                        {slot.displayName}
                       </option>
                     ))}
                   </select>
-                  <ChevronDown className="w-4 h-4 text-[#86868B] absolute right-3 top-3 pointer-events-none" />
+                  <ChevronDown className="w-4 h-4 text-[#86868B] absolute right-3 top-2.5 pointer-events-none" />
                 </div>
-
-                {/* 도움말 박스 */}
-                <div className="p-3 bg-indigo-50/70 rounded-2xl border border-indigo-100 text-[11px] text-indigo-950 space-y-1.5 leading-relaxed">
-                  <p className="font-semibold text-indigo-900">
-                    도움말: Arduino에서 코드를 작성한 사용자 함수 슬롯을 선택하세요.
-                  </p>
-                  <p className="text-[10px] text-indigo-700">
-                    예: <span className="font-mono font-bold">{USER_FUNCTION_SLOTS.find(s => s.slot === selectedSlot)?.label || 'customFunction1()'}</span> 안에 인터넷 시계 코드를 작성했다면 해당 함수를 선택합니다.
-                  </p>
-                  <div className="bg-white/90 p-2 rounded-lg border border-indigo-100 font-mono text-[10px] text-indigo-800 leading-snug">
-                    void <strong className="text-indigo-600">{USER_FUNCTION_SLOTS.find(s => s.slot === selectedSlot)?.arduinoFunction || 'customFunction1'}</strong>() {'{\n   ...\n}'}
-                  </div>
+                <div className="flex items-center justify-between pt-0.5 px-0.5">
+                  <span className="text-[11px] font-mono font-bold text-indigo-600">
+                    {USER_FUNCTION_SLOTS.find(s => s.slot === selectedSlot)?.arduinoFunction}()
+                  </span>
+                  <span className="text-[10px] text-[#86868B]">
+                    Arduino에서 코드를 작성한 함수 슬롯을 선택하세요.
+                  </span>
                 </div>
               </div>
 
               {/* 3. 기능 설명 (선택) */}
-              <div className="space-y-1.5">
+              <div className="space-y-1">
                 <label className="text-xs font-bold text-[#1D1D1F]">
                   기능 설명 (선택)
                 </label>
-                <textarea
+                <input
+                  type="text"
                   value={funcDescInput}
                   onChange={(e) => setFuncDescInput(e.target.value)}
-                  rows={2}
-                  placeholder="예: 인터넷에서 현재 시간을 가져와 화면에 표시합니다."
-                  className="w-full px-3.5 py-2 bg-[#FAF9F6] border border-[#EAE6DF] focus:border-indigo-500 focus:bg-white rounded-xl text-xs font-medium text-[#1D1D1F] outline-none transition-all resize-none"
+                  placeholder="예: 현재 시간을 화면에 표시"
+                  className="w-full px-3 py-2 bg-[#FAF9F6] border border-[#EAE6DF] focus:border-indigo-500 focus:bg-white rounded-xl text-xs font-medium text-[#1D1D1F] outline-none transition-all"
                 />
               </div>
 
