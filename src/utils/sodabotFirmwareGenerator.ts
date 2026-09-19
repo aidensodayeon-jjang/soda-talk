@@ -89,22 +89,62 @@ export function sanitizeToPascalCase(name: string): string {
   return pascal.length > 0 ? pascal : 'CustomFunction';
 }
 
+export interface FunctionInfo {
+  name: string;
+  returnType: string;
+  parameters: string;
+  isVoidZeroParam: boolean;
+}
+
 /**
- * FUNCTION 코드에서 정의된 함수 이름들을 정규식으로 추출
+ * FUNCTION 코드 내 정의된 함수들을 파싱하여 정보 추출
  */
-export function extractFunctionNames(functionCode: string): string[] {
+export function parseFunctions(functionCode: string): FunctionInfo[] {
   if (!functionCode) return [];
   
-  const functionRegex = /(?:void|int|bool|float|double|String|uint8_t|uint16_t|uint32_t|char|auto)\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\([^)]*\)\s*\{/g;
-  const names: string[] = [];
+  const functionRegex = /(void|int|bool|float|double|String|uint8_t|uint16_t|uint32_t|char|auto)\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(([^)]*)\)\s*\{/g;
+  const list: FunctionInfo[] = [];
   let match;
   
   while ((match = functionRegex.exec(functionCode)) !== null) {
-    if (match[1]) {
-      names.push(match[1]);
-    }
+    const returnType = match[1];
+    const name = match[2];
+    const rawParams = (match[3] || '').trim();
+    const isVoidZeroParam = returnType === 'void' && (rawParams === '' || rawParams === 'void');
+    list.push({ name, returnType, parameters: rawParams, isVoidZeroParam });
   }
-  return names;
+  return list;
+}
+
+/**
+ * FUNCTION 코드에서 정의된 함수 이름들을 추출
+ */
+export function extractFunctionNames(functionCode: string): string[] {
+  return parseFunctions(functionCode).map(f => f.name);
+}
+
+/**
+ * 매개변수 없이 슬롯에서 안전하게 실행 가능한 대표 void 함수를 탐색
+ */
+export function findMainExecutableFunction(functionCode: string): string | null {
+  const parsed = parseFunctions(functionCode);
+  if (parsed.length === 0) return null;
+
+  // 1순위: 매개변수 없는 void 함수
+  const voidZero = parsed.filter(f => f.isVoidZeroParam);
+  if (voidZero.length > 0) {
+    const preferred = voidZero.find(f => /^(show|run|start|handle|play|do|exec|main|update|display|print)/i.test(f.name));
+    return preferred ? preferred.name : voidZero[0].name;
+  }
+
+  // 2순위: 매개변수가 없는 함수 (반환형 있는 경우)
+  const zeroParam = parsed.filter(f => f.parameters === '' || f.parameters === 'void');
+  if (zeroParam.length > 0) {
+    return zeroParam[0].name;
+  }
+
+  // 매개변수가 있는 함수만 있다면 슬롯에서 직접 호출 시 에러가 발생하므로 null 반환
+  return null;
 }
 
 /**
@@ -154,7 +194,7 @@ export function validateCustomCode(parts: CustomCodeParts): ValidationResult {
     }
   }
 
-  const mainFunctionName = extractedFunctions[0] || 'customFunction';
+  const mainFunctionName = findMainExecutableFunction(fnCode) || extractedFunctions[0] || 'customFunction';
 
   return {
     valid: errors.length === 0,
@@ -179,7 +219,7 @@ export function generateCustomFirmware(
   const fileName = `SODABOT_${cleanPascal}.ino`;
   
   const extractedFunctions = extractFunctionNames(parts.functionCode || '');
-  const mainFunctionName = extractedFunctions[0] || 'customFunction';
+  const mainFunctionName = findMainExecutableFunction(parts.functionCode || '') || extractedFunctions[0] || '';
 
   // 1. 헤더 정리 (중복 include 제거 및 들여쓰기)
   let cleanHeaders = (parts.headers || '').trim();
