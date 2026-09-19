@@ -24,9 +24,11 @@
 const char* ssid = __SODA_WIFI_SSID__;
 const char* password = __SODA_WIFI_PASSWORD__;
 
-// === CUSTOM_GLOBALS_START ===
+// 기본 위치 설정 (서울 기준)
 const char* WEATHER_LATITUDE  = "37.5665";
 const char* WEATHER_LONGITUDE = "126.9780";
+
+// === CUSTOM_GLOBALS_START ===
 // === CUSTOM_GLOBALS_END ===
 
 struct IncomingMessage { char json[2048]; uint32_t clientId; uint8_t source; };

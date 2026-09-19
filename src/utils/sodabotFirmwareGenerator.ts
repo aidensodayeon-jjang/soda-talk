@@ -279,6 +279,15 @@ export function generateCustomFirmware(
   );
 
   // 4. GLOBALS 영역 교체 (전역 범위 유지)
+  const cleanGlobals = (parts.globals || '').trim();
+  if (/\bWEATHER_LATITUDE\b/.test(cleanGlobals)) {
+    // 사용자가 직접 WEATHER_LATITUDE를 GLOBALS에 작성한 경우 기본 정의부를 주석 처리하여 중복 정의 방지
+    merged = merged.replace(
+      /const char\*\s+WEATHER_LATITUDE\s*=[\s\S]*?const char\*\s+WEATHER_LONGITUDE\s*=[\s\S]*?;\n?/,
+      '// (기본 WEATHER_LATITUDE / WEATHER_LONGITUDE는 아래 사용자 GLOBALS에서 대체됨)\n'
+    );
+  }
+
   merged = replaceCustomSection(
     merged,
     '// === CUSTOM_GLOBALS_START ===',
@@ -337,7 +346,6 @@ export function generateCustomFirmware(
   }
 
   // 8. 병합 후 검증 단계
-  const cleanGlobals = (parts.globals || '').trim();
   if (cleanGlobals && cleanGlobals !== '없음' && cleanGlobals.toUpperCase() !== 'NONE') {
     const firstCodeLine = cleanGlobals.split('\n').map(l => l.trim()).find(l => l && !l.startsWith('//'));
     if (firstCodeLine && !merged.includes(firstCodeLine)) {
