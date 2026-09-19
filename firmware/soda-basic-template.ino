@@ -25,6 +25,8 @@ const char* ssid = __SODA_WIFI_SSID__;
 const char* password = __SODA_WIFI_PASSWORD__;
 
 // === CUSTOM_GLOBALS_START ===
+const char* WEATHER_LATITUDE  = "37.5665";
+const char* WEATHER_LONGITUDE = "126.9780";
 // === CUSTOM_GLOBALS_END ===
 
 struct IncomingMessage { char json[2048]; uint32_t clientId; uint8_t source; };
@@ -1365,8 +1367,80 @@ void triggerExpressionByName(const String& name) {
 }
 
 // ==============================================================================
-// 🎓 커스텀 아두이노 기능 (사용자 함수 삽입 영역)
+// 🎓 커스텀 아두이노 기능 (날씨 및 사용자 함수 영역)
 // ==============================================================================
+
+// 날씨 정보 가져오기 및 LCD 출력 함수
+void showTodayWeather() {
+  Serial.println("[WEATHER] start");
+
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[WEATHER] Wi-Fi not connected");
+    drawMessage("Wi-Fi 연결 안됨", 0);
+    sleeping = false; customExpression = true; expressionUntil = millis() + 5000;
+    return;
+  }
+  Serial.println("[WEATHER] WiFi OK");
+
+  WiFiClientSecure client;
+  client.setInsecure(); // SSL 인증서 검증 생략
+  HTTPClient http;
+
+  String url = "https://api.open-meteo.com/v1/forecast?latitude=" + String(WEATHER_LATITUDE) +
+               "&longitude=" + String(WEATHER_LONGITUDE) +
+               "&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=Asia%2FSeoul";
+
+  if (!http.begin(client, url)) {
+    Serial.println("[WEATHER] HTTP begin failed");
+    drawMessage("날씨 연결 실패", 0);
+    sleeping = false; customExpression = true; expressionUntil = millis() + 5000;
+    return;
+  }
+
+  int httpCode = http.GET();
+  Serial.printf("[WEATHER] HTTP code: %d\n", httpCode);
+
+  if (httpCode != HTTP_CODE_OK) {
+    Serial.println("[WEATHER] HTTP response error");
+    drawMessage("날씨 서버 오류", 0);
+    http.end();
+    sleeping = false; customExpression = true; expressionUntil = millis() + 5000;
+    return;
+  }
+
+  String response = http.getString();
+  http.end();
+
+  JsonDocument doc;
+  DeserializationError error = deserializeJson(doc, response);
+  if (error) {
+    Serial.println("[WEATHER] JSON parse error");
+    drawMessage("날씨 분석 실패", 0);
+    sleeping = false; customExpression = true; expressionUntil = millis() + 5000;
+    return;
+  }
+
+  int weatherCode = doc["daily"]["weather_code"][0] | 0;
+  float maxTemp = doc["daily"]["temperature_2m_max"][0] | 0.0;
+  float minTemp = doc["daily"]["temperature_2m_min"][0] | 0.0;
+
+  String status = "맑음";
+  if (weatherCode == 1 || weatherCode == 2 || weatherCode == 3) status = "구름 조금";
+  else if (weatherCode >= 45 && weatherCode <= 48) status = "안개";
+  else if (weatherCode >= 51 && weatherCode <= 67) status = "비";
+  else if (weatherCode >= 71 && weatherCode <= 77) status = "눈";
+  else if (weatherCode >= 80 && weatherCode <= 82) status = "소나기";
+  else if (weatherCode >= 95) status = "뇌우";
+
+  String result = "오늘 날씨: " + status + "\n최저: " + String(minTemp, 1) + "C / 최고: " + String(maxTemp, 1) + "C";
+  drawMessage(result, 0);
+  sleeping = false;
+  customExpression = true;
+  expressionUntil = millis() + 10000;
+
+  Serial.println("[WEATHER] success");
+  Serial.println(result);
+}
 
 // === CUSTOM_FUNCTIONS_START ===
 // === CUSTOM_FUNCTIONS_END ===
@@ -1374,10 +1448,7 @@ void triggerExpressionByName(const String& name) {
 // 사용자 함수 슬롯 1 (SODA TALK: CUSTOM_1)
 void customFunction1() {
   Serial.println("[MY FUNCTION] customFunction1() 실행");
-  // [학생 실습 코딩 영역]: 예: 인터넷 시계, 스톱워치 등
-  drawMessage("MY FUNCTION 1\ncustomFunction1()", 0);
-  sleeping = false; customExpression = true; expressionUntil = millis() + 3000;
-  if (speakerReady) playToneI2S(1000, 100);
+  showTodayWeather();
 }
 
 // 사용자 함수 슬롯 2 (SODA TALK: CUSTOM_2)
@@ -1398,11 +1469,16 @@ void customFunction3() {
   if (speakerReady) playToneI2S(1400, 100);
 }
 
-// 사용자 슬롯 명령(CUSTOM_1, CUSTOM_2, CUSTOM_3) 분기 핸들러
+// 사용자 슬롯 명령(CUSTOM_1, CUSTOM_2, CUSTOM_3, WEATHER) 분기 핸들러
 void handleUserCustomFunction(const String& cmd) {
   String upperCmd = cmd;
   upperCmd.toUpperCase();
   upperCmd.trim();
+
+  if (upperCmd == "WEATHER" || upperCmd == "날씨" || upperCmd == "SHOWTODAYWEATHER") {
+    showTodayWeather();
+    return;
+  }
 
   if (upperCmd == "CUSTOM_1" || upperCmd == "CUSTOMFUNCTION1" || upperCmd == "1") {
     customFunction1();
@@ -1428,7 +1504,9 @@ void executeLocalButtonAction(const String& act, const char* clickType) {
   }
 
   // 2. 기본 내장 기능 처리
-  if (act == "random_face") {
+  if (act == "weather" || act == "날씨") {
+    showTodayWeather();
+  } else if (act == "random_face") {
     int count = sizeof(EXPRESSIONS_POOL) / sizeof(EXPRESSIONS_POOL[0]);
     int r = random(0, count);
     triggerExpressionByName(EXPRESSIONS_POOL[r]);
@@ -1684,6 +1762,7 @@ void setup() {
   
   // 1. NVS에서 저장된 설정(환영인사, 기본표정 등) 불러오기
   loadSettingsFromNVS();
+  btnSingleAction = "weather";
 
   // 2. LCD 디스플레이 초기화
   hspi.begin(TFT_CLK, -1, TFT_MOSI, TFT_CS);
