@@ -1390,7 +1390,10 @@ export default function SodabotSettingsScreen() {
                 <div className="flex justify-between items-center">
                   <label className="text-[10px] font-bold text-[#5C5B57]">💬 환영 인사 문구</label>
                   <button 
-                    onClick={() => setShowWelcomeStudio(true)}
+                    onClick={() => {
+                      setStudioText(welcomeMsg);
+                      setShowWelcomeStudio(true);
+                    }}
                     className="text-[9px] font-bold text-blue-600 hover:text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100 flex items-center gap-0.5 cursor-pointer"
                   >
                     <Sparkles className="w-2.5 h-2.5 text-blue-500" /> 스튜디오
@@ -1960,11 +1963,26 @@ export default function SodabotSettingsScreen() {
               </button>
               <button 
                 onClick={() => {
-                  setWelcomeMsg(studioText);
+                  const cleanedText = studioText.trim();
+                  if (!cleanedText) {
+                    showToast('환영 인사 문구를 입력해 주세요.');
+                    return;
+                  }
+                  setWelcomeMsg(cleanedText);
+                  localStorage.setItem('sodabot_welcome_msg', cleanedText);
+                  sendWsCommand("set_welcome", cleanedText, "환영 인사 설정 전송");
+                  
+                  // 실시간 LCD 미리보기 & 사운드 재생
+                  setBootingState('greeting');
+                  setBootingMessage(cleanedText);
+                  playWebSound(studioSound || 'greeting');
+                  sendWsCommand("play_sound", studioSound || 'greeting');
+                  setTimeout(() => { setBootingState(null); }, 3500);
+
                   setShowWelcomeStudio(false);
-                  showToast('✨ 나만의 맞춤 환영화면이 생성되어 소다봇으로 전송되었습니다!');
+                  showToast('✨ 나만의 환영 인사가 소다봇에 영구 저장 및 전송되었습니다!');
                 }}
-                className="flex-1 py-2.5 bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold rounded-xl transition-colors shadow-sm flex items-center justify-center gap-1.5"
+                className="flex-1 py-2.5 bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold rounded-xl transition-colors shadow-sm flex items-center justify-center gap-1.5 cursor-pointer active:scale-98"
               >
                 <Sparkles className="w-3.5 h-3.5" />
                 소다봇에 환영화면 적용 및 저장
