@@ -2462,13 +2462,6 @@ export default function SodabotSettingsScreen() {
                             </button>
                           </div>
                         </div>
-
-                        {/* 프롬프트 실시간 미리보기 (축약 스크롤 박스) */}
-                        <div className="relative bg-[#FBFBFA] border border-[#EBEBEA] rounded-xl p-2.5 max-h-36 overflow-y-auto">
-                          <pre className="font-mono text-[10px] text-neutral-700 whitespace-pre-wrap leading-relaxed select-all">
-                            {buildGptCustomPrompt(gptFeatureInput.trim() || (funcNameInput.trim() ? `${funcNameInput.trim()}${funcDescInput.trim() ? ` - ${funcDescInput.trim()}` : ''}` : ''))}
-                          </pre>
-                        </div>
                       </div>
                     )}
 
