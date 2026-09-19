@@ -2413,72 +2413,50 @@ export default function SodabotSettingsScreen() {
 
                     {/* GPT 프롬프트 가이드 팝오버 카드 */}
                     {showGptHelp && (
-                      <div className="p-3.5 sm:p-4 bg-blue-50/60 border border-blue-200 rounded-2xl space-y-3 animate-fade-in shadow-xs">
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex items-start gap-2">
-                            <span className="text-base sm:text-lg leading-none mt-0.5">🤖</span>
-                            <div>
-                              <h4 className="text-xs font-bold text-[#191919]">
-                                GPT에게 맞춤 코드 요청하기
-                              </h4>
-                              <p className="text-[10px] sm:text-[11px] text-[#787774] mt-0.5">
-                                만들고 싶은 기능만 입력하고 복사를 누르면 GPT에 바로 붙여넣을 수 있는 프롬프트가 완성됩니다.
-                              </p>
-                            </div>
-                          </div>
+                      <div className="p-3 sm:p-3.5 bg-blue-50/60 border border-blue-200 rounded-2xl space-y-2 animate-fade-in shadow-xs">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-bold text-[#191919] flex items-center gap-1.5">
+                            <span>원하는 기능 입력</span>
+                            <span className="text-[10px] text-blue-600 font-normal">
+                              {gptFeatureInput.trim() ? '(입력됨)' : funcNameInput.trim() ? `('${funcNameInput}' 자동 반영됨)` : ''}
+                            </span>
+                          </label>
                           <button
                             type="button"
                             onClick={() => setShowGptHelp(false)}
-                            className="w-6 h-6 rounded-lg bg-white border border-[#E5E5E3] flex items-center justify-center text-xs text-neutral-500 hover:text-neutral-900 cursor-pointer transition-colors shrink-0"
+                            className="w-5 h-5 rounded-md bg-white border border-[#E5E5E3] flex items-center justify-center text-[11px] text-neutral-500 hover:text-neutral-900 cursor-pointer transition-colors shrink-0"
                             title="닫기"
                           >
                             ✕
                           </button>
                         </div>
 
-                        {/* 원하는 기능 입력 필드 + 하단 액션 버튼 그룹 */}
-                        <div className="space-y-2 pt-0.5">
-                          <div className="flex items-center justify-between">
-                            <label className="text-[11px] font-bold text-[#191919]">
-                              원하는 기능 입력
-                            </label>
-                            <span className="text-[10px] text-blue-600 font-medium">
-                              {gptFeatureInput.trim() ? '입력한 기능 반영됨' : funcNameInput.trim() ? `'${funcNameInput}' 자동 반영됨` : '자유롭게 입력'}
-                            </span>
-                          </div>
+                        <input
+                          type="text"
+                          value={gptFeatureInput}
+                          onChange={(e) => setGptFeatureInput(e.target.value)}
+                          placeholder={funcNameInput.trim() ? `${funcNameInput}${funcDescInput.trim() ? ` (${funcDescInput})` : ''}` : "예: 인터넷에서 서울 현재 시간을 가져와서 LCD에 표시하기"}
+                          className="w-full px-3.5 py-2.5 bg-white border border-[#E5E5E3] focus:border-blue-600 focus:ring-2 focus:ring-blue-600/10 rounded-xl text-xs sm:text-sm font-medium text-[#191919] outline-none transition-all placeholder:text-[#A1A1A0] shadow-2xs"
+                        />
 
-                          <input
-                            type="text"
-                            value={gptFeatureInput}
-                            onChange={(e) => setGptFeatureInput(e.target.value)}
-                            placeholder={funcNameInput.trim() ? `${funcNameInput}${funcDescInput.trim() ? ` (${funcDescInput})` : ''}` : "예: 인터넷에서 서울 현재 시간을 가져와서 LCD에 표시하기"}
-                            className="w-full px-3.5 py-2.5 bg-white border border-[#E5E5E3] focus:border-blue-600 focus:ring-2 focus:ring-blue-600/10 rounded-xl text-xs sm:text-sm font-medium text-[#191919] outline-none transition-all placeholder:text-[#A1A1A0] shadow-2xs"
-                          />
-
-                          <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
-                            <span className="text-[10px] text-[#787774] hidden xs:inline-block">
-                              💡 복사 후 ChatGPT에 붙여넣어 코드를 받으세요.
-                            </span>
-                            <div className="flex items-center gap-2 ml-auto">
-                              <a
-                                href="https://chatgpt.com"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="px-2.5 py-1.5 bg-white hover:bg-neutral-50 text-[#191919] hover:text-blue-600 border border-[#E5E5E3] hover:border-blue-300 text-[11px] font-semibold rounded-lg flex items-center gap-1 shadow-2xs transition-all cursor-pointer active:scale-95 text-decoration-none"
-                              >
-                                <span>ChatGPT 열기</span>
-                                <ExternalLink className="w-3 h-3 text-neutral-400" />
-                              </a>
-                              <button
-                                type="button"
-                                onClick={handleCopyGptPrompt}
-                                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-semibold rounded-lg flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer active:scale-95"
-                              >
-                                {isCopiedGptPrompt ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                                <span>{isCopiedGptPrompt ? '복사 완료!' : '프롬프트 복사'}</span>
-                              </button>
-                            </div>
-                          </div>
+                        <div className="flex items-center justify-end gap-2 pt-0.5">
+                          <a
+                            href="https://chatgpt.com"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-2.5 py-1.5 bg-white hover:bg-neutral-50 text-[#191919] hover:text-blue-600 border border-[#E5E5E3] hover:border-blue-300 text-[11px] font-semibold rounded-lg flex items-center gap-1 shadow-2xs transition-all cursor-pointer active:scale-95 text-decoration-none"
+                          >
+                            <span>ChatGPT 열기</span>
+                            <ExternalLink className="w-3 h-3 text-neutral-400" />
+                          </a>
+                          <button
+                            type="button"
+                            onClick={handleCopyGptPrompt}
+                            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-semibold rounded-lg flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer active:scale-95"
+                          >
+                            {isCopiedGptPrompt ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                            <span>{isCopiedGptPrompt ? '복사 완료!' : '프롬프트 복사'}</span>
+                          </button>
                         </div>
                       </div>
                     )}
