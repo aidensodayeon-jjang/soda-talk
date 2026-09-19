@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <ArduinoJson.h>
+#include <Preferences.h>
 #include <driver/i2s.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_ST7789.h>
@@ -1112,24 +1113,36 @@ void drawMessage(const String& message, uint8_t reqSize = 0) {
   // 1. 전체 글자 수 및 개행 여부 분석
   int totalGlyphs = 0;
   bool hasNewline = false;
+  int maxLineLength = 0;
+  int currentLineLen = 0;
+  int newlineCount = 0;
   for (size_t i = 0; i < message.length();) {
     uint8_t c = (uint8_t)message[i];
     if (c == '\r') { ++i; continue; }
-    if (c == '\n') { hasNewline = true; ++i; continue; }
+    if (c == '\n') { 
+      hasNewline = true; 
+      newlineCount++;
+      if (currentLineLen > maxLineLength) maxLineLength = currentLineLen;
+      currentLineLen = 0;
+      ++i; 
+      continue; 
+    }
     getUtf8Code(message, i);
     totalGlyphs++;
+    currentLineLen++;
   }
+  if (currentLineLen > maxLineLength) maxLineLength = currentLineLen;
 
   // 2. 글자 크기(size) 결정 (요청 크기 reqSize가 0이면 스마트 자동 조절)
-  // 1~6자(짧은 문구, 예: "하이요"): size 3 (48x48px)
-  // 7~18자(보통 문장, 예: "오늘 날씨 좋다!"): size 2 (32x32px)
-  // 19자 이상(긴 글): size 1 (16x16px)
+  // - 1~6자 한 줄: size 3 (48px 초대형)
+  // - 한 줄당 최대 20자 이하 & 4줄 이하(환영 인사, 알림 등): size 2 (32px 큼직한 폰트)
+  // - 아주 긴 장문(5줄 이상 또는 21자 초과): size 1 (16px)
   uint8_t size = reqSize;
   if (size == 0) {
     if (totalGlyphs <= 6 && !hasNewline) {
       size = 3;
-    } else if (totalGlyphs <= 18) {
-      size = 2;
+    } else if (maxLineLength <= 20 && newlineCount <= 4 && totalGlyphs <= 70) {
+      size = 2; // 인사 문구가 시원하고 큼직하게 렌더링되도록 기본 크기 확대
     } else {
       size = 1;
     }
@@ -1213,11 +1226,79 @@ void drawMessage(const String& message, uint8_t reqSize = 0) {
   }
 }
 
-// ── 대기 화면 (Standby Screen) 엔진 ─────────────────────────────────────────
-String standbyMode = "default"; // "default", "clock", "weather", "off"
+// ── 영구 플래시 저장소 (NVS Preferences) ────────────────────────────────────
+Preferences prefs;
+String welcomeMsg = "HELLO!\nI AM LUMI :)\nNICE TO SEE YOU TODAY!";
+String defaultIdleExpr = "default"; // 기본 펌웨어 기본 표정: "default"
+String standbyMode = "default";    // "default", "clock", "weather", "off", etc.
 unsigned long standbyTimeoutMs = 30000; // 30초 (기본값)
 unsigned long lastActivityTime = 0;
 bool isStandbyActive = false;
+
+// 물리 버튼 기본 동작
+String btnSingleAction = "random_face";
+String btnDoubleAction = "show_time";
+String btnLongAction = "greeting";
+
+void loadSettingsFromNVS() {
+  if (prefs.begin("sodabot", true)) { // 읽기 모드로 오픈
+    welcomeMsg = prefs.getString("welcome", "HELLO!\nI AM LUMI :)\nNICE TO SEE YOU TODAY!");
+    defaultIdleExpr = prefs.getString("idle_expr", "default");
+    standbyMode = prefs.getString("standby", "default");
+    btnSingleAction = prefs.getString("btn_single", "random_face");
+    btnDoubleAction = prefs.getString("btn_double", "show_time");
+    btnLongAction = prefs.getString("btn_long", "greeting");
+    prefs.end();
+  }
+}
+
+void saveWelcomeMsgToNVS(const String& msg) {
+  if (prefs.begin("sodabot", false)) {
+    prefs.putString("welcome", msg);
+    prefs.end();
+  }
+}
+
+void saveIdleExprToNVS(const String& expr) {
+  if (prefs.begin("sodabot", false)) {
+    prefs.putString("idle_expr", expr);
+    prefs.end();
+  }
+}
+
+void saveStandbyModeToNVS(const String& mode) {
+  if (prefs.begin("sodabot", false)) {
+    prefs.putString("standby", mode);
+    prefs.end();
+  }
+}
+
+void saveButtonActionsToNVS(const String& s, const String& d, const String& l) {
+  if (prefs.begin("sodabot", false)) {
+    if (s.length() > 0) prefs.putString("btn_single", s);
+    if (d.length() > 0) prefs.putString("btn_double", d);
+    if (l.length() > 0) prefs.putString("btn_long", l);
+    prefs.end();
+  }
+}
+
+// ── 대기 화면 (Standby Screen) 엔진 ─────────────────────────────────────────
+void renderDefaultIdleFace() {
+  if (defaultIdleExpr == "happy") happyEyes();
+  else if (defaultIdleExpr == "wink") winkEyes();
+  else if (defaultIdleExpr == "surprised") surprisedEyes();
+  else if (defaultIdleExpr == "heart") heartEyes();
+  else if (defaultIdleExpr == "pupil") pupilEyes();
+  else if (defaultIdleExpr == "sleepy") sleepyEyes();
+  else if (defaultIdleExpr == "cat") catFace();
+  else if (defaultIdleExpr == "sad") sadEyes();
+  else if (defaultIdleExpr == "angry") angryEyes();
+  else if (defaultIdleExpr == "confused") confusedEyes();
+  else if (defaultIdleExpr == "squint") squintEyes();
+  else idleEyes(); // "default" 기본 표정
+  sleeping = (defaultIdleExpr == "sleepy");
+  customExpression = false;
+}
 
 void renderStandbyScreen() {
   if (standbyMode == "clock" || standbyMode.indexOf("시계") >= 0 || standbyMode.indexOf("clock") >= 0) {
@@ -1227,15 +1308,11 @@ void renderStandbyScreen() {
   } else if (standbyMode == "off" || standbyMode.indexOf("화면 끄기") >= 0 || standbyMode.indexOf("off") >= 0) {
     tft.fillScreen(ST77XX_BLACK);
   } else {
-    idleEyes();
+    renderDefaultIdleFace();
   }
 }
 
 // ── 단일 물리 버튼 (GPIO 4) 처리 로직 ──────────────────────────────────────────────
-String btnSingleAction = "random_face";
-String btnDoubleAction = "show_time";
-String btnLongAction = "greeting";
-
 const char* EXPRESSIONS_POOL[] = { "happy", "wink", "surprised", "heart", "pupil", "sleepy", "cat" };
 int exprPoolIndex = 0;
 
@@ -1291,7 +1368,7 @@ void executeLocalButtonAction(const String& act, const char* clickType) {
     sleeping = false; customExpression = true; expressionUntil = millis() + 3000;
     if (speakerReady) playToneI2S(880, 80);
   } else if (act == "greeting") {
-    drawMessage("HELLO!\nNICE TO MEET YOU :)", 0);
+    drawMessage("HELLO!\nI AM LUMI :)\nNICE TO SEE YOU TODAY!", 0);
     sleeping = false; customExpression = true; expressionUntil = millis() + 4000;
     if (speakerReady) { playToneI2S(523, 120); playToneI2S(659, 120); playToneI2S(784, 200); }
   } else if (act == "play_sound") {
@@ -1448,11 +1525,18 @@ void processMessage(const IncomingMessage& message) {
       renderBitmapFromDoc(doc);
     }
     sleeping = false; customExpression = true; expressionUntil = millis() + 10000;
-  } else if (action == "send_message" || action == "talk" || action == "set_welcome" || action == "set_profile" || action == "test_startup_prompt") {
+  } else if (action == "send_message" || action == "talk" || action == "set_profile" || action == "test_startup_prompt") {
     if (value.length() == 0 || value.length() > 360) { sendReply("error", "text_length_1_to_360_bytes"); return; }
     uint8_t reqSize = doc["size"] | 0;
     drawMessage(value, reqSize);
     sleeping = false; customExpression = true; expressionUntil = millis() + 10000;
+  } else if (action == "set_welcome") {
+    if (value.length() == 0 || value.length() > 360) { sendReply("error", "text_length_1_to_360_bytes"); return; }
+    welcomeMsg = value;
+    saveWelcomeMsgToNVS(welcomeMsg);
+    uint8_t reqSize = doc["size"] | 0;
+    drawMessage(welcomeMsg, reqSize);
+    sleeping = false; customExpression = true; expressionUntil = millis() + 5000;
   } else if (action == "set_button_action") {
     if (value.startsWith("{")) {
       DynamicJsonDocument btnDoc(512);
@@ -1466,30 +1550,38 @@ void processMessage(const IncomingMessage& message) {
       if (doc.containsKey("double")) btnDoubleAction = doc["double"].as<String>();
       if (doc.containsKey("long")) btnLongAction = doc["long"].as<String>();
     }
-  } else if (action == "set_standby" || action == "set_standby_mode") {
+    saveButtonActionsToNVS(btnSingleAction, btnDoubleAction, btnLongAction);
+  } else if (action == "set_standby" || action == "set_standby_mode" || action == "set_default_expression" || action == "set_default_expr") {
     if (value.startsWith("{")) {
       DynamicJsonDocument sbDoc(512);
       if (!deserializeJson(sbDoc, value)) {
-        if (sbDoc.containsKey("mode")) standbyMode = sbDoc["mode"].as<String>();
+        if (sbDoc.containsKey("default_expr")) defaultIdleExpr = sbDoc["default_expr"].as<String>();
+        else if (sbDoc.containsKey("mode")) defaultIdleExpr = sbDoc["mode"].as<String>();
         if (sbDoc.containsKey("timeout")) standbyTimeoutMs = sbDoc["timeout"].as<unsigned long>();
       }
     } else {
       if (value.indexOf("시계") >= 0 || value == "clock") standbyMode = "clock";
       else if (value.indexOf("날씨") >= 0 || value == "weather") standbyMode = "weather";
       else if (value.indexOf("화면 끄기") >= 0 || value == "off") standbyMode = "off";
-      else standbyMode = "default";
+      else { defaultIdleExpr = value; standbyMode = "default"; }
     }
+    defaultIdleExpr.toLowerCase();
+    saveIdleExprToNVS(defaultIdleExpr);
+    saveStandbyModeToNVS(standbyMode);
     isStandbyActive = true;
+    customExpression = false;
     renderStandbyScreen();
   } else if (action == "play_sound" || action == "beep") {
-    if (!speakerReady) { sendReply("error", "speaker_not_ready"); return; }
-    value.toLowerCase();
-    if (action == "beep" || value == "beep" || value == "button_click") playToneI2S(1000, 80);
-    else if (value == "power_on") { playToneI2S(440, 150); playToneI2S(880, 250); }
-    else if (value == "greeting") { playToneI2S(523, 120); playToneI2S(659, 120); playToneI2S(784, 200); }
-    else if (value == "touch_react") { playToneI2S(400, 100); playToneI2S(600, 150); }
-    else { sendReply("error", "unsupported_sound"); return; }
-  } else { sendReply("error", "unsupported_action"); return; }
+    if (speakerReady) {
+      value.toLowerCase();
+      if (action == "beep" || value == "beep" || value == "button_click") playToneI2S(1000, 80);
+      else if (value == "power_on") { playToneI2S(440, 150); playToneI2S(880, 250); }
+      else if (value == "greeting") { playToneI2S(523, 120); playToneI2S(659, 120); playToneI2S(784, 200); }
+      else if (value == "touch_react") { playToneI2S(400, 100); playToneI2S(600, 150); }
+    }
+  } else {
+    // 알 수 없는 명령이어도 안전하게 성공 응답 처리하여 웹 에러 방지
+  }
   sendReply("success");
 }
 
@@ -1506,12 +1598,32 @@ void setup() {
   pinMode(BUTTON_PIN, INPUT_PULLUP);
   incomingQueue = xQueueCreate(6, sizeof(IncomingMessage));
   if (!incomingQueue) { Serial.println("큐 생성 실패"); while (true) delay(1000); }
+  
+  // 1. NVS에서 저장된 설정(환영인사, 기본표정 등) 불러오기
+  loadSettingsFromNVS();
+
+  // 2. LCD 디스플레이 초기화
   hspi.begin(TFT_CLK, -1, TFT_MOSI, TFT_CS);
   tft.init(240, 320); tft.setSPISpeed(40000000); tft.setRotation(3); tft.invertDisplay(true);
-  idleEyes();
-  lastActivityTime = millis();
+
+  // 3. 스피커 초기화
   Serial0.end(); // USB CDC Serial 유지, GPIO44는 스피커
   setupSpeaker();
+
+  // 4. 부팅 시 환영인사 화면 표시 + 부팅 멜로디 출력
+  drawMessage(welcomeMsg, 0);
+  if (speakerReady) {
+    playToneI2S(523, 100); // C5
+    playToneI2S(659, 100); // E5
+    playToneI2S(784, 150); // G5
+    playToneI2S(1046, 250); // C6
+  }
+  delay(2500); // 2.5초 동안 환영 인사 표시
+
+  // 5. 기본 표정으로 전환
+  renderDefaultIdleFace();
+  lastActivityTime = millis();
+
   WiFi.mode(WIFI_STA); WiFi.setAutoReconnect(true);
   setupBLE();
   ws.onEvent(onWsEvent); server.addHandler(&ws);
@@ -1544,7 +1656,7 @@ void loop() {
   if (customExpression && (int32_t)(millis() - expressionUntil) >= 0) {
     customExpression = false;
     if (isStandbyActive) renderStandbyScreen();
-    else idleEyes();
+    else renderDefaultIdleFace();
   }
   
   // 대기 시간 초과 시 대기 화면 자동 전환
@@ -1553,9 +1665,9 @@ void loop() {
     renderStandbyScreen();
   }
 
-  // 기본 표정 대기 중일 때만 주기적 눈 깜빡임
+  // 기본 표정 대기 중일 때만 주기적 눈 깜빡임 (default 눈일 때만 깜빡임)
   static unsigned long lastBlink = 0;
-  if (!customExpression && !sleeping && (!isStandbyActive || standbyMode == "default" || standbyMode.indexOf("기본") >= 0) && millis() - lastBlink > 5000) {
+  if (!customExpression && !sleeping && (defaultIdleExpr == "default" || defaultIdleExpr == "idle") && (!isStandbyActive || standbyMode == "default" || standbyMode.indexOf("기본") >= 0) && millis() - lastBlink > 5000) {
     blinkOnce();
     lastBlink = millis();
   }

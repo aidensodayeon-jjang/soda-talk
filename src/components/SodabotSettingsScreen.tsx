@@ -8,6 +8,21 @@ import {
   ChevronDown, Layers, ShieldCheck, Zap, Bluetooth, Usb, Trash2
 } from 'lucide-react';
 
+const expressionsList = [
+  { id: 'default', label: '기본', emoji: '🤖', bg: 'bg-[#FAF9F6]' },
+  { id: 'happy', label: '기쁨', emoji: '😆', bg: 'bg-amber-50' },
+  { id: 'wink', label: '윙크', emoji: '😉', bg: 'bg-pink-50' },
+  { id: 'heart', label: '하트', emoji: '💖', bg: 'bg-rose-50' },
+  { id: 'sleepy', label: '졸림', emoji: '😴', bg: 'bg-indigo-50' },
+  { id: 'sad', label: '슬픔', emoji: '😢', bg: 'bg-blue-50' },
+  { id: 'angry', label: '화남', emoji: '😡', bg: 'bg-rose-50' },
+  { id: 'surprised', label: '놀람', emoji: '😲', bg: 'bg-cyan-50' },
+  { id: 'confused', label: '갸웃', emoji: '🤔', bg: 'bg-purple-50' },
+  { id: 'pupil', label: '초롱', emoji: '👀', bg: 'bg-cyan-50' },
+  { id: 'cat', label: '냥이', emoji: '🐱', bg: 'bg-yellow-50' },
+  { id: 'idle', label: '평온', emoji: '😊', bg: 'bg-emerald-50' },
+];
+
 export default function SodabotSettingsScreen() {
   const [connectionType, setConnectionType] = useState(sodabotTransport.type);
   React.useEffect(() => {
@@ -21,8 +36,61 @@ export default function SodabotSettingsScreen() {
   const [profileDesc, setProfileDesc] = useState(localStorage.getItem("sodabot_profile_desc") || 'Your Smart AI Companion');
   const [startupPrompt, setStartupPrompt] = useState(localStorage.getItem("sodabot_startup_prompt") || 'Hello, I am Lumi! Ready to assist you.');
   const [exprTab, setExprTab] = useState<'basic' | 'custom'>('basic');
-  const [selectedExpr, setSelectedExpr] = useState('happy');
-  const [activeCustomFace, setActiveCustomFace] = useState<any>(null);
+  const [defaultIdleExpr, setDefaultIdleExpr] = useState(localStorage.getItem('sodabot_default_idle_expr') || 'happy');
+  const [selectedExpr, setSelectedExpr] = useState(() => localStorage.getItem('sodabot_default_idle_expr') || 'happy');
+
+  // Custom Created Expression List State
+  const [customExprList, setCustomExprList] = useState<Array<{
+    id: string;
+    label: string;
+    emoji: string;
+    mode: 'slider' | 'pixel';
+    shape?: string;
+    mouth?: string;
+    color?: string;
+    effect?: string;
+    eyeWidth?: number;
+    eyeHeight?: number;
+    pupilX?: number;
+    pupilY?: number;
+    eyebrowTilt?: number;
+    eyeRadius?: number;
+    hasSparkle?: boolean;
+    hasGloss?: boolean;
+    pixelGrid?: string[];
+  }>>(() => {
+    try {
+      const saved = localStorage.getItem("sodabot_custom_exprs");
+      return saved ? JSON.parse(saved) : [
+        { 
+          id: 'custom_1', label: '울먹', emoji: '🥹', mode: 'slider',
+          shape: 'happy', mouth: 'smile', color: '#38BDF8', effect: 'pulse',
+          eyeWidth: 84, eyeHeight: 68, pupilX: 0, pupilY: 4, eyebrowTilt: 10, eyeRadius: 20, hasSparkle: true, hasGloss: true
+        },
+        { 
+          id: 'custom_2', label: '메롱', emoji: '😜', mode: 'slider',
+          shape: 'wink', mouth: 'tongue', color: '#F43F5E', effect: 'bounce',
+          eyeWidth: 84, eyeHeight: 68, pupilX: 0, pupilY: 0, eyebrowTilt: 0, eyeRadius: 20, hasSparkle: false, hasGloss: false
+        }
+      ];
+    } catch {
+      return [];
+    }
+  });
+
+  const [activeCustomFace, setActiveCustomFace] = useState<any>(() => {
+    try {
+      const savedIdle = localStorage.getItem('sodabot_default_idle_expr');
+      if (savedIdle && savedIdle.startsWith('custom_')) {
+        const savedCustom = localStorage.getItem('sodabot_default_custom_face');
+        return savedCustom ? JSON.parse(savedCustom) : null;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  });
+
   const exprTimeoutRef = React.useRef<any>(null);
   const sendWsCommand = (action: string, value: string, label?: string) => {
     window.dispatchEvent(new CustomEvent('sodabot-send-command', { detail: { action, value, label } }));
@@ -38,33 +106,92 @@ export default function SodabotSettingsScreen() {
     return 'default';
   };
 
-  // Immediate Expression Execution with 3-Second Auto-Reset to Default
+  // Set and persist user's chosen basic expression as default idle
+  const handleSetDefaultIdleExpr = (exprId: string, label: string) => {
+    if (exprTimeoutRef.current) clearTimeout(exprTimeoutRef.current);
+    setDefaultIdleExpr(exprId);
+    setSelectedExpr(exprId);
+    setActiveCustomFace(null);
+    localStorage.setItem('sodabot_default_idle_expr', exprId);
+    localStorage.removeItem('sodabot_default_custom_face');
+
+    const matched = expressionsList.find(e => e.id === exprId);
+    const displayLabel = matched ? `${matched.label} 표정 ${matched.emoji}` : `${label} 표정`;
+    setStandbyFace(displayLabel);
+    localStorage.setItem('sodabot_standby_face', displayLabel);
+
+    const safeHardwareId = mapToSafeHardwareExpr(exprId);
+    sendWsCommand("set_default_expression", safeHardwareId, `대기 기본 표정(${label}) 설정`);
+
+    showToast(`⭐ 소다봇 대기 기본 표정이 '${label}'(으)로 저장되었습니다!`);
+  };
+
+  // Set and persist user's custom created expression as default idle
+  const handleSetDefaultCustomIdleExpr = (cExpr: any) => {
+    if (exprTimeoutRef.current) clearTimeout(exprTimeoutRef.current);
+    setDefaultIdleExpr(cExpr.id);
+    setSelectedExpr(cExpr.shape || 'custom');
+    setActiveCustomFace(cExpr);
+    localStorage.setItem('sodabot_default_idle_expr', cExpr.id);
+    localStorage.setItem('sodabot_default_custom_face', JSON.stringify(cExpr));
+
+    const displayLabel = `[내 표정] ${cExpr.label} ${cExpr.emoji}`;
+    setStandbyFace(displayLabel);
+    localStorage.setItem('sodabot_standby_face', displayLabel);
+
+    try {
+      if (cExpr.mode === 'pixel' && cExpr.pixelGrid) {
+        syncPixelsToHardware(cExpr.pixelGrid);
+      } else {
+        syncFaceToHardware({
+          eyeWidth: cExpr.eyeWidth ?? 84,
+          eyeHeight: cExpr.eyeHeight ?? 68,
+          pupilX: cExpr.pupilX ?? 0,
+          pupilY: cExpr.pupilY ?? 0,
+          eyebrowTilt: cExpr.eyebrowTilt ?? 0,
+          eyeRadius: cExpr.eyeRadius ?? 20,
+          hasSparkle: cExpr.hasSparkle ?? false,
+          hasGloss: cExpr.hasGloss ?? false,
+          shape: cExpr.shape || 'happy',
+          mouth: cExpr.mouth || 'smile',
+          color: cExpr.color || '#22D3EE',
+          effect: cExpr.effect || 'none'
+        });
+      }
+    } catch {}
+
+    showToast(`⭐ 내가 만든 맞춤 표정 '${cExpr.label}'이(가) 대기 기본 표정으로 저장되었습니다!`);
+  };
+
+  // Immediate Expression Execution with 3-Second Auto-Reset to Configured Default
   const triggerExpression = (exprId: string, label: string) => {
     setActiveCustomFace(null);
-    // 1. Update preview screen immediately
     setSelectedExpr(exprId);
 
-    // 2. Send command to real hardware with safe mapping
     const safeHardwareId = mapToSafeHardwareExpr(exprId);
     sendWsCommand("set_expression", safeHardwareId, `${label} 표정 전송`);
-
     showToast(`'${label}' 표정 전송 중…`);
 
-    // 3. Reset to default/idle (happy) after 3 seconds
+    // Reset to user's configured default idle expression after 3 seconds
     if (exprTimeoutRef.current) clearTimeout(exprTimeoutRef.current);
     exprTimeoutRef.current = setTimeout(() => {
-      setSelectedExpr('happy');
-      setActiveCustomFace(null);
+      setSelectedExpr(defaultIdleExpr);
+      if (defaultIdleExpr.startsWith('custom_')) {
+        try {
+          const savedCustom = localStorage.getItem('sodabot_default_custom_face');
+          if (savedCustom) setActiveCustomFace(JSON.parse(savedCustom));
+        } catch {}
+      } else {
+        setActiveCustomFace(null);
+      }
     }, 3000);
   };
 
   // Execute and faithfully reproduce a customized expression (Sliders / Pixels)
   const triggerCustomExpression = (cExpr: any) => {
-    // 1. Set full custom face for 1:1 reproduction on top LCD simulator
     setActiveCustomFace(cExpr);
     setSelectedExpr(cExpr.shape || 'custom');
 
-    // 2. Transmit exact fine-tuned parameters or pixel map to hardware
     if (cExpr.mode === 'pixel' && cExpr.pixelGrid) {
       syncPixelsToHardware(cExpr.pixelGrid);
     } else {
@@ -86,11 +213,17 @@ export default function SodabotSettingsScreen() {
 
     showToast(`✨ '${cExpr.label}' 맞춤 표정을 소다봇에 재현 중…`);
 
-    // 3. Auto-reset after 3 seconds
     if (exprTimeoutRef.current) clearTimeout(exprTimeoutRef.current);
     exprTimeoutRef.current = setTimeout(() => {
-      setActiveCustomFace(null);
-      setSelectedExpr('happy');
+      setSelectedExpr(defaultIdleExpr);
+      if (defaultIdleExpr.startsWith('custom_')) {
+        try {
+          const savedCustom = localStorage.getItem('sodabot_default_custom_face');
+          if (savedCustom) setActiveCustomFace(JSON.parse(savedCustom));
+        } catch {}
+      } else {
+        setActiveCustomFace(null);
+      }
     }, 3000);
   };
 
@@ -382,45 +515,6 @@ export default function SodabotSettingsScreen() {
     showToast(`'${preset}' 픽셀 도안이 소다봇으로 실시간 전송되었습니다!`);
   };
 
-  // Custom Created Expression List State
-  const [customExprList, setCustomExprList] = useState<Array<{
-    id: string;
-    label: string;
-    emoji: string;
-    mode: 'slider' | 'pixel';
-    shape?: string;
-    mouth?: string;
-    color?: string;
-    effect?: string;
-    eyeWidth?: number;
-    eyeHeight?: number;
-    pupilX?: number;
-    pupilY?: number;
-    eyebrowTilt?: number;
-    eyeRadius?: number;
-    hasSparkle?: boolean;
-    hasGloss?: boolean;
-    pixelGrid?: string[];
-  }>>(() => {
-    try {
-      const saved = localStorage.getItem("sodabot_custom_exprs");
-      return saved ? JSON.parse(saved) : [
-        { 
-          id: 'custom_1', label: '울먹', emoji: '🥹', mode: 'slider',
-          shape: 'happy', mouth: 'smile', color: '#38BDF8', effect: 'pulse',
-          eyeWidth: 84, eyeHeight: 68, pupilX: 0, pupilY: 4, eyebrowTilt: 10, eyeRadius: 20, hasSparkle: true, hasGloss: true
-        },
-        { 
-          id: 'custom_2', label: '메롱', emoji: '😜', mode: 'slider',
-          shape: 'wink', mouth: 'tongue', color: '#F43F5E', effect: 'bounce',
-          eyeWidth: 84, eyeHeight: 68, pupilX: 0, pupilY: 0, eyebrowTilt: 0, eyeRadius: 20, hasSparkle: false, hasGloss: false
-        }
-      ];
-    } catch {
-      return [];
-    }
-  });
-
   const handleSaveCustomExpr = () => {
     const newExpr: typeof customExprList[0] = {
       id: 'custom_' + Date.now(),
@@ -457,7 +551,7 @@ export default function SodabotSettingsScreen() {
     showToast('커스텀 표정이 삭제되었습니다.');
   };
 
-  const [welcomeMsg, setWelcomeMsg] = useState(localStorage.getItem('sodabot_welcome_msg') || 'HELLO!\nI AM LUMI :)\nNICE TO MEET YOU!');
+  const [welcomeMsg, setWelcomeMsg] = useState(localStorage.getItem('sodabot_welcome_msg') || 'HELLO!\nI AM LUMI :)\nNICE TO SEE YOU TODAY!');
   const [standbyFace, setStandbyFace] = useState(localStorage.getItem('sodabot_standby_face') || '기본 표정 표시 🤖');
 
   const [soundTab, setSoundTab] = useState<'basic' | 'custom'>('basic');
@@ -486,8 +580,17 @@ export default function SodabotSettingsScreen() {
       sendWsCommand("set_expression", "sleepy", "대기 화면 절전 모드");
     } else {
       setBootingState(null);
-      setSelectedExpr('default');
-      sendWsCommand("set_expression", "default", "대기 화면 기본 표정");
+      // 1. Check custom expressions
+      const foundCustom = customExprList.find(c => face.includes(c.label) || face.includes(c.id) || face.includes(`[내 표정] ${c.label}`));
+      if (foundCustom) {
+        triggerCustomExpression(foundCustom);
+        return;
+      }
+      // 2. Check basic expressions
+      const matched = expressionsList.find(e => face.includes(e.label) || face.includes(e.id) || face.includes(e.emoji));
+      const exprId = matched ? matched.id : defaultIdleExpr;
+      const safeId = mapToSafeHardwareExpr(exprId);
+      triggerExpression(safeId, matched?.label || '기본');
     }
   };
 
@@ -563,7 +666,7 @@ export default function SodabotSettingsScreen() {
     enabled: boolean;
     value: string;
   }>>([
-    { id: '1', type: 'greeting', name: '환영 인사 표시', icon: '💬', enabled: true, value: 'HELLO!\nI AM LUMI :)' },
+    { id: '1', type: 'greeting', name: '환영 인사 표시', icon: '💬', enabled: true, value: 'HELLO!\nI AM LUMI :)\nNICE TO SEE YOU TODAY!' },
     { id: '2', type: 'expression', name: '표정 전환', icon: '😃', enabled: true, value: 'happy' },
     { id: '3', type: 'sound', name: '효과음 재생', icon: '🎵', enabled: true, value: 'greeting' },
     { id: '4', type: 'time', name: '현재 시간 표시', icon: '⏰', enabled: true, value: '' },
@@ -796,21 +899,6 @@ export default function SodabotSettingsScreen() {
     reader.readAsText(file);
   };
 
-  const expressionsList = [
-    { id: 'default', label: '기본', emoji: '🤖', bg: 'bg-[#FAF9F6]' },
-    { id: 'happy', label: '기쁨', emoji: '😆', bg: 'bg-amber-50' },
-    { id: 'wink', label: '윙크', emoji: '😉', bg: 'bg-pink-50' },
-    { id: 'heart', label: '하트', emoji: '💖', bg: 'bg-rose-50' },
-    { id: 'sleepy', label: '졸림', emoji: '😴', bg: 'bg-indigo-50' },
-    { id: 'sad', label: '슬픔', emoji: '😢', bg: 'bg-blue-50' },
-    { id: 'angry', label: '화남', emoji: '😡', bg: 'bg-rose-50' },
-    { id: 'surprised', label: '놀람', emoji: '😲', bg: 'bg-cyan-50' },
-    { id: 'confused', label: '갸웃', emoji: '🤔', bg: 'bg-purple-50' },
-    { id: 'pupil', label: '초롱', emoji: '👀', bg: 'bg-cyan-50' },
-    { id: 'cat', label: '냥이', emoji: '🐱', bg: 'bg-yellow-50' },
-    { id: 'idle', label: '평온', emoji: '😊', bg: 'bg-emerald-50' },
-  ];
-
   const soundList = [
     { id: 'power_on', name: '전원 켜짐', duration: '00:01' },
     { id: 'greeting', name: '인사할 때', duration: '00:02' },
@@ -867,8 +955,8 @@ export default function SodabotSettingsScreen() {
                 {bootingState === 'greeting' ? (
                   <div className="text-center px-2 animate-fade-in space-y-1">
                     <div className="text-[10px] text-amber-300 font-bold flex items-center justify-center gap-1">💬 GREETING</div>
-                    <div className="text-[11px] text-white font-medium leading-tight whitespace-pre-line bg-black/50 p-2 rounded-xl border border-white/10 shadow-inner font-mono">
-                      {bootingMessage || welcomeMsg || 'HELLO!\nI AM LUMI :)'}
+                    <div className="text-[13px] text-white font-bold leading-snug tracking-wide whitespace-pre-line bg-black/60 px-3 py-2 rounded-xl border border-white/10 shadow-inner font-mono">
+                      {bootingMessage || welcomeMsg || 'HELLO!\nI AM LUMI :)\nNICE TO SEE YOU TODAY!'}
                     </div>
                   </div>
                 ) : bootingState === 'sound' ? (
@@ -997,27 +1085,21 @@ export default function SodabotSettingsScreen() {
                       </div>
                     )}
                     {selectedExpr === 'surprised' && (
-                      <div className="relative flex items-center justify-center gap-6">
-                        <div className="w-12 h-12 bg-cyan-400 rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(34,211,238,0.9)] animate-pulse">
-                          <div className="w-3 h-3 bg-[#111827] rounded-full"></div>
-                        </div>
-                        <div className="w-12 h-12 bg-cyan-400 rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(34,211,238,0.9)] animate-pulse">
-                          <div className="w-3 h-3 bg-[#111827] rounded-full"></div>
-                        </div>
-                        <div className="absolute -top-4 font-mono font-bold text-cyan-300 text-xs animate-ping">⚡ 😲 ⚡</div>
+                      <div className="flex items-center justify-center gap-6">
+                        <div className="w-10 h-10 bg-cyan-400 rounded-full shadow-[0_0_12px_rgba(34,211,238,0.7)] animate-ping-slow"></div>
+                        <div className="w-10 h-10 bg-cyan-400 rounded-full shadow-[0_0_12px_rgba(34,211,238,0.7)] animate-ping-slow"></div>
                       </div>
                     )}
                     {selectedExpr === 'wink' && (
-                      <div className="relative flex items-center justify-center gap-6">
-                        <div className="w-12 h-10 border-t-[8px] border-cyan-400 rounded-t-full shadow-[0_0_12px_rgba(34,211,238,0.7)] animate-pulse"></div>
-                        <div className="w-12 h-10 bg-cyan-400 rounded-2xl relative flex items-center justify-center shadow-[0_0_12px_rgba(34,211,238,0.7)]">
-                          <div className="absolute top-1 right-1.5 text-xs text-amber-300 animate-spin">✨</div>
-                        </div>
+                      <div className="flex items-center justify-center gap-6">
+                        <div className="w-12 h-10 bg-cyan-400 rounded-2xl shadow-[0_0_12px_rgba(34,211,238,0.7)]"></div>
+                        <div className="w-12 h-3 bg-cyan-400 rounded-full shadow-[0_0_12px_rgba(34,211,238,0.7)]"></div>
                       </div>
                     )}
                     {selectedExpr === 'heart' && (
-                      <div className="flex gap-4 text-rose-500 text-3xl animate-bounce">
-                        ❤️ ❤️
+                      <div className="flex items-center justify-center gap-6 text-3xl text-pink-400 filter drop-shadow-[0_0_10px_rgba(244,114,182,0.8)] animate-pulse">
+                        <span>💖</span>
+                        <span>💖</span>
                       </div>
                     )}
                     {selectedExpr === 'cat' && (
@@ -1076,111 +1158,58 @@ export default function SodabotSettingsScreen() {
             </div>
           </div>
 
-          {/* Top-Right: 1. 소다봇 챗봇 프로필 통합 헤더 */}
-          <div className="flex-1 flex flex-col justify-between space-y-3 bg-[#FAF9F6] p-4 lg:p-5 rounded-2xl border border-[#EAE6DF]">
-            {/* Top Bar: Section Title + Links & Connection Status */}
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#EAE6DF] pb-2.5">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-emerald-700 bg-emerald-100/80 px-2.5 py-0.5 rounded-lg border border-emerald-200">
-                  1. 챗봇 프로필
-                </span>
-                <span className="text-xs font-bold text-[#1D1D1F]">소다봇 기본 정보 & 시작 설정</span>
+          {/* Top-Right: Simplified Status & Quick Info (사용하지 않는 인사프롬프트/프로필 입력 필드 제거 완료) */}
+          <div className="flex-1 flex flex-col justify-between space-y-4 bg-[#FAF9F6] p-5 rounded-2xl border border-[#EAE6DF]">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#EAE6DF] pb-3">
+              <div>
+                <h2 className="text-base font-extrabold text-[#1D1D1F] flex items-center gap-2">
+                  <span>🤖</span> 소다봇 설정 스튜디오
+                </h2>
+                <p className="text-xs text-[#86868B] mt-0.5">
+                  표정, 대기 모드, 효과음 및 물리 버튼 동작을 한 화면에서 설정해요.
+                </p>
               </div>
+
+              {/* Status Badges */}
               <div className="flex items-center gap-2">
-                <button 
-                  onClick={() => {
-                    const btn = document.querySelector('button:has(span:contains("소다봇빌더"))') as HTMLButtonElement;
-                    if (btn) btn.click();
-                    else window.location.hash = "#sodabot_builder";
-                  }}
-                  className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold bg-[#1D1D1F] text-white hover:bg-black transition-all cursor-pointer shadow-xs"
-                >
-                  <Sparkles className="w-3 h-3 mr-1 text-indigo-400" />
-                  소다봇빌더 (6주차)
-                </button>
                 <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold bg-indigo-50 text-indigo-600 border border-indigo-200">
                   <Bluetooth className="w-3 h-3 mr-1 text-indigo-500" />
                   {connectionType === 'none' ? '연결 대기' : connectionType.toUpperCase()}
                 </span>
-                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-200">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse"></span>
-                  {connectionType === 'none' ? '미연결' : '연결됨'}
+                <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold border ${
+                  connectionType === 'none' 
+                    ? 'bg-neutral-100 text-neutral-500 border-neutral-200' 
+                    : 'bg-emerald-50 text-emerald-600 border-emerald-200'
+                }`}>
+                  <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${connectionType === 'none' ? 'bg-neutral-400' : 'bg-emerald-500 animate-pulse'}`}></span>
+                  {connectionType === 'none' ? '미연결' : '소다봇 연결됨'}
                 </span>
               </div>
             </div>
 
-            {/* Profile Content: Name, Bio, Startup Prompt & Save Button */}
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center pt-1">
-              {/* Avatar + Name + Bio (col-span-5) */}
-              <div className="md:col-span-5 flex items-center gap-3 bg-white p-2.5 rounded-xl border border-[#EAE6DF]">
-                <div className="w-12 h-12 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-2xl shrink-0 shadow-2xs">
-                  🤖
-                </div>
-                <div className="flex-1 min-w-0 space-y-1.5">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] font-bold text-[#86868B] shrink-0">이름:</span>
-                    <input 
-                      type="text" 
-                      value={profileName} 
-                      onChange={(e) => setProfileName(e.target.value)}
-                      className="text-xs font-bold text-[#1D1D1F] bg-[#FAF9F6] px-2 py-0.5 rounded border border-[#EAE6DF] outline-none focus:bg-white w-28"
-                    />
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] font-bold text-[#86868B] shrink-0">소개:</span>
-                    <input 
-                      type="text" 
-                      value={profileDesc}
-                      onChange={(e) => setProfileDesc(e.target.value)}
-                      placeholder="e.g. Your Smart AI Companion"
-                      className="text-[11px] text-[#5C5B57] bg-[#FAF9F6] px-2 py-0.5 rounded border border-[#EAE6DF] outline-none focus:bg-white w-full"
-                    />
-                  </div>
+            {/* Quick Overview Badges */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+              <div className="bg-white p-3 rounded-xl border border-[#EAE6DF] space-y-1 shadow-xs">
+                <span className="text-[11px] text-[#86868B] font-bold block">⭐ 대기 기본 표정</span>
+                <div className="text-xs font-black text-amber-700 truncate">
+                  {defaultIdleExpr.startsWith('custom_')
+                    ? (activeCustomFace?.emoji ? `${activeCustomFace.emoji} ${activeCustomFace.label}` : '✨ 맞춤 표정')
+                    : `${expressionsList.find(e => e.id === defaultIdleExpr)?.emoji || '🤖'} ${expressionsList.find(e => e.id === defaultIdleExpr)?.label || defaultIdleExpr}`}
                 </div>
               </div>
 
-              {/* Startup Prompt (col-span-5) */}
-              <div className="md:col-span-5 space-y-1 bg-white p-2.5 rounded-xl border border-[#EAE6DF]">
-                <div className="flex justify-between items-center">
-                  <label className="text-[10px] font-bold text-indigo-600 flex items-center gap-1">
-                    💬 부팅 시작 요청사항 (인사 프롬프트)
-                  </label>
-                  <button 
-                    type="button"
-                    onClick={() => {
-                      localStorage.setItem("sodabot_startup_prompt", startupPrompt);
-                      sendWsCommand("test_startup_prompt", startupPrompt);
-                      showToast("소다봇 텍스트 표시 요청 중…");
-                    }}
-                    className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[9px] font-bold rounded-md transition-colors flex items-center gap-1 shadow-xs cursor-pointer"
-                  >
-                    <Play className="w-2.5 h-2.5" /> 테스트
-                  </button>
+              <div className="bg-white p-3 rounded-xl border border-[#EAE6DF] space-y-1 shadow-xs">
+                <span className="text-[11px] text-[#86868B] font-bold block">🌙 대기 화면 모드</span>
+                <div className="text-xs font-bold text-blue-700 truncate">
+                  {standbyFace}
                 </div>
-                <input 
-                  type="text"
-                  value={startupPrompt}
-                  onChange={(e) => {
-                    setStartupPrompt(e.target.value);
-                    localStorage.setItem("sodabot_startup_prompt", e.target.value);
-                  }}
-                  placeholder="e.g. Hello, I am Lumi! Ready to assist you."
-                  className="w-full px-2 py-1 bg-indigo-50/40 border border-indigo-100 rounded-lg text-xs text-[#1D1D1F] focus:bg-white outline-none"
-                />
               </div>
 
-              {/* Save Button (col-span-2) */}
-              <div className="md:col-span-2">
-                <button 
-                  onClick={() => {
-                    sendWsCommand("set_profile", profileName, "프로필 정보 저장");
-                    showToast('소다봇 프로필 정보가 저장되었습니다!');
-                  }}
-                  className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition-colors shadow-sm flex items-center justify-center gap-1 cursor-pointer"
-                >
-                  <Save className="w-3.5 h-3.5" />
-                  프로필 저장
-                </button>
+              <div className="col-span-2 sm:col-span-1 bg-white p-3 rounded-xl border border-[#EAE6DF] space-y-1 shadow-xs">
+                <span className="text-[11px] text-[#86868B] font-bold block">⚡ 실시간 연동</span>
+                <div className="text-xs font-bold text-emerald-600 truncate">
+                  {connectionType === 'none' ? '웹 시뮬레이터 동작' : '하드웨어 1:1 동기화'}
+                </div>
               </div>
             </div>
           </div>
@@ -1202,6 +1231,19 @@ export default function SodabotSettingsScreen() {
               <p className="text-[11px] text-[#86868B] leading-snug">
                 기본 표정을 사용하거나 편집해서 나만의 표정 라이브러리를 만들어요.
               </p>
+
+              {/* Current Default Idle Expression Display */}
+              <div className="flex items-center justify-between bg-amber-50/70 border border-amber-200/80 px-2.5 py-1.5 rounded-xl text-[10px]">
+                <span className="font-bold text-amber-900 flex items-center gap-1 truncate max-w-[75%]">
+                  <span>⭐ 대기 기본:</span>
+                  <span className="text-amber-700 bg-white px-1.5 py-0.5 rounded border border-amber-200 font-extrabold truncate">
+                    {defaultIdleExpr.startsWith('custom_')
+                      ? (activeCustomFace?.emoji ? `${activeCustomFace.emoji} [내 표정] ${activeCustomFace.label}` : '✨ [내 표정] 맞춤')
+                      : `${expressionsList.find(e => e.id === defaultIdleExpr)?.emoji || '🤖'} ${expressionsList.find(e => e.id === defaultIdleExpr)?.label || defaultIdleExpr}`}
+                  </span>
+                </span>
+                <span className="text-[9px] text-amber-600 font-medium shrink-0">평상시 유지</span>
+              </div>
 
               {/* Tabs */}
               <div className="flex bg-[#FAF9F6] p-1 rounded-xl border border-[#EAE6DF] text-[10px] font-bold">
@@ -1228,61 +1270,105 @@ export default function SodabotSettingsScreen() {
               {/* Expression Grid (4x3 12 items single screen visible) */}
               <div className="grid grid-cols-4 gap-1.5 pt-1">
                 {exprTab === 'basic' ? (
-                  expressionsList.map(expr => (
-                    <button
-                      key={expr.id}
-                      onClick={() => triggerExpression(expr.id, expr.label)}
-                      className={`flex flex-col items-center justify-center p-1.5 py-2 rounded-xl border transition-all cursor-pointer ${
-                        selectedExpr === expr.id 
-                          ? 'border-amber-500 bg-amber-50 scale-105 shadow-sm ring-2 ring-amber-400' 
-                          : 'border-[#EAE6DF] bg-white hover:border-amber-300 hover:bg-[#FAF9F6]'
-                      }`}
-                      title={`${expr.label} (클릭 시 3초간 소다봇 출력)`}
-                    >
-                      <span className="text-xl leading-none">{expr.emoji}</span>
-                      <span className="text-[10px] font-bold text-[#1D1D1F] mt-1 tracking-tight leading-none">{expr.label}</span>
-                    </button>
-                  ))
+                  expressionsList.map(expr => {
+                    const isDefault = defaultIdleExpr === expr.id;
+                    const isSelected = selectedExpr === expr.id && !activeCustomFace;
+                    return (
+                      <button
+                        key={expr.id}
+                        onClick={() => triggerExpression(expr.id, expr.label)}
+                        className={`relative flex flex-col items-center justify-center p-1.5 py-2 rounded-xl border transition-all cursor-pointer ${
+                          isSelected 
+                            ? 'border-amber-500 bg-amber-50 scale-105 shadow-sm ring-2 ring-amber-400' 
+                            : 'border-[#EAE6DF] bg-white hover:border-amber-300 hover:bg-[#FAF9F6]'
+                        }`}
+                        title={`${expr.label} (클릭: 3초 테스트 / 하단 버튼으로 대기표정 저장)`}
+                      >
+                        {isDefault && (
+                          <span className="absolute -top-1.5 -right-1 bg-amber-500 text-white text-[8px] font-black px-1 rounded-full shadow-xs leading-tight">
+                            ⭐
+                          </span>
+                        )}
+                        <span className="text-xl leading-none">{expr.emoji}</span>
+                        <span className="text-[10px] font-bold text-[#1D1D1F] mt-1 tracking-tight leading-none">{expr.label}</span>
+                      </button>
+                    );
+                  })
                 ) : customExprList.length === 0 ? (
                   <div className="col-span-4 p-4 text-center text-xs text-[#86868B]">
                     등록된 나만의 표정이 없습니다.<br />상단 <span className="font-bold text-amber-600">+ 만들기</span> 버튼을 눌러보세요!
                   </div>
                 ) : (
-                  customExprList.map(cExpr => (
-                    <div
-                      key={cExpr.id}
-                      onClick={() => triggerCustomExpression(cExpr)}
-                      className={`relative flex flex-col items-center justify-center p-1.5 py-2 rounded-xl border transition-all cursor-pointer group ${
-                        activeCustomFace?.id === cExpr.id 
-                          ? 'border-amber-500 bg-amber-50 scale-105 shadow-sm ring-2 ring-amber-400' 
-                          : 'border-[#EAE6DF] bg-white hover:border-amber-300 hover:bg-[#FAF9F6]'
-                      }`}
-                    >
-                      <span className="text-xl leading-none">{cExpr.emoji}</span>
-                      <span className="text-[10px] font-bold text-[#1D1D1F] mt-1 truncate max-w-full tracking-tight leading-none">{cExpr.label.slice(0, 2)}</span>
-                      <button 
-                        onClick={(e) => handleDeleteCustomExpr(cExpr.id, e)}
-                        className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 p-0.5 text-rose-500 hover:bg-rose-50 rounded transition-all"
-                        title="표정 삭제"
+                  customExprList.map(cExpr => {
+                    const isDefault = defaultIdleExpr === cExpr.id;
+                    const isSelected = activeCustomFace?.id === cExpr.id;
+                    return (
+                      <div
+                        key={cExpr.id}
+                        onClick={() => triggerCustomExpression(cExpr)}
+                        className={`relative flex flex-col items-center justify-center p-1.5 py-2 rounded-xl border transition-all cursor-pointer group ${
+                          isSelected 
+                            ? 'border-amber-500 bg-amber-50 scale-105 shadow-sm ring-2 ring-amber-400' 
+                            : 'border-[#EAE6DF] bg-white hover:border-amber-300 hover:bg-[#FAF9F6]'
+                        }`}
+                        title={`${cExpr.label} (클릭: 3초 테스트 / 하단 버튼으로 대기표정 저장)`}
                       >
-                        ✕
-                      </button>
-                    </div>
-                  ))
+                        {isDefault && (
+                          <span className="absolute -top-1.5 -right-1 bg-amber-500 text-white text-[8px] font-black px-1 rounded-full shadow-xs leading-tight z-10">
+                            ⭐
+                          </span>
+                        )}
+                        <span className="text-xl leading-none">{cExpr.emoji}</span>
+                        <span className="text-[10px] font-bold text-[#1D1D1F] mt-1 truncate max-w-full tracking-tight leading-none">{cExpr.label.slice(0, 2)}</span>
+                        <button 
+                          onClick={(e) => handleDeleteCustomExpr(cExpr.id, e)}
+                          className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 p-0.5 text-rose-500 hover:bg-rose-50 rounded transition-all"
+                          title="표정 삭제"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    );
+                  })
                 )}
               </div>
             </div>
 
-            <button 
-              onClick={() => {
-                const target = expressionsList.find(e => e.id === selectedExpr);
-                triggerExpression(selectedExpr, target?.label || '선택한');
-              }}
-              className="mt-4 w-full py-2.5 bg-amber-400 hover:bg-amber-500 text-amber-950 text-xs font-bold rounded-xl transition-colors shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
-            >
-              <Smile className="w-3.5 h-3.5" />
-              즉시 표정 실행 (3초 유지)
-            </button>
+            {/* Action Buttons for Card 1 */}
+            <div className="mt-4 space-y-1.5">
+              <button 
+                onClick={() => {
+                  if (exprTab === 'custom') {
+                    const target = activeCustomFace || (customExprList.length > 0 ? customExprList[0] : null);
+                    if (target) handleSetDefaultCustomIdleExpr(target);
+                    else showToast('선택하거나 생성된 내 표정이 없습니다.');
+                  } else {
+                    const target = expressionsList.find(e => e.id === selectedExpr) || expressionsList[0];
+                    handleSetDefaultIdleExpr(target.id, target.label);
+                  }
+                }}
+                className="w-full py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl transition-colors shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
+                title="선택된 표정을 소다봇의 상시대기 기본 표정으로 저장합니다"
+              >
+                <span>⭐</span>
+                선택한 표정을 대기 기본으로 저장
+              </button>
+              <button 
+                onClick={() => {
+                  if (exprTab === 'custom') {
+                    const target = activeCustomFace || (customExprList.length > 0 ? customExprList[0] : null);
+                    if (target) triggerCustomExpression(target);
+                  } else {
+                    const target = expressionsList.find(e => e.id === selectedExpr) || expressionsList[0];
+                    triggerExpression(target.id, target.label);
+                  }
+                }}
+                className="w-full py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-900 text-[11px] font-semibold rounded-xl transition-colors flex items-center justify-center gap-1 cursor-pointer"
+              >
+                <Smile className="w-3 h-3" />
+                즉시 테스트 실행 (3초)
+              </button>
+            </div>
           </div>
 
 
@@ -1315,7 +1401,7 @@ export default function SodabotSettingsScreen() {
                     value={welcomeMsg}
                     onChange={(e) => setWelcomeMsg(e.target.value)}
                     rows={2}
-                    placeholder="e.g. HELLO!\nI AM LUMI :)"
+                    placeholder="e.g. HELLO!\nI AM LUMI :)\nNICE TO SEE YOU TODAY!"
                     className="w-full p-2 text-xs bg-white border border-[#EAE6DF] rounded-xl text-[#1D1D1F] outline-none focus:border-blue-300 resize-none font-sans leading-relaxed"
                   />
                   <span className="absolute bottom-1 right-2 text-[8px] text-[#86868B] font-mono">
@@ -1330,7 +1416,7 @@ export default function SodabotSettingsScreen() {
                   <label className="text-[10px] font-bold text-[#5C5B57]">🌙 대기 화면 모드</label>
                   <button
                     onClick={() => previewStandbyScreen(standbyFace)}
-                    className="px-2 py-0.5 bg-blue-100 hover:bg-blue-200 text-blue-700 text-[9px] font-bold rounded-md transition-colors flex items-center gap-1"
+                    className="px-2 py-0.5 bg-blue-100 hover:bg-blue-200 text-blue-700 text-[9px] font-bold rounded-md transition-colors flex items-center gap-1 cursor-pointer"
                     title="대기 화면 미리보기"
                   >
                     <Play className="w-2.5 h-2.5" /> 미리보기
@@ -1339,13 +1425,45 @@ export default function SodabotSettingsScreen() {
                 <div className="relative">
                   <select 
                     value={standbyFace}
-                    onChange={(e) => setStandbyFace(e.target.value)}
+                    onChange={(e) => {
+                      const newFace = e.target.value;
+                      setStandbyFace(newFace);
+                      // 1. Check if matches custom expression
+                      const matchedCustom = customExprList.find(c => newFace.includes(`[내 표정] ${c.label}`) || newFace.includes(c.label) || newFace === c.id);
+                      if (matchedCustom) {
+                        handleSetDefaultCustomIdleExpr(matchedCustom);
+                        return;
+                      }
+                      // 2. Check if matches basic expression
+                      const matched = expressionsList.find(expr => newFace.includes(expr.label) || newFace.includes(expr.emoji));
+                      if (matched) {
+                        handleSetDefaultIdleExpr(matched.id, matched.label);
+                        return;
+                      }
+                    }}
                     className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#EAE6DF] rounded-xl text-[#1D1D1F] outline-none font-bold appearance-none cursor-pointer"
                   >
-                    <option>기본 표정 표시 🤖</option>
-                    <option>시계 모드 ⏰</option>
-                    <option>날씨 정보 ☀️</option>
-                    <option>화면 끄기 🌙</option>
+                    <optgroup label="🤖 기본 표정 (12개)">
+                      {expressionsList.map(expr => (
+                        <option key={expr.id} value={`${expr.label} 표정 ${expr.emoji}`}>
+                          {expr.emoji} {expr.label} 표정 ({expr.id})
+                        </option>
+                      ))}
+                    </optgroup>
+                    {customExprList.length > 0 && (
+                      <optgroup label="✨ 내가 만든 맞춤 표정">
+                        {customExprList.map(cExpr => (
+                          <option key={cExpr.id} value={`[내 표정] ${cExpr.label} ${cExpr.emoji}`}>
+                            {cExpr.emoji} [내 표정] {cExpr.label}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    <optgroup label="⚙️ 화면 모드">
+                      <option value="시계 모드 ⏰">⏰ 시계 모드</option>
+                      <option value="날씨 정보 ☀️">☀️ 날씨 정보</option>
+                      <option value="화면 끄기 🌙">🌙 화면 끄기 (절전)</option>
+                    </optgroup>
                   </select>
                   <ChevronDown className="w-3 h-3 text-[#86868B] absolute right-2.5 top-2.5 pointer-events-none" />
                 </div>
@@ -1385,12 +1503,10 @@ export default function SodabotSettingsScreen() {
                 localStorage.setItem('sodabot_welcome_msg', welcomeMsg);
                 localStorage.setItem('sodabot_standby_face', standbyFace);
                 localStorage.setItem('sodabot_standby_time', standbyTime);
+                localStorage.setItem('sodabot_default_idle_expr', defaultIdleExpr);
                 sendWsCommand("set_welcome", welcomeMsg, "환영 인사 설정 전송");
-                sendWsCommand("set_standby", JSON.stringify({
-                  mode: standbyFace,
-                  timeout: standbyTime === '15초' ? 15000 : standbyTime === '1분' ? 60000 : standbyTime === '5분' ? 300000 : 30000
-                }), "대기 화면 설정 전송");
-                showToast('환영 인사, 대기 화면 및 소리 설정이 저장 및 적용되었습니다!');
+                sendWsCommand("set_expression", mapToSafeHardwareExpr(defaultIdleExpr), "대기 기본 표정 전송");
+                showToast('환영 인사 및 대기 표정 설정이 저장 및 적용되었습니다!');
               }}
               className="mt-4 w-full py-2.5 bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold rounded-xl transition-colors shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
             >
@@ -1745,7 +1861,7 @@ export default function SodabotSettingsScreen() {
                 </div>
 
                 {/* Custom Welcome Message Lines */}
-                <div className="w-full text-center z-10 font-bold whitespace-pre-line text-xs leading-relaxed" style={{ color: studioColor }}>
+                <div className="w-full text-center z-10 font-black whitespace-pre-line text-sm leading-relaxed tracking-wide drop-shadow-md" style={{ color: studioColor }}>
                   {studioText}
                 </div>
               </div>
