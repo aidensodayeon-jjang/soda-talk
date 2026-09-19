@@ -1092,33 +1092,33 @@ export default function SodabotSettingsScreen() {
   ];
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-[#FAF9F6] p-6 lg:p-8 overflow-y-auto font-sans animate-fade-in">
+    <div className="flex-1 flex flex-col h-full bg-[#FBFBFA] p-6 lg:p-8 overflow-y-auto font-sans animate-fade-in text-[#191919]">
       
       {/* Toast Notification */}
       {saveToast && (
-        <div className="fixed top-6 right-6 z-50 bg-[#1D1D1F] text-white px-5 py-3 rounded-2xl shadow-xl flex items-center gap-3 animate-fade-in text-xs font-semibold">
-          <Check className="w-4 h-4 text-emerald-400" />
+        <div className="fixed top-6 right-6 z-50 bg-[#191919] text-white px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-2.5 animate-fade-in text-xs font-medium border border-neutral-700">
+          <Check className="w-3.5 h-3.5 text-emerald-400" />
           <span>{saveToast}</span>
         </div>
       )}
 
       {/* Main Container */}
-      <div className="max-w-7xl mx-auto w-full space-y-8 pb-12">
+      <div className="max-w-7xl mx-auto w-full space-y-6 pb-12">
 
         {/* Page Header Banner (LCD Simulator on Top-Left) */}
-        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-6 bg-white p-6 rounded-3xl border border-[#EAE6DF] shadow-sm">
+        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-6 bg-white p-6 rounded-2xl border border-[#E5E5E3] shadow-2xs">
           
           {/* Top-Left: Real-time 2.0" ST7789 TFT LCD Screen Simulator */}
-          <div className="flex flex-col items-center">
-            <div className="w-[300px] h-[190px] bg-black rounded-3xl p-3 shadow-2xl border-4 border-[#2C2C2E] flex flex-col justify-between relative overflow-hidden ring-4 ring-black/10">
+          <div className="flex flex-col items-center shrink-0">
+            <div className="w-[280px] h-[176px] bg-[#111111] rounded-2xl p-3 shadow-xl border border-neutral-800 flex flex-col justify-between relative overflow-hidden ring-1 ring-black/5">
               
               {/* LCD Top Status Bar */}
               <div className="flex justify-between items-center text-[10px] text-[#86868B] font-mono z-10 select-none">
-                <span className="flex items-center gap-1">
+                <span className="flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
                   2.0" TFT ST7789
                 </span>
-                <span className="text-[9px] text-[#A1A1A6] font-bold">
+                <span className="text-[9px] text-[#A1A1A6] font-semibold tracking-wider">
                   {bootingState ? `BOOT: ${bootingState.toUpperCase()}` : selectedExpr.toUpperCase()}
                 </span>
               </div>
@@ -1127,19 +1127,19 @@ export default function SodabotSettingsScreen() {
               <div className="flex-1 w-full flex items-center justify-center relative z-10">
                 {bootingState === 'greeting' ? (
                   <div className="text-center px-2 animate-fade-in space-y-1">
-                    <div className="text-[10px] text-amber-300 font-bold flex items-center justify-center gap-1">💬 GREETING</div>
-                    <div className="text-[13px] text-white font-bold leading-snug tracking-wide whitespace-pre-line bg-black/60 px-3 py-2.5 rounded-xl border border-white/10 shadow-inner font-mono">
+                    <div className="text-[10px] text-amber-300 font-medium flex items-center justify-center gap-1">GREETING</div>
+                    <div className="text-[12px] text-white font-medium leading-snug tracking-wide whitespace-pre-line bg-black/60 px-3 py-2 rounded-xl border border-white/10 shadow-inner font-mono">
                       {bootingMessage || welcomeMsg || 'HELLO!\nI AM LUMI :)\nNICE TO SEE YOU TODAY!'}
                     </div>
                   </div>
                 ) : bootingState === 'sound' ? (
                   <div className="flex flex-col items-center justify-center animate-bounce">
-                    <div className="flex gap-3 text-amber-300 text-xl">🎵 🎶 ✨</div>
-                    <div className="text-[10px] text-cyan-300 font-mono font-bold mt-1">GREETING SOUND</div>
+                    <div className="flex gap-2.5 text-amber-300 text-lg">🎵 🎶 ✨</div>
+                    <div className="text-[10px] text-cyan-300 font-mono font-medium mt-1">GREETING SOUND</div>
                   </div>
                 ) : bootingState === 'time' ? (
                   <div className="flex flex-col items-center justify-center animate-fade-in space-y-0.5">
-                    <div className="text-[9px] text-[#86868B] font-mono">⏰ CURRENT TIME</div>
+                    <div className="text-[9px] text-[#86868B] font-mono">CURRENT TIME</div>
                     <div className="text-2xl font-bold font-mono text-emerald-400 tracking-wider">
                       {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </div>
@@ -1331,28 +1331,28 @@ export default function SodabotSettingsScreen() {
             </div>
           </div>
 
-          {/* Top-Right: Simplified Status & Quick Info (사용하지 않는 인사프롬프트/프로필 입력 필드 제거 완료) */}
-          <div className="flex-1 flex flex-col justify-between space-y-4 bg-[#FAF9F6] p-5 rounded-2xl border border-[#EAE6DF]">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#EAE6DF] pb-3">
+          {/* Top-Right: Simplified Status & Quick Info */}
+          <div className="flex-1 flex flex-col justify-between space-y-4 bg-[#FBFBFA] p-5 rounded-xl border border-[#E5E5E3]">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#E5E5E3] pb-3">
               <div>
-                <h2 className="text-base font-extrabold text-[#1D1D1F] flex items-center gap-2">
-                  <span>🤖</span> 소다봇 설정 스튜디오
+                <h2 className="text-sm font-bold text-[#191919] flex items-center gap-2">
+                  소다봇 설정 스튜디오
                 </h2>
-                <p className="text-xs text-[#86868B] mt-0.5">
-                  표정, 대기 모드, 효과음 및 물리 버튼 동작을 한 화면에서 설정해요.
+                <p className="text-xs text-[#787774] mt-0.5">
+                  표정, 대기 모드, 효과음 및 물리 버튼 동작을 한 화면에서 설정합니다.
                 </p>
               </div>
 
               {/* Status Badges */}
               <div className="flex items-center gap-2">
-                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold bg-indigo-50 text-indigo-600 border border-indigo-200">
-                  <Bluetooth className="w-3 h-3 mr-1 text-indigo-500" />
+                <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-medium bg-neutral-100 text-neutral-700 border border-neutral-200/80">
+                  <Bluetooth className="w-3 h-3 mr-1 text-neutral-500" />
                   {connectionType === 'none' ? '연결 대기' : connectionType.toUpperCase()}
                 </span>
-                <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold border ${
+                <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-medium border ${
                   connectionType === 'none' 
                     ? 'bg-neutral-100 text-neutral-500 border-neutral-200' 
-                    : 'bg-emerald-50 text-emerald-600 border-emerald-200'
+                    : 'bg-emerald-50 text-emerald-700 border-emerald-200'
                 }`}>
                   <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${connectionType === 'none' ? 'bg-neutral-400' : 'bg-emerald-500 animate-pulse'}`}></span>
                   {connectionType === 'none' ? '미연결' : '소다봇 연결됨'}
@@ -1362,25 +1362,25 @@ export default function SodabotSettingsScreen() {
 
             {/* Quick Overview Badges */}
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-              <div className="bg-white p-3 rounded-xl border border-[#EAE6DF] space-y-1 shadow-xs">
-                <span className="text-[11px] text-[#86868B] font-bold block">⭐ 대기 기본 표정</span>
-                <div className="text-xs font-black text-amber-700 truncate">
+              <div className="bg-white p-3 rounded-xl border border-[#E5E5E3] space-y-1 shadow-2xs">
+                <span className="text-[11px] text-[#787774] font-medium block">대기 기본 표정</span>
+                <div className="text-xs font-bold text-[#191919] truncate">
                   {defaultIdleExpr.startsWith('custom_')
-                    ? (activeCustomFace?.emoji ? `${activeCustomFace.emoji} ${activeCustomFace.label}` : '✨ 맞춤 표정')
+                    ? (activeCustomFace?.emoji ? `${activeCustomFace.emoji} ${activeCustomFace.label}` : '맞춤 표정')
                     : `${expressionsList.find(e => e.id === defaultIdleExpr)?.emoji || '🤖'} ${expressionsList.find(e => e.id === defaultIdleExpr)?.label || defaultIdleExpr}`}
                 </div>
               </div>
 
-              <div className="bg-white p-3 rounded-xl border border-[#EAE6DF] space-y-1 shadow-xs">
-                <span className="text-[11px] text-[#86868B] font-bold block">🌙 대기 화면 모드</span>
-                <div className="text-xs font-bold text-blue-700 truncate">
+              <div className="bg-white p-3 rounded-xl border border-[#E5E5E3] space-y-1 shadow-2xs">
+                <span className="text-[11px] text-[#787774] font-medium block">대기 화면 모드</span>
+                <div className="text-xs font-bold text-[#191919] truncate">
                   {standbyFace}
                 </div>
               </div>
 
-              <div className="col-span-2 sm:col-span-1 bg-white p-3 rounded-xl border border-[#EAE6DF] space-y-1 shadow-xs">
-                <span className="text-[11px] text-[#86868B] font-bold block">⚡ 실시간 연동</span>
-                <div className="text-xs font-bold text-emerald-600 truncate">
+              <div className="col-span-2 sm:col-span-1 bg-white p-3 rounded-xl border border-[#E5E5E3] space-y-1 shadow-2xs">
+                <span className="text-[11px] text-[#787774] font-medium block">실시간 연동</span>
+                <div className="text-xs font-semibold text-emerald-700 truncate">
                   {connectionType === 'none' ? '웹 시뮬레이터 동작' : '하드웨어 1:1 동기화'}
                 </div>
               </div>
@@ -1390,58 +1390,59 @@ export default function SodabotSettingsScreen() {
         </div>
 
         {/* 4-Card Single-Row Layout (1단 4열 그리드) */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
 
           {/* Card 1: 표정 관리 */}
-          <div className="bg-white border-2 border-amber-400/30 hover:border-amber-400/60 rounded-3xl p-5 shadow-sm flex flex-col justify-between transition-all">
+          <div className="bg-white border border-[#E5E5E3] hover:border-neutral-300 rounded-2xl p-5 shadow-2xs flex flex-col justify-between transition-all">
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-amber-600 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-100">
-                  1. 표정 관리
-                </span>
-                <Smile className="w-4 h-4 text-amber-500" />
+                <div className="flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-md bg-neutral-100 border border-neutral-200/80 text-[11px] font-bold text-neutral-700 flex items-center justify-center">1</span>
+                  <span className="text-xs font-bold text-[#191919]">표정 관리</span>
+                </div>
+                <Smile className="w-4 h-4 text-neutral-400" />
               </div>
-              <p className="text-[11px] text-[#86868B] leading-snug">
-                기본 표정을 사용하거나 편집해서 나만의 표정 라이브러리를 만들어요.
+              <p className="text-[11px] text-[#787774] leading-relaxed">
+                기본 표정을 선택하거나 편집하여 나만의 표정 라이브러리를 만듭니다.
               </p>
 
               {/* Current Default Idle Expression Display */}
-              <div className="flex items-center justify-between bg-amber-50/70 border border-amber-200/80 px-2.5 py-1.5 rounded-xl text-[10px]">
-                <span className="font-bold text-amber-900 flex items-center gap-1 truncate max-w-[75%]">
-                  <span>⭐ 대기 기본:</span>
-                  <span className="text-amber-700 bg-white px-1.5 py-0.5 rounded border border-amber-200 font-extrabold truncate">
+              <div className="flex items-center justify-between bg-[#FBFBFA] border border-[#EBEBEA] px-2.5 py-1.5 rounded-xl text-[10px]">
+                <span className="font-medium text-[#191919] flex items-center gap-1.5 truncate max-w-[75%]">
+                  <span className="text-[#787774]">대기 기본:</span>
+                  <span className="text-[#191919] bg-white px-1.5 py-0.5 rounded border border-[#E5E5E3] font-bold truncate">
                     {defaultIdleExpr.startsWith('custom_')
-                      ? (activeCustomFace?.emoji ? `${activeCustomFace.emoji} [내 표정] ${activeCustomFace.label}` : '✨ [내 표정] 맞춤')
+                      ? (activeCustomFace?.emoji ? `${activeCustomFace.emoji} [내 표정] ${activeCustomFace.label}` : '[내 표정] 맞춤')
                       : `${expressionsList.find(e => e.id === defaultIdleExpr)?.emoji || '🤖'} ${expressionsList.find(e => e.id === defaultIdleExpr)?.label || defaultIdleExpr}`}
                   </span>
                 </span>
-                <span className="text-[9px] text-amber-600 font-medium shrink-0">평상시 유지</span>
+                <span className="text-[9px] text-[#787774] font-medium shrink-0">평상시 유지</span>
               </div>
 
               {/* Tabs */}
-              <div className="flex bg-[#FAF9F6] p-1 rounded-xl border border-[#EAE6DF] text-[10px] font-bold">
+              <div className="flex bg-[#F5F5F3] p-0.5 rounded-lg border border-[#EBEBEA] text-[10px] font-medium">
                 <button 
                   onClick={() => setExprTab('basic')}
-                  className={`flex-1 py-1 rounded-lg transition-colors ${exprTab === 'basic' ? 'bg-white text-amber-700 shadow-sm' : 'text-[#86868B]'}`}
+                  className={`flex-1 py-1 rounded-md transition-colors ${exprTab === 'basic' ? 'bg-white text-[#191919] font-bold shadow-2xs' : 'text-[#787774]'}`}
                 >
                   기본 ({expressionsList.length})
                 </button>
                 <button 
                   onClick={() => setExprTab('custom')}
-                  className={`flex-1 py-1 rounded-lg transition-colors ${exprTab === 'custom' ? 'bg-white text-amber-700 shadow-sm' : 'text-[#86868B]'}`}
+                  className={`flex-1 py-1 rounded-md transition-colors ${exprTab === 'custom' ? 'bg-white text-[#191919] font-bold shadow-2xs' : 'text-[#787774]'}`}
                 >
                   내 표정 ({customExprList.length})
                 </button>
                 <button 
                   onClick={() => setShowExprEditor(true)} 
-                  className="px-2 py-1 text-amber-700 hover:bg-amber-100 rounded-lg flex items-center gap-0.5 cursor-pointer font-bold"
+                  className="px-2 py-1 text-blue-600 hover:bg-blue-50/80 rounded-md flex items-center gap-0.5 cursor-pointer font-semibold"
                 >
-                  <Plus className="w-3 h-3 text-amber-600" /> 만들기
+                  <Plus className="w-3 h-3 text-blue-600" /> 만들기
                 </button>
               </div>
 
               {/* Expression Grid (4x3 12 items single screen visible) */}
-              <div className="grid grid-cols-4 gap-1.5 pt-1">
+              <div className="grid grid-cols-4 gap-1.5 pt-0.5">
                 {exprTab === 'basic' ? (
                   expressionsList.map(expr => {
                     const isDefault = defaultIdleExpr === expr.id;
@@ -1452,24 +1453,24 @@ export default function SodabotSettingsScreen() {
                         onClick={() => triggerExpression(expr.id, expr.label)}
                         className={`relative flex flex-col items-center justify-center p-1.5 py-2 rounded-xl border transition-all cursor-pointer ${
                           isSelected 
-                            ? 'border-amber-500 bg-amber-50 scale-105 shadow-sm ring-2 ring-amber-400' 
-                            : 'border-[#EAE6DF] bg-white hover:border-amber-300 hover:bg-[#FAF9F6]'
+                            ? 'border-blue-600 bg-blue-50/40 ring-1 ring-blue-600/30' 
+                            : 'border-[#E5E5E3] bg-white hover:border-neutral-400 hover:bg-[#FBFBFA]'
                         }`}
                         title={`${expr.label} (클릭: 3초 테스트 / 하단 버튼으로 대기표정 저장)`}
                       >
                         {isDefault && (
-                          <span className="absolute -top-1.5 -right-1 bg-amber-500 text-white text-[8px] font-black px-1 rounded-full shadow-xs leading-tight">
+                          <span className="absolute -top-1 -right-1 bg-neutral-900 text-amber-300 text-[8px] font-bold px-1 rounded-full shadow-2xs leading-tight">
                             ⭐
                           </span>
                         )}
-                        <span className="text-xl leading-none">{expr.emoji}</span>
-                        <span className="text-[10px] font-bold text-[#1D1D1F] mt-1 tracking-tight leading-none">{expr.label}</span>
+                        <span className="text-lg leading-none">{expr.emoji}</span>
+                        <span className="text-[10px] font-medium text-[#191919] mt-1 tracking-tight leading-none">{expr.label}</span>
                       </button>
                     );
                   })
                 ) : customExprList.length === 0 ? (
-                  <div className="col-span-4 p-4 text-center text-xs text-[#86868B]">
-                    등록된 나만의 표정이 없습니다.<br />상단 <span className="font-bold text-amber-600">+ 만들기</span> 버튼을 눌러보세요!
+                  <div className="col-span-4 p-4 text-center text-xs text-[#787774]">
+                    등록된 나만의 표정이 없습니다.<br />상단 <span className="font-semibold text-blue-600">+ 만들기</span> 버튼을 눌러보세요!
                   </div>
                 ) : (
                   customExprList.map(cExpr => {
@@ -1481,21 +1482,21 @@ export default function SodabotSettingsScreen() {
                         onClick={() => triggerCustomExpression(cExpr)}
                         className={`relative flex flex-col items-center justify-center p-1.5 py-2 rounded-xl border transition-all cursor-pointer group ${
                           isSelected 
-                            ? 'border-amber-500 bg-amber-50 scale-105 shadow-sm ring-2 ring-amber-400' 
-                            : 'border-[#EAE6DF] bg-white hover:border-amber-300 hover:bg-[#FAF9F6]'
+                            ? 'border-blue-600 bg-blue-50/40 ring-1 ring-blue-600/30' 
+                            : 'border-[#E5E5E3] bg-white hover:border-neutral-400 hover:bg-[#FBFBFA]'
                         }`}
                         title={`${cExpr.label} (클릭: 3초 테스트 / 하단 버튼으로 대기표정 저장)`}
                       >
                         {isDefault && (
-                          <span className="absolute -top-1.5 -right-1 bg-amber-500 text-white text-[8px] font-black px-1 rounded-full shadow-xs leading-tight z-10">
+                          <span className="absolute -top-1 -right-1 bg-neutral-900 text-amber-300 text-[8px] font-bold px-1 rounded-full shadow-2xs leading-tight z-10">
                             ⭐
                           </span>
                         )}
-                        <span className="text-xl leading-none">{cExpr.emoji}</span>
-                        <span className="text-[10px] font-bold text-[#1D1D1F] mt-1 truncate max-w-full tracking-tight leading-none">{cExpr.label.slice(0, 2)}</span>
+                        <span className="text-lg leading-none">{cExpr.emoji}</span>
+                        <span className="text-[10px] font-medium text-[#191919] mt-1 truncate max-w-full tracking-tight leading-none">{cExpr.label.slice(0, 2)}</span>
                         <button 
                           onClick={(e) => handleDeleteCustomExpr(cExpr.id, e)}
-                          className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 p-0.5 text-rose-500 hover:bg-rose-50 rounded transition-all"
+                          className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 p-0.5 text-neutral-400 hover:text-rose-600 rounded transition-all"
                           title="표정 삭제"
                         >
                           ✕
@@ -1520,7 +1521,7 @@ export default function SodabotSettingsScreen() {
                     handleSetDefaultIdleExpr(target.id, target.label);
                   }
                 }}
-                className="w-full py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl transition-colors shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
+                className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl transition-colors shadow-2xs flex items-center justify-center gap-1.5 cursor-pointer"
                 title="선택된 표정을 소다봇의 상시대기 기본 표정으로 저장합니다"
               >
                 <span>⭐</span>
@@ -1536,33 +1537,34 @@ export default function SodabotSettingsScreen() {
                     triggerExpression(target.id, target.label);
                   }
                 }}
-                className="w-full py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-900 text-[11px] font-semibold rounded-xl transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                className="w-full py-2 bg-white hover:bg-neutral-50 text-neutral-700 border border-[#E5E5E3] text-xs font-semibold rounded-xl transition-colors flex items-center justify-center gap-1 cursor-pointer"
               >
-                <Smile className="w-3 h-3" />
+                <Smile className="w-3.5 h-3.5 text-neutral-500" />
                 즉시 테스트 실행 (3초)
               </button>
             </div>
           </div>
 
 
-          {/* Card 2: 환영 인사 & 소리·대기 설정 (기존 3 + 4 통합) */}
-          <div className="bg-white border-2 border-blue-400/30 hover:border-blue-400/60 rounded-3xl p-5 shadow-sm flex flex-col justify-between transition-all space-y-3">
+          {/* Card 2: 인사·소리 & 대기 설정 */}
+          <div className="bg-white border border-[#E5E5E3] hover:border-neutral-300 rounded-2xl p-5 shadow-2xs flex flex-col justify-between transition-all space-y-3">
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-100">
-                  2. 인사·소리 & 대기 설정
-                </span>
-                <Volume2 className="w-4 h-4 text-blue-500" />
+                <div className="flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-md bg-neutral-100 border border-neutral-200/80 text-[11px] font-bold text-neutral-700 flex items-center justify-center">2</span>
+                  <span className="text-xs font-bold text-[#191919]">인사·소리 & 대기 설정</span>
+                </div>
+                <Volume2 className="w-4 h-4 text-neutral-400" />
               </div>
-              <p className="text-[11px] text-[#86868B] leading-snug">
-                부팅 인사말, 대기 화면, 효과음을 한곳에서 설정해요.
+              <p className="text-[11px] text-[#787774] leading-relaxed">
+                부팅 인사말, 대기 화면 모드, 효과음을 한곳에서 설정합니다.
               </p>
 
               {/* 1) Welcome Message Box */}
-              <div className="space-y-1 bg-[#FAF9F6] p-2.5 rounded-2xl border border-[#EAE6DF]">
+              <div className="space-y-1 bg-[#FBFBFA] p-2.5 rounded-xl border border-[#EBEBEA]">
                 <div className="flex justify-between items-center">
-                  <label className="text-[10px] font-bold text-[#5C5B57]">💬 환영 인사 문구</label>
-                  <span className="text-[9px] text-[#86868B]">부팅 시 2.5초간 화면에 표시</span>
+                  <label className="text-[10px] font-bold text-[#191919]">환영 인사 문구</label>
+                  <span className="text-[9px] text-[#787774]">부팅 시 2.5초 표시</span>
                 </div>
                 <div className="relative">
                   <textarea 
@@ -1570,24 +1572,24 @@ export default function SodabotSettingsScreen() {
                     onChange={(e) => setWelcomeMsg(e.target.value)}
                     rows={2}
                     placeholder="e.g. HELLO!\nI AM LUMI :)\nNICE TO SEE YOU TODAY!"
-                    className="w-full p-2 text-xs bg-white border border-[#EAE6DF] rounded-xl text-[#1D1D1F] outline-none focus:border-blue-300 resize-none font-sans leading-relaxed"
+                    className="w-full p-2 text-xs bg-white border border-[#E5E5E3] rounded-xl text-[#191919] outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 resize-none font-sans leading-relaxed transition-all placeholder:text-[#A1A1A0]"
                   />
-                  <span className="absolute bottom-1 right-2 text-[8px] text-[#86868B] font-mono">
+                  <span className="absolute bottom-1 right-2 text-[8px] text-[#787774] font-mono">
                     {welcomeMsg.length}/100
                   </span>
                 </div>
               </div>
 
               {/* 2) Standby Screen Box */}
-              <div className="space-y-1 bg-[#FAF9F6] p-2.5 rounded-2xl border border-[#EAE6DF]">
+              <div className="space-y-1 bg-[#FBFBFA] p-2.5 rounded-xl border border-[#EBEBEA]">
                 <div className="flex items-center justify-between">
-                  <label className="text-[10px] font-bold text-[#5C5B57]">🌙 대기 화면 모드</label>
+                  <label className="text-[10px] font-bold text-[#191919]">대기 화면 모드</label>
                   <button
                     onClick={() => previewStandbyScreen(standbyFace)}
-                    className="px-2 py-0.5 bg-blue-100 hover:bg-blue-200 text-blue-700 text-[9px] font-bold rounded-md transition-colors flex items-center gap-1 cursor-pointer"
+                    className="px-2 py-0.5 bg-white hover:bg-neutral-100 text-neutral-700 border border-[#E5E5E3] text-[9px] font-semibold rounded-md transition-colors flex items-center gap-1 cursor-pointer"
                     title="대기 화면 미리보기"
                   >
-                    <Play className="w-2.5 h-2.5" /> 미리보기
+                    <Play className="w-2.5 h-2.5 text-neutral-500" /> 미리보기
                   </button>
                 </div>
                 <div className="relative">
@@ -1609,7 +1611,7 @@ export default function SodabotSettingsScreen() {
                         return;
                       }
                     }}
-                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#EAE6DF] rounded-xl text-[#1D1D1F] outline-none font-bold appearance-none cursor-pointer"
+                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#E5E5E3] rounded-xl text-[#191919] outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 font-semibold appearance-none cursor-pointer transition-all"
                   >
                     <optgroup label="🤖 기본 표정 (12개)">
                       {expressionsList.map(expr => (
@@ -1633,28 +1635,28 @@ export default function SodabotSettingsScreen() {
                       <option value="화면 끄기 🌙">🌙 화면 끄기 (절전)</option>
                     </optgroup>
                   </select>
-                  <ChevronDown className="w-3 h-3 text-[#86868B] absolute right-2.5 top-2.5 pointer-events-none" />
+                  <ChevronDown className="w-3 h-3 text-[#787774] absolute right-2.5 top-2.5 pointer-events-none" />
                 </div>
               </div>
 
               {/* 3) Sound Effects Box */}
-              <div className="space-y-1.5 bg-[#FAF9F6] p-2.5 rounded-2xl border border-[#EAE6DF]">
-                <label className="text-[10px] font-bold text-[#5C5B57]">🎵 효과음 테스트 & 선택</label>
+              <div className="space-y-1.5 bg-[#FBFBFA] p-2.5 rounded-xl border border-[#EBEBEA]">
+                <label className="text-[10px] font-bold text-[#191919]">효과음 테스트 & 선택</label>
                 <div className="grid grid-cols-2 gap-1.5">
                   {soundList.slice(0, 4).map(s => (
-                    <div key={s.id} className="flex items-center justify-between p-1.5 bg-white rounded-xl border border-[#EAE6DF] text-xs">
-                      <span className="font-semibold text-[#1D1D1F] text-[10px] truncate max-w-[50px]">{s.name}</span>
+                    <div key={s.id} className="flex items-center justify-between p-1.5 bg-white rounded-xl border border-[#E5E5E3] text-xs">
+                      <span className="font-medium text-[#191919] text-[10px] truncate max-w-[50px]">{s.name}</span>
                       <div className="flex items-center gap-1">
                         <button 
                           onClick={() => playWebSound(s.id)}
-                          className="p-1 bg-[#FAF9F6] hover:bg-purple-100 text-purple-700 rounded-md transition-colors cursor-pointer"
+                          className="p-1 bg-[#F5F5F3] hover:bg-neutral-200 text-neutral-700 rounded-md transition-colors cursor-pointer"
                           title="웹에서 듣기"
                         >
                           <Volume2 className="w-2.5 h-2.5" />
                         </button>
                         <button 
                           onClick={() => playBotSound(s.id)}
-                          className="p-1 bg-purple-600 hover:bg-purple-700 text-white rounded-md transition-colors cursor-pointer shadow-2xs"
+                          className="p-1 bg-neutral-900 hover:bg-black text-white rounded-md transition-colors cursor-pointer shadow-2xs"
                           title="소다봇에서 듣기"
                         >
                           <Bot className="w-2.5 h-2.5" />
@@ -1681,9 +1683,9 @@ export default function SodabotSettingsScreen() {
                 setBootingMessage(cleanedText);
                 setTimeout(() => setBootingState(null), 3000);
 
-                showToast('환영 인사 및 대기 표정 설정이 소다봇에 영구 저장 및 전송되었습니다!');
+                showToast('환영 인사 및 대기 표정 설정이 소다봇에 저장 및 전송되었습니다!');
               }}
-              className="mt-4 w-full py-2.5 bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold rounded-xl transition-colors shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
+              className="mt-4 w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl transition-colors shadow-2xs flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <Save className="w-3.5 h-3.5" />
               저장 후 보내기
@@ -1692,31 +1694,32 @@ export default function SodabotSettingsScreen() {
 
 
           {/* Card 3: 단일 물리 버튼 동작 설정 */}
-          <div id="card-button-settings" className="bg-white border-2 border-rose-400/30 hover:border-rose-400/60 rounded-3xl p-5 shadow-sm flex flex-col justify-between transition-all scroll-mt-6">
+          <div id="card-button-settings" className="bg-white border border-[#E5E5E3] hover:border-neutral-300 rounded-2xl p-5 shadow-2xs flex flex-col justify-between transition-all scroll-mt-6">
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-rose-600 bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-100">
-                  3. 물리 버튼 동작 설정
-                </span>
-                <Sliders className="w-4 h-4 text-rose-500" />
+                <div className="flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-md bg-neutral-100 border border-neutral-200/80 text-[11px] font-bold text-neutral-700 flex items-center justify-center">3</span>
+                  <span className="text-xs font-bold text-[#191919]">물리 버튼 동작 설정</span>
+                </div>
+                <Sliders className="w-4 h-4 text-neutral-400" />
               </div>
               <div className="flex items-center justify-between">
-                <p className="text-[11px] text-[#86868B] leading-snug">
-                  단일 버튼에 기본 기능 및 내가 만든 아두이노 기능을 연결해요.
+                <p className="text-[11px] text-[#787774] leading-relaxed">
+                  단일 버튼에 기본 기능 및 내가 만든 아두이노 기능을 연결합니다.
                 </p>
               </div>
 
               {/* Single Button 3 Actions */}
-              <div className="space-y-2 pt-1">
+              <div className="space-y-2 pt-0.5">
                 {/* 1. Single Click */}
-                <div className="p-2 bg-[#FAF9F6] rounded-2xl border border-[#EAE6DF] space-y-1">
+                <div className="p-2 bg-[#FBFBFA] rounded-xl border border-[#EBEBEA] space-y-1">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-[#1D1D1F] flex items-center gap-1">
+                    <span className="text-[10px] font-bold text-[#191919] flex items-center gap-1">
                       <span>🔘</span> 한 번 누름 (클릭)
                     </span>
                     <button
                       onClick={() => executeButtonAction(btnSingleClick, '한 번 누름')}
-                      className="px-1.5 py-0.5 bg-rose-100 hover:bg-rose-200 text-rose-700 text-[9px] font-bold rounded transition-colors"
+                      className="px-1.5 py-0.5 bg-white hover:bg-neutral-100 text-neutral-700 border border-[#E5E5E3] text-[9px] font-semibold rounded transition-colors"
                       title="화면 및 소다봇에서 테스트"
                     >
                       테스트
@@ -1726,7 +1729,7 @@ export default function SodabotSettingsScreen() {
                     value={btnSingleClick}
                     onChange={(e) => setBtnSingleClick(e.target.value)}
                     aria-label="한 번 누름 동작 선택"
-                    className="w-full text-[10px] font-semibold text-[#1D1D1F] bg-white border border-[#EAE6DF] rounded-lg px-2 py-1 focus:outline-none focus:border-rose-400 cursor-pointer shadow-2xs"
+                    className="w-full text-[10px] font-medium text-[#191919] bg-white border border-[#E5E5E3] rounded-lg px-2 py-1 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 cursor-pointer shadow-2xs transition-all"
                   >
                     <optgroup label="🤖 기본 기능">
                       {baseButtonActions.map((opt) => (
@@ -1748,14 +1751,14 @@ export default function SodabotSettingsScreen() {
                 </div>
 
                 {/* 2. Double Click */}
-                <div className="p-2 bg-[#FAF9F6] rounded-2xl border border-[#EAE6DF] space-y-1">
+                <div className="p-2 bg-[#FBFBFA] rounded-xl border border-[#EBEBEA] space-y-1">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-[#1D1D1F] flex items-center gap-1">
+                    <span className="text-[10px] font-bold text-[#191919] flex items-center gap-1">
                       <span>⚡️</span> 더블 클릭 (2회)
                     </span>
                     <button
                       onClick={() => executeButtonAction(btnDoubleClick, '더블 클릭')}
-                      className="px-1.5 py-0.5 bg-rose-100 hover:bg-rose-200 text-rose-700 text-[9px] font-bold rounded transition-colors"
+                      className="px-1.5 py-0.5 bg-white hover:bg-neutral-100 text-neutral-700 border border-[#E5E5E3] text-[9px] font-semibold rounded transition-colors"
                       title="화면 및 소다봇에서 테스트"
                     >
                       테스트
@@ -1765,7 +1768,7 @@ export default function SodabotSettingsScreen() {
                     value={btnDoubleClick}
                     onChange={(e) => setBtnDoubleClick(e.target.value)}
                     aria-label="더블 클릭 동작 선택"
-                    className="w-full text-[10px] font-semibold text-[#1D1D1F] bg-white border border-[#EAE6DF] rounded-lg px-2 py-1 focus:outline-none focus:border-rose-400 cursor-pointer shadow-2xs"
+                    className="w-full text-[10px] font-medium text-[#191919] bg-white border border-[#E5E5E3] rounded-lg px-2 py-1 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 cursor-pointer shadow-2xs transition-all"
                   >
                     <optgroup label="🤖 기본 기능">
                       {baseButtonActions.map((opt) => (
@@ -1787,14 +1790,14 @@ export default function SodabotSettingsScreen() {
                 </div>
 
                 {/* 3. Long Press */}
-                <div className="p-2 bg-[#FAF9F6] rounded-2xl border border-[#EAE6DF] space-y-1">
+                <div className="p-2 bg-[#FBFBFA] rounded-xl border border-[#EBEBEA] space-y-1">
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-[#1D1D1F] flex items-center gap-1">
+                    <span className="text-[10px] font-bold text-[#191919] flex items-center gap-1">
                       <span>⏳</span> 길게 누름 (1초)
                     </span>
                     <button
                       onClick={() => executeButtonAction(btnLongPress, '길게 누름')}
-                      className="px-1.5 py-0.5 bg-rose-100 hover:bg-rose-200 text-rose-700 text-[9px] font-bold rounded transition-colors"
+                      className="px-1.5 py-0.5 bg-white hover:bg-neutral-100 text-neutral-700 border border-[#E5E5E3] text-[9px] font-semibold rounded transition-colors"
                       title="화면 및 소다봇에서 테스트"
                     >
                       테스트
@@ -1804,7 +1807,7 @@ export default function SodabotSettingsScreen() {
                     value={btnLongPress}
                     onChange={(e) => setBtnLongPress(e.target.value)}
                     aria-label="길게 누름 동작 선택"
-                    className="w-full text-[10px] font-semibold text-[#1D1D1F] bg-white border border-[#EAE6DF] rounded-lg px-2 py-1 focus:outline-none focus:border-rose-400 cursor-pointer shadow-2xs"
+                    className="w-full text-[10px] font-medium text-[#191919] bg-white border border-[#E5E5E3] rounded-lg px-2 py-1 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 cursor-pointer shadow-2xs transition-all"
                   >
                     <optgroup label="🤖 기본 기능">
                       {baseButtonActions.map((opt) => (
@@ -1829,9 +1832,9 @@ export default function SodabotSettingsScreen() {
               {/* Quick Add Custom Function Link */}
               <button
                 onClick={handleOpenNewFuncModal}
-                className="w-full py-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200/80 rounded-xl text-[10px] font-bold text-indigo-700 flex items-center justify-center gap-1 transition-all cursor-pointer shadow-2xs"
+                className="w-full py-2 bg-white hover:bg-neutral-50 border border-[#E5E5E3] rounded-xl text-[11px] font-semibold text-blue-600 flex items-center justify-center gap-1 transition-all cursor-pointer shadow-2xs"
               >
-                <Plus className="w-3 h-3" />
+                <Plus className="w-3.5 h-3.5 text-blue-600" />
                 새 아두이노 기능 등록하기
               </button>
             </div>
@@ -1848,7 +1851,7 @@ export default function SodabotSettingsScreen() {
                 }), "단일 버튼 동작 설정 저장 및 전송");
                 showToast('단일 버튼 동작 설정이 저장 및 소다봇에 적용되었습니다!');
               }}
-              className="mt-3 w-full py-2.5 bg-rose-400 hover:bg-rose-500 text-white text-xs font-bold rounded-xl transition-colors shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
+              className="mt-3 w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl transition-colors shadow-2xs flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <Save className="w-3.5 h-3.5" />
               저장 후 소다봇에 적용
@@ -1857,25 +1860,26 @@ export default function SodabotSettingsScreen() {
 
 
           {/* Card 4: 시작 시퀀스 & 대기 시간 */}
-          <div className="bg-white border-2 border-teal-400/30 hover:border-teal-400/60 rounded-3xl p-5 shadow-sm flex flex-col justify-between transition-all space-y-3">
+          <div className="bg-white border border-[#E5E5E3] hover:border-neutral-300 rounded-2xl p-5 shadow-2xs flex flex-col justify-between transition-all space-y-3">
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-teal-600 bg-teal-50 px-2.5 py-1 rounded-lg border border-teal-100">
-                  4. 시작 시퀀스 설정
-                </span>
-                <Zap className="w-4 h-4 text-teal-500" />
+                <div className="flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-md bg-neutral-100 border border-neutral-200/80 text-[11px] font-bold text-neutral-700 flex items-center justify-center">4</span>
+                  <span className="text-xs font-bold text-[#191919]">시작 시퀀스 설정</span>
+                </div>
+                <Zap className="w-4 h-4 text-neutral-400" />
               </div>
-              <p className="text-[11px] text-[#86868B] leading-snug">
-                전원을 켰을 때 실행할 단계(인사, 표정, 소리, 시계)를 직접 구성해요.
+              <p className="text-[11px] text-[#787774] leading-relaxed">
+                전원을 켰을 때 실행할 단계(인사, 표정, 소리, 시계)를 직접 구성합니다.
               </p>
 
               {/* Dynamic Interactive Sequence List */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <label className="text-[10px] font-bold text-[#5C5B57]">
+                  <label className="text-[10px] font-bold text-[#191919]">
                     부팅 시퀀스 ({bootSequence.filter(s => s.enabled).length}개 활성)
                   </label>
-                  <span className="text-[9px] text-[#86868B]">순서 이동/설정</span>
+                  <span className="text-[9px] text-[#787774]">순서 이동/설정</span>
                 </div>
 
                 <div className="space-y-1.5 max-h-[170px] overflow-y-auto pr-1">
@@ -1883,7 +1887,7 @@ export default function SodabotSettingsScreen() {
                     <div 
                       key={seq.id} 
                       className={`p-2 rounded-xl border transition-all ${
-                        seq.enabled ? 'bg-[#FAF9F6] border-[#EAE6DF]' : 'bg-gray-50/70 border-gray-200 opacity-60'
+                        seq.enabled ? 'bg-[#FBFBFA] border-[#EBEBEA]' : 'bg-neutral-50/70 border-neutral-200 opacity-60'
                       }`}
                     >
                       {/* Step Header */}
@@ -1893,12 +1897,12 @@ export default function SodabotSettingsScreen() {
                             type="checkbox" 
                             checked={seq.enabled} 
                             onChange={() => toggleSeqEnabled(seq.id)}
-                            className="w-3 h-3 accent-teal-600 cursor-pointer rounded"
+                            className="w-3.5 h-3.5 accent-blue-600 cursor-pointer rounded"
                             title="이 단계 켜기/끄기"
                           />
-                          <span className="font-mono font-bold text-teal-600 text-[10px]">{index + 1}</span>
+                          <span className="font-mono font-semibold text-neutral-600 text-[10px]">{index + 1}</span>
                           <span className="text-xs">{seq.icon}</span>
-                          <span className="text-[11px] font-bold text-[#1D1D1F] truncate max-w-[80px]">{seq.name}</span>
+                          <span className="text-[11px] font-medium text-[#191919] truncate max-w-[80px]">{seq.name}</span>
                         </div>
 
                         {/* Reorder controls */}
@@ -1907,7 +1911,7 @@ export default function SodabotSettingsScreen() {
                             disabled={index === 0}
                             onClick={() => moveSeqUp(index)}
                             title="위로 이동"
-                            className="p-0.5 text-[#86868B] hover:text-[#1D1D1F] rounded disabled:opacity-20 cursor-pointer"
+                            className="p-0.5 text-neutral-400 hover:text-neutral-900 rounded disabled:opacity-20 cursor-pointer"
                           >
                             <MoveUp className="w-3 h-3" />
                           </button>
@@ -1915,14 +1919,14 @@ export default function SodabotSettingsScreen() {
                             disabled={index === bootSequence.length - 1}
                             onClick={() => moveSeqDown(index)}
                             title="아래로 이동"
-                            className="p-0.5 text-[#86868B] hover:text-[#1D1D1F] rounded disabled:opacity-20 cursor-pointer"
+                            className="p-0.5 text-neutral-400 hover:text-neutral-900 rounded disabled:opacity-20 cursor-pointer"
                           >
                             <MoveDown className="w-3 h-3" />
                           </button>
                           <button 
                             onClick={() => removeSeqItem(seq.id)}
                             title="삭제"
-                            className="p-0.5 text-rose-400 hover:text-rose-600 rounded cursor-pointer"
+                            className="p-0.5 text-neutral-400 hover:text-rose-600 rounded cursor-pointer"
                           >
                             <Trash2 className="w-3 h-3" />
                           </button>
@@ -1933,29 +1937,29 @@ export default function SodabotSettingsScreen() {
                 </div>
 
                 {/* Add Step Button Row */}
-                <div className="pt-1 border-t border-[#EAE6DF] space-y-1">
+                <div className="pt-1 border-t border-[#E5E5E3] space-y-1">
                   <div className="grid grid-cols-4 gap-1">
                     <button 
                       onClick={() => addSeqItem('greeting')}
-                      className="py-1 px-1 bg-white hover:bg-teal-50 border border-[#EAE6DF] hover:border-teal-200 text-[10px] font-bold text-[#5C5B57] rounded-xl flex items-center justify-center gap-1 transition-all cursor-pointer shadow-2xs"
+                      className="py-1 px-1 bg-white hover:bg-neutral-50 border border-[#E5E5E3] text-[10px] font-medium text-neutral-700 rounded-lg flex items-center justify-center gap-0.5 transition-all cursor-pointer shadow-2xs"
                     >
                       💬 인사
                     </button>
                     <button 
                       onClick={() => addSeqItem('expression')}
-                      className="py-1 px-1 bg-white hover:bg-teal-50 border border-[#EAE6DF] hover:border-teal-200 text-[10px] font-bold text-[#5C5B57] rounded-xl flex items-center justify-center gap-1 transition-all cursor-pointer shadow-2xs"
+                      className="py-1 px-1 bg-white hover:bg-neutral-50 border border-[#E5E5E3] text-[10px] font-medium text-neutral-700 rounded-lg flex items-center justify-center gap-0.5 transition-all cursor-pointer shadow-2xs"
                     >
                       😃 표정
                     </button>
                     <button 
                       onClick={() => addSeqItem('sound')}
-                      className="py-1 px-1 bg-white hover:bg-teal-50 border border-[#EAE6DF] hover:border-teal-200 text-[10px] font-bold text-[#5C5B57] rounded-xl flex items-center justify-center gap-1 transition-all cursor-pointer shadow-2xs"
+                      className="py-1 px-1 bg-white hover:bg-neutral-50 border border-[#E5E5E3] text-[10px] font-medium text-neutral-700 rounded-lg flex items-center justify-center gap-0.5 transition-all cursor-pointer shadow-2xs"
                     >
                       🎵 소리
                     </button>
                     <button 
                       onClick={() => addSeqItem('time')}
-                      className="py-1 px-1 bg-white hover:bg-teal-50 border border-[#EAE6DF] hover:border-teal-200 text-[10px] font-bold text-[#5C5B57] rounded-xl flex items-center justify-center gap-1 transition-all cursor-pointer shadow-2xs"
+                      className="py-1 px-1 bg-white hover:bg-neutral-50 border border-[#E5E5E3] text-[10px] font-medium text-neutral-700 rounded-lg flex items-center justify-center gap-0.5 transition-all cursor-pointer shadow-2xs"
                     >
                       ⏰ 시계
                     </button>
@@ -1965,7 +1969,7 @@ export default function SodabotSettingsScreen() {
 
               {/* Standby Time */}
               <div className="space-y-1 pt-1">
-                <label className="text-[10px] font-bold text-[#5C5B57]">대기 시간</label>
+                <label className="text-[10px] font-bold text-[#191919]">대기 시간</label>
                 <div className="relative">
                   <select 
                     value={standbyTime} 
@@ -1977,24 +1981,24 @@ export default function SodabotSettingsScreen() {
                         timeout: e.target.value === '15초' ? 15000 : e.target.value === '1분' ? 60000 : e.target.value === '5분' ? 300000 : 30000
                       }), "대기 시간 변경 전송");
                     }}
-                    className="w-full px-3 py-1.5 bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl text-xs font-bold text-[#1D1D1F] outline-none cursor-pointer appearance-none"
+                    className="w-full px-3 py-1.5 bg-white border border-[#E5E5E3] rounded-xl text-xs font-semibold text-[#191919] outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 cursor-pointer appearance-none transition-all"
                   >
                     <option>15초</option>
                     <option>30초</option>
                     <option>1분</option>
                     <option>5분</option>
                   </select>
-                  <ChevronDown className="w-3.5 h-3.5 text-[#86868B] absolute right-3 top-2.5 pointer-events-none" />
+                  <ChevronDown className="w-3.5 h-3.5 text-[#787774] absolute right-3 top-2.5 pointer-events-none" />
                 </div>
               </div>
             </div>
 
             <button 
               onClick={() => playBootSequence()}
-              className="mt-2 w-full py-2.5 bg-teal-500 hover:bg-teal-600 text-white text-xs font-bold rounded-xl transition-colors shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
+              className="mt-2 w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl transition-colors shadow-2xs flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <Play className="w-3.5 h-3.5" />
-              시작 시퀀스
+              시작 시퀀스 실행
             </button>
           </div>
         </div>
@@ -2002,24 +2006,24 @@ export default function SodabotSettingsScreen() {
         {/* ========================================================================= */}
         {/* Section: 내 기능 (MY FUNCTIONS) - 아두이노 사용자 정의 기능 등록 및 버튼 연결 */}
         {/* ========================================================================= */}
-        <div className="bg-white border-2 border-indigo-400/30 hover:border-indigo-400/50 rounded-3xl p-6 lg:p-7 shadow-sm transition-all space-y-6">
+        <div className="bg-white border border-[#E5E5E3] rounded-2xl p-6 lg:p-7 shadow-2xs transition-all space-y-5">
           
           {/* Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#EAE6DF] pb-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#E5E5E3] pb-4">
             <div className="space-y-1">
               <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-600 text-lg font-bold shadow-2xs">
+                <div className="w-9 h-9 rounded-xl bg-neutral-100 border border-neutral-200 flex items-center justify-center text-neutral-800 text-base font-bold">
                   ✨
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h2 className="text-base font-bold text-[#1D1D1F]">내 기능</h2>
-                    <span className="text-[10px] font-extrabold text-indigo-600 bg-indigo-50 px-2.5 py-0.5 rounded-lg border border-indigo-200/80 uppercase tracking-wider">
+                    <h2 className="text-sm sm:text-base font-bold text-[#191919]">내 기능</h2>
+                    <span className="text-[10px] font-semibold text-neutral-600 bg-neutral-100 px-2 py-0.5 rounded-md border border-neutral-200 tracking-wider">
                       MY FUNCTIONS
                     </span>
                   </div>
-                  <p className="text-xs text-[#86868B] mt-0.5">
-                    Arduino에서 만든 기능을 등록하면 버튼 동작으로 사용할 수 있습니다.
+                  <p className="text-xs text-[#787774] mt-0.5">
+                    Arduino에서 만든 기능을 등록하면 버튼 동작으로 연결하여 사용할 수 있습니다.
                   </p>
                 </div>
               </div>
@@ -2027,53 +2031,53 @@ export default function SodabotSettingsScreen() {
 
             <button
               onClick={handleOpenNewFuncModal}
-              className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-2xl shadow-sm hover:shadow transition-all flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+              className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow-2xs transition-all flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
             >
-              <Plus className="w-4 h-4" />
-              + 새 기능 등록
+              <Plus className="w-3.5 h-3.5" />
+              새 기능 등록
             </button>
           </div>
 
           {/* Educational Workflow Banner */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-[#FAF9F6] p-3 rounded-2xl border border-[#EAE6DF] text-center">
-            <div className="flex items-center justify-center gap-2 p-1.5 text-xs font-bold text-[#5C5B57]">
-              <span className="w-5 h-5 rounded-full bg-white border border-[#EAE6DF] text-[10px] font-bold flex items-center justify-center text-indigo-600 shadow-2xs shrink-0">1</span>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-[#FBFBFA] p-3 rounded-xl border border-[#EBEBEA] text-center">
+            <div className="flex items-center justify-center gap-2 p-1.5 text-xs font-medium text-[#191919]">
+              <span className="w-4 h-4 rounded-full bg-white border border-[#E5E5E3] text-[9px] font-bold flex items-center justify-center text-neutral-700 shadow-2xs shrink-0">1</span>
               <span className="truncate">Arduino 기능 개발</span>
             </div>
-            <div className="flex items-center justify-center gap-2 p-1.5 text-xs font-bold text-[#5C5B57]">
-              <span className="w-5 h-5 rounded-full bg-white border border-[#EAE6DF] text-[10px] font-bold flex items-center justify-center text-indigo-600 shadow-2xs shrink-0">2</span>
+            <div className="flex items-center justify-center gap-2 p-1.5 text-xs font-medium text-[#191919]">
+              <span className="w-4 h-4 rounded-full bg-white border border-[#E5E5E3] text-[9px] font-bold flex items-center justify-center text-neutral-700 shadow-2xs shrink-0">2</span>
               <span className="truncate">SODA TALK 기능 등록</span>
             </div>
-            <div className="flex items-center justify-center gap-2 p-1.5 text-xs font-bold text-[#5C5B57]">
-              <span className="w-5 h-5 rounded-full bg-white border border-[#EAE6DF] text-[10px] font-bold flex items-center justify-center text-indigo-600 shadow-2xs shrink-0">3</span>
+            <div className="flex items-center justify-center gap-2 p-1.5 text-xs font-medium text-[#191919]">
+              <span className="w-4 h-4 rounded-full bg-white border border-[#E5E5E3] text-[9px] font-bold flex items-center justify-center text-neutral-700 shadow-2xs shrink-0">3</span>
               <span className="truncate">물리 버튼에 연결</span>
             </div>
-            <div className="flex items-center justify-center gap-2 p-1.5 text-xs font-bold text-[#5C5B57]">
-              <span className="w-5 h-5 rounded-full bg-white border border-[#EAE6DF] text-[10px] font-bold flex items-center justify-center text-indigo-600 shadow-2xs shrink-0">4</span>
+            <div className="flex items-center justify-center gap-2 p-1.5 text-xs font-medium text-[#191919]">
+              <span className="w-4 h-4 rounded-full bg-white border border-[#E5E5E3] text-[9px] font-bold flex items-center justify-center text-neutral-700 shadow-2xs shrink-0">4</span>
               <span className="truncate">소다봇에서 실행</span>
             </div>
           </div>
 
           {/* Custom Functions Cards Grid */}
           {customFunctions.length === 0 ? (
-            <div className="text-center py-12 px-4 bg-[#FAF9F6] rounded-2xl border border-dashed border-[#D2CFC7] space-y-3">
-              <div className="text-4xl">🧩</div>
-              <div className="space-y-1">
-                <p className="text-xs font-bold text-[#1D1D1F]">아직 등록된 기능이 없습니다.</p>
-                <p className="text-[11px] text-[#86868B]">
-                  Arduino에서 개발한 함수(예: showClock, getWeather)를 등록하고 소다봇 버튼에 연결해 보세요!
+            <div className="text-center py-10 px-4 bg-[#FBFBFA] rounded-xl border border-dashed border-[#E5E5E3] space-y-2.5">
+              <div className="text-3xl">🧩</div>
+              <div className="space-y-0.5">
+                <p className="text-xs font-bold text-[#191919]">아직 등록된 기능이 없습니다.</p>
+                <p className="text-[11px] text-[#787774]">
+                  Arduino에서 개발한 함수를 등록하고 소다봇 버튼에 연결해 보세요!
                 </p>
               </div>
               <button
                 onClick={handleOpenNewFuncModal}
-                className="inline-flex items-center gap-1.5 px-4 py-2 bg-white hover:bg-indigo-50 border border-[#EAE6DF] hover:border-indigo-300 text-xs font-bold text-indigo-600 rounded-xl transition-all shadow-2xs cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-white hover:bg-neutral-50 border border-[#E5E5E3] text-xs font-semibold text-blue-600 rounded-xl transition-all shadow-2xs cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" />
-                + 새 기능 등록하기
+                새 기능 등록하기
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
               {customFunctions.map((fn) => {
                 const isConnectedSingle = btnSingleClick === `custom:${fn.slot}`;
                 const isConnectedDouble = btnDoubleClick === `custom:${fn.slot}`;
@@ -2087,51 +2091,51 @@ export default function SodabotSettingsScreen() {
                 return (
                   <div
                     key={fn.id}
-                    className="bg-[#FAF9F6] border border-[#EAE6DF] hover:border-indigo-300 rounded-2xl p-4.5 space-y-3.5 shadow-2xs hover:shadow-xs transition-all flex flex-col justify-between"
+                    className="bg-white border border-[#E5E5E3] hover:border-neutral-400 rounded-xl p-4 space-y-3 shadow-2xs transition-all flex flex-col justify-between"
                   >
-                    <div className="space-y-2.5">
+                    <div className="space-y-2">
                       <div className="flex items-start justify-between gap-2">
-                        <div className="font-bold text-sm text-[#1D1D1F] flex items-center gap-1.5">
+                        <div className="font-bold text-xs sm:text-sm text-[#191919] flex items-center gap-1.5">
                           <span>💡</span> {fn.name}
                         </div>
                         {connectedButtons.length > 0 && (
-                          <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-md shrink-0 flex items-center gap-1">
+                          <span className="text-[9px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded shrink-0 flex items-center gap-1">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                             버튼 연결됨
                           </span>
                         )}
                       </div>
 
-                      <div className="bg-white px-3 py-2 rounded-xl border border-[#EAE6DF] font-mono text-[11px] text-indigo-600 flex items-center justify-between shadow-2xs">
-                        <span className="text-[#86868B] font-sans text-[10px] font-medium">연결 함수:</span>
-                        <span className="font-bold bg-indigo-50/70 px-2 py-0.5 rounded-lg border border-indigo-100">
+                      <div className="bg-[#FBFBFA] px-2.5 py-1.5 rounded-lg border border-[#EBEBEA] font-mono text-[11px] text-[#191919] flex items-center justify-between">
+                        <span className="text-[#787774] font-sans text-[10px]">연결 함수:</span>
+                        <span className="font-semibold text-blue-600 bg-white px-1.5 py-0.5 rounded border border-[#E5E5E3]">
                           {fn.arduinoFunction}()
                         </span>
                       </div>
 
-                      <p className="text-[11px] text-[#5C5B57] leading-relaxed line-clamp-2">
+                      <p className="text-[11px] text-[#787774] leading-relaxed line-clamp-2">
                         {fn.description || '등록된 기능 설명이 없습니다.'}
                       </p>
 
                       {connectedButtons.length > 0 && (
-                        <div className="text-[10px] font-semibold text-emerald-700 bg-emerald-50/70 p-2 rounded-xl border border-emerald-200/60 flex items-center gap-1.5">
+                        <div className="text-[10px] font-medium text-emerald-700 bg-emerald-50/80 p-1.5 rounded-lg border border-emerald-200/60 flex items-center gap-1.5">
                           <span>🔗</span>
                           <span>연결된 버튼: <strong>{connectedButtons.join(', ')}</strong></span>
                         </div>
                       )}
                     </div>
 
-                    <div className="pt-2 border-t border-[#EAE6DF]/80 flex items-center gap-1.5">
+                    <div className="pt-2 border-t border-[#E5E5E3] flex items-center gap-1.5">
                       <button
                         onClick={() => setConnectTargetFunc(fn)}
-                        className="flex-1 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] font-bold rounded-xl border border-indigo-200/70 transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                        className="flex-1 py-1.5 bg-blue-50/70 hover:bg-blue-100/70 text-blue-700 text-[11px] font-semibold rounded-lg border border-blue-200/60 transition-colors flex items-center justify-center gap-1 cursor-pointer"
                       >
                         <Link className="w-3 h-3" />
                         버튼에 연결
                       </button>
                       <button
                         onClick={() => handleOpenEditFuncModal(fn)}
-                        className="px-2.5 py-1.5 bg-white hover:bg-neutral-100 text-[#5C5B57] text-[11px] font-bold rounded-xl border border-[#EAE6DF] transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                        className="px-2.5 py-1.5 bg-white hover:bg-neutral-50 text-neutral-700 text-[11px] font-medium rounded-lg border border-[#E5E5E3] transition-colors flex items-center justify-center gap-1 cursor-pointer"
                         title="수정"
                       >
                         <Edit3 className="w-3 h-3" />
@@ -2139,7 +2143,7 @@ export default function SodabotSettingsScreen() {
                       </button>
                       <button
                         onClick={() => handleDeleteCustomFunction(fn.id, fn.name)}
-                        className="px-2.5 py-1.5 bg-white hover:bg-rose-50 text-rose-600 hover:text-rose-700 text-[11px] font-bold rounded-xl border border-[#EAE6DF] hover:border-rose-200 transition-colors flex items-center justify-center cursor-pointer"
+                        className="px-2 py-1.5 bg-white hover:bg-rose-50 text-neutral-400 hover:text-rose-600 text-[11px] font-medium rounded-lg border border-[#E5E5E3] hover:border-rose-200 transition-colors flex items-center justify-center cursor-pointer"
                         title="삭제"
                       >
                         <Trash2 className="w-3 h-3" />
@@ -2158,28 +2162,28 @@ export default function SodabotSettingsScreen() {
 
       {/* Modal: 새 기능 등록 / 수정 모달 (showFuncModal) */}
       {showFuncModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-white border border-[#EAE6DF] rounded-3xl max-w-sm sm:max-w-md w-full p-5 sm:p-6 shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white border border-[#E5E5E3] rounded-2xl max-w-sm sm:max-w-md w-full p-5 sm:p-6 shadow-xl space-y-4">
             
             {/* Header */}
-            <div className="flex items-center justify-between border-b border-[#EAE6DF] pb-3">
+            <div className="flex items-center justify-between border-b border-[#E5E5E3] pb-3">
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-600 text-base font-bold">
+                <div className="w-8 h-8 rounded-lg bg-neutral-100 border border-neutral-200 flex items-center justify-center text-neutral-800 text-sm font-bold">
                   ✨
                 </div>
                 <div>
-                  <h3 className="text-sm sm:text-base font-bold text-[#1D1D1F]">
+                  <h3 className="text-sm sm:text-base font-bold text-[#191919]">
                     {editingFunc ? '기능 정보 수정' : '새 기능 등록'}
                   </h3>
-                  <p className="text-[11px] text-[#86868B]">
-                    Arduino에서 만든 기능을 등록해요.
+                  <p className="text-[11px] text-[#787774]">
+                    Arduino에서 만든 기능을 등록합니다.
                   </p>
                 </div>
               </div>
               <button 
                 type="button"
                 onClick={() => setShowFuncModal(false)}
-                className="w-7 h-7 rounded-full bg-[#FAF9F6] border border-[#EAE6DF] flex items-center justify-center text-xs text-[#86868B] hover:text-[#1D1D1F] cursor-pointer"
+                className="w-7 h-7 rounded-lg bg-[#FBFBFA] border border-[#E5E5E3] flex items-center justify-center text-xs text-[#787774] hover:text-[#191919] cursor-pointer"
               >
                 ✕
               </button>
@@ -2190,7 +2194,7 @@ export default function SodabotSettingsScreen() {
               
               {/* 1. 기능 이름 */}
               <div className="space-y-1">
-                <label className="text-xs font-bold text-[#1D1D1F] flex items-center justify-between">
+                <label className="text-xs font-bold text-[#191919] flex items-center justify-between">
                   <span>기능 이름</span>
                   <span className="text-[10px] text-rose-500 font-normal">* 필수</span>
                 </label>
@@ -2199,14 +2203,14 @@ export default function SodabotSettingsScreen() {
                   value={funcNameInput}
                   onChange={(e) => setFuncNameInput(e.target.value)}
                   placeholder="예: 인터넷 시계"
-                  className="w-full px-3 py-2 bg-[#FAF9F6] border border-[#EAE6DF] focus:border-indigo-500 focus:bg-white rounded-xl text-xs font-medium text-[#1D1D1F] outline-none transition-all"
+                  className="w-full px-3 py-2 bg-white border border-[#E5E5E3] focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 rounded-xl text-xs font-medium text-[#191919] outline-none transition-all placeholder:text-[#A1A1A0]"
                   required
                 />
               </div>
 
               {/* 2. 사용자 함수 선택 */}
               <div className="space-y-1">
-                <label className="text-xs font-bold text-[#1D1D1F] flex items-center justify-between">
+                <label className="text-xs font-bold text-[#191919] flex items-center justify-between">
                   <span>사용자 함수 선택</span>
                   <span className="text-[10px] text-rose-500 font-normal">* 필수</span>
                 </label>
@@ -2214,7 +2218,7 @@ export default function SodabotSettingsScreen() {
                   <select
                     value={selectedSlot}
                     onChange={(e) => setSelectedSlot(e.target.value)}
-                    className="w-full px-3 py-2 bg-[#FAF9F6] border border-[#EAE6DF] focus:border-indigo-500 focus:bg-white rounded-xl text-xs font-bold text-[#1D1D1F] outline-none transition-all appearance-none cursor-pointer"
+                    className="w-full px-3 py-2 bg-white border border-[#E5E5E3] focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 rounded-xl text-xs font-semibold text-[#191919] outline-none transition-all appearance-none cursor-pointer"
                   >
                     {USER_FUNCTION_SLOTS.map((slot) => (
                       <option key={slot.slot} value={slot.slot}>
@@ -2222,13 +2226,13 @@ export default function SodabotSettingsScreen() {
                       </option>
                     ))}
                   </select>
-                  <ChevronDown className="w-4 h-4 text-[#86868B] absolute right-3 top-2.5 pointer-events-none" />
+                  <ChevronDown className="w-4 h-4 text-[#787774] absolute right-3 top-2.5 pointer-events-none" />
                 </div>
                 <div className="flex items-center justify-between pt-0.5 px-0.5">
-                  <span className="text-[11px] font-mono font-bold text-indigo-600">
+                  <span className="text-[11px] font-mono font-bold text-blue-600">
                     {USER_FUNCTION_SLOTS.find(s => s.slot === selectedSlot)?.arduinoFunction}()
                   </span>
-                  <span className="text-[10px] text-[#86868B]">
+                  <span className="text-[10px] text-[#787774]">
                     Arduino에서 코드를 작성한 함수 슬롯을 선택하세요.
                   </span>
                 </div>
@@ -2236,7 +2240,7 @@ export default function SodabotSettingsScreen() {
 
               {/* 3. 기능 설명 (선택) */}
               <div className="space-y-1">
-                <label className="text-xs font-bold text-[#1D1D1F]">
+                <label className="text-xs font-bold text-[#191919]">
                   기능 설명 (선택)
                 </label>
                 <input
@@ -2244,7 +2248,7 @@ export default function SodabotSettingsScreen() {
                   value={funcDescInput}
                   onChange={(e) => setFuncDescInput(e.target.value)}
                   placeholder="예: 현재 시간을 화면에 표시"
-                  className="w-full px-3 py-2 bg-[#FAF9F6] border border-[#EAE6DF] focus:border-indigo-500 focus:bg-white rounded-xl text-xs font-medium text-[#1D1D1F] outline-none transition-all"
+                  className="w-full px-3 py-2 bg-white border border-[#E5E5E3] focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 rounded-xl text-xs font-medium text-[#191919] outline-none transition-all placeholder:text-[#A1A1A0]"
                 />
               </div>
 
@@ -2253,13 +2257,13 @@ export default function SodabotSettingsScreen() {
                 <button
                   type="button"
                   onClick={() => setShowFuncModal(false)}
-                  className="flex-1 py-2.5 bg-[#FAF9F6] hover:bg-[#EAE6DF] text-[#5C5B57] text-xs font-bold rounded-xl transition-colors cursor-pointer"
+                  className="flex-1 py-2.5 bg-white hover:bg-neutral-50 text-neutral-700 border border-[#E5E5E3] text-xs font-medium rounded-xl transition-colors cursor-pointer"
                 >
                   취소
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-sm transition-colors cursor-pointer"
+                  className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow-2xs transition-colors cursor-pointer"
                 >
                   {editingFunc ? '수정 완료' : '기능 등록'}
                 </button>
@@ -2275,76 +2279,76 @@ export default function SodabotSettingsScreen() {
 
       {/* Modal: 버튼에 빠른 연결 모달 (connectTargetFunc) */}
       {connectTargetFunc && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-white border border-[#EAE6DF] rounded-3xl max-w-sm w-full p-6 shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white border border-[#E5E5E3] rounded-2xl max-w-sm w-full p-5 shadow-xl space-y-4">
             
-            <div className="flex items-center justify-between border-b border-[#EAE6DF] pb-3">
+            <div className="flex items-center justify-between border-b border-[#E5E5E3] pb-3">
               <div className="flex items-center gap-2">
                 <span className="text-base">🔗</span>
                 <div>
-                  <h3 className="text-sm font-bold text-[#1D1D1F]">물리 버튼 동작에 연결</h3>
-                  <p className="text-[10px] text-[#86868B]">{connectTargetFunc.name} ({connectTargetFunc.arduinoFunction}())</p>
+                  <h3 className="text-xs sm:text-sm font-bold text-[#191919]">물리 버튼 동작에 연결</h3>
+                  <p className="text-[10px] text-[#787774]">{connectTargetFunc.name} ({connectTargetFunc.arduinoFunction}())</p>
                 </div>
               </div>
               <button 
                 onClick={() => setConnectTargetFunc(null)}
-                className="w-6 h-6 rounded-full bg-[#FAF9F6] border border-[#EAE6DF] flex items-center justify-center text-xs text-[#86868B] hover:text-[#1D1D1F] cursor-pointer"
+                className="w-6 h-6 rounded-lg bg-[#FBFBFA] border border-[#E5E5E3] flex items-center justify-center text-xs text-[#787774] hover:text-[#191919] cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
-            <p className="text-xs text-[#5C5B57]">
+            <p className="text-xs text-[#787774]">
               어떤 버튼 동작에 <strong>'{connectTargetFunc.name}'</strong> 기능을 연결할까요?
             </p>
 
             <div className="space-y-2">
               <button
                 onClick={() => handleConnectToButton(connectTargetFunc, 'single')}
-                className="w-full p-3 bg-[#FAF9F6] hover:bg-indigo-50 border border-[#EAE6DF] hover:border-indigo-300 rounded-2xl flex items-center justify-between transition-all cursor-pointer group"
+                className="w-full p-3 bg-white hover:bg-neutral-50 border border-[#E5E5E3] hover:border-neutral-300 rounded-xl flex items-center justify-between transition-all cursor-pointer group"
               >
                 <div className="flex items-center gap-2 text-left">
                   <span className="text-base">🔘</span>
                   <div>
-                    <div className="text-xs font-bold text-[#1D1D1F] group-hover:text-indigo-600">한 번 누름 (클릭)</div>
-                    <div className="text-[10px] text-[#86868B]">
+                    <div className="text-xs font-bold text-[#191919] group-hover:text-blue-600">한 번 누름 (클릭)</div>
+                    <div className="text-[10px] text-[#787774]">
                       현재: {btnSingleClick.startsWith('custom:') ? btnSingleClick.replace('custom:', '⚙️ ') : btnSingleClick}
                     </div>
                   </div>
                 </div>
-                <ChevronRight className="w-4 h-4 text-[#86868B] group-hover:text-indigo-600 group-hover:translate-x-0.5 transition-all" />
+                <ChevronRight className="w-4 h-4 text-[#787774] group-hover:text-blue-600 group-hover:translate-x-0.5 transition-all" />
               </button>
 
               <button
                 onClick={() => handleConnectToButton(connectTargetFunc, 'double')}
-                className="w-full p-3 bg-[#FAF9F6] hover:bg-indigo-50 border border-[#EAE6DF] hover:border-indigo-300 rounded-2xl flex items-center justify-between transition-all cursor-pointer group"
+                className="w-full p-3 bg-white hover:bg-neutral-50 border border-[#E5E5E3] hover:border-neutral-300 rounded-xl flex items-center justify-between transition-all cursor-pointer group"
               >
                 <div className="flex items-center gap-2 text-left">
                   <span className="text-base">⚡️</span>
                   <div>
-                    <div className="text-xs font-bold text-[#1D1D1F] group-hover:text-indigo-600">더블 클릭 (2회)</div>
-                    <div className="text-[10px] text-[#86868B]">
+                    <div className="text-xs font-bold text-[#191919] group-hover:text-blue-600">더블 클릭 (2회)</div>
+                    <div className="text-[10px] text-[#787774]">
                       현재: {btnDoubleClick.startsWith('custom:') ? btnDoubleClick.replace('custom:', '⚙️ ') : btnDoubleClick}
                     </div>
                   </div>
                 </div>
-                <ChevronRight className="w-4 h-4 text-[#86868B] group-hover:text-indigo-600 group-hover:translate-x-0.5 transition-all" />
+                <ChevronRight className="w-4 h-4 text-[#787774] group-hover:text-blue-600 group-hover:translate-x-0.5 transition-all" />
               </button>
 
               <button
                 onClick={() => handleConnectToButton(connectTargetFunc, 'long')}
-                className="w-full p-3 bg-[#FAF9F6] hover:bg-indigo-50 border border-[#EAE6DF] hover:border-indigo-300 rounded-2xl flex items-center justify-between transition-all cursor-pointer group"
+                className="w-full p-3 bg-white hover:bg-neutral-50 border border-[#E5E5E3] hover:border-neutral-300 rounded-xl flex items-center justify-between transition-all cursor-pointer group"
               >
                 <div className="flex items-center gap-2 text-left">
                   <span className="text-base">⏳</span>
                   <div>
-                    <div className="text-xs font-bold text-[#1D1D1F] group-hover:text-indigo-600">길게 누름 (1초)</div>
-                    <div className="text-[10px] text-[#86868B]">
+                    <div className="text-xs font-bold text-[#191919] group-hover:text-blue-600">길게 누름 (1초)</div>
+                    <div className="text-[10px] text-[#787774]">
                       현재: {btnLongPress.startsWith('custom:') ? btnLongPress.replace('custom:', '⚙️ ') : btnLongPress}
                     </div>
                   </div>
                 </div>
-                <ChevronRight className="w-4 h-4 text-[#86868B] group-hover:text-indigo-600 group-hover:translate-x-0.5 transition-all" />
+                <ChevronRight className="w-4 h-4 text-[#787774] group-hover:text-blue-600 group-hover:translate-x-0.5 transition-all" />
               </button>
             </div>
 
@@ -2362,59 +2366,59 @@ export default function SodabotSettingsScreen() {
 
       {/* Modal 2: Custom Expression Studio Editor (showExprEditor - 2 Modes) */}
       {showExprEditor && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-white border border-[#EAE6DF] rounded-3xl max-w-2xl w-full p-6 shadow-2xl space-y-5 max-h-[94vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white border border-[#E5E5E3] rounded-2xl max-w-2xl w-full p-6 shadow-xl space-y-5 max-h-[94vh] overflow-y-auto">
             
             {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-[#EAE6DF] pb-3.5">
+            <div className="flex items-center justify-between border-b border-[#E5E5E3] pb-3.5">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600 text-lg font-bold">
+                <div className="w-8 h-8 rounded-lg bg-neutral-100 border border-neutral-200 flex items-center justify-center text-neutral-800 text-sm font-bold">
                   🎨
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-[#1D1D1F]">나만의 표정 편집기 (Expression Studio)</h3>
-                  <p className="text-[11px] text-[#86868B]">기존 표정을 불러와 정밀하게 다듬거나, 픽셀 캔버스에 자유롭게 그려보세요!</p>
+                  <h3 className="text-sm sm:text-base font-bold text-[#191919]">나만의 표정 편집기 (Expression Studio)</h3>
+                  <p className="text-[11px] text-[#787774]">기존 표정을 불러와 정밀하게 다듬거나, 픽셀 캔버스에 자유롭게 그려보세요!</p>
                 </div>
               </div>
               <button 
                 type="button"
                 onClick={() => setShowExprEditor(false)}
-                className="w-7 h-7 rounded-full bg-[#FAF9F6] border border-[#EAE6DF] flex items-center justify-center text-xs text-[#86868B] hover:text-[#1D1D1F] cursor-pointer"
+                className="w-7 h-7 rounded-lg bg-[#FBFBFA] border border-[#E5E5E3] flex items-center justify-center text-xs text-[#787774] hover:text-[#191919] cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
             {/* Mode Switcher Tabs */}
-            <div className="flex bg-[#FAF9F6] p-1 rounded-2xl border border-[#EAE6DF] text-xs font-bold">
+            <div className="flex bg-[#F5F5F3] p-1 rounded-xl border border-[#EBEBEA] text-xs font-medium">
               <button 
                 type="button"
                 onClick={() => setEditorTab('slider')}
-                className={`flex-1 py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${editorTab === 'slider' ? 'bg-white text-amber-700 shadow-sm' : 'text-[#86868B]'}`}
+                className={`flex-1 py-2 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${editorTab === 'slider' ? 'bg-white text-[#191919] font-bold shadow-2xs' : 'text-[#787774]'}`}
               >
-                🎛️ 정밀 파라미터 미세 조율 (표정 가져오기)
+                🎛️ 파라미터 미세 조율 (표정 가져오기)
               </button>
               <button 
                 type="button"
                 onClick={() => setEditorTab('pixel')}
-                className={`flex-1 py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${editorTab === 'pixel' ? 'bg-white text-amber-700 shadow-sm' : 'text-[#86868B]'}`}
+                className={`flex-1 py-2 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${editorTab === 'pixel' ? 'bg-white text-[#191919] font-bold shadow-2xs' : 'text-[#787774]'}`}
               >
                 ✍️ 픽셀 자유 드로잉 캔버스
               </button>
             </div>
 
             {/* 320x240 LCD Screen Live Preview (100% Exact 1:1 Hardware Pixel-Perfect Match) */}
-            <div className="flex flex-col items-center gap-2 bg-[#090D16] p-3.5 rounded-2xl border-4 border-[#374151] shadow-inner select-none relative overflow-hidden">
-              <div className="text-[10px] font-mono text-cyan-400 self-start opacity-80 flex items-center justify-between w-full">
-                <span>2.0" LCD PREVIEW (320x240): <strong className="text-amber-400">{editName} ({editEmoji})</strong></span>
-                <span className="text-[9px] text-emerald-400 font-bold flex items-center gap-1">
+            <div className="flex flex-col items-center gap-2 bg-[#111111] p-3.5 rounded-xl border border-neutral-800 shadow-inner select-none relative overflow-hidden">
+              <div className="text-[10px] font-mono text-[#86868B] self-start flex items-center justify-between w-full">
+                <span>2.0" LCD PREVIEW (320x240): <strong className="text-white">{editName} ({editEmoji})</strong></span>
+                <span className="text-[9px] text-emerald-400 font-semibold flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
                   1:1 HARDWARE ACCURATE
                 </span>
               </div>
 
               {/* 320x240 Exact Ratio Display Frame */}
-              <div className="w-full max-w-[340px] aspect-[4/3] bg-[#000000] rounded-lg border border-cyan-950/60 shadow-inner relative flex items-center justify-center overflow-hidden">
+              <div className="w-full max-w-[340px] aspect-[4/3] bg-[#000000] rounded-lg border border-neutral-900 shadow-inner relative flex items-center justify-center overflow-hidden">
                 {editorTab === 'pixel' ? (
                   /* Mode 1: 16x16 Pixel Grid Rendering */
                   <div className="grid grid-cols-16 gap-[1.5px] bg-[#000000] p-2 rounded">
@@ -2435,7 +2439,7 @@ export default function SodabotSettingsScreen() {
                     {/* 1. Eyebrows (눈썹) */}
                     {eyebrowTilt !== 0 && editShape !== 'cat' && (
                       <g>
-                        {/* Left Brow: LEX(100) - ew/2, browY - tiltOffset */}
+                        {/* Left Brow */}
                         <rect 
                           x={100 - eyeWidth / 2} 
                           y={120 - eyeHeight / 2 - 12 - Math.max(-15, Math.min(15, eyebrowTilt / 3))} 
@@ -2444,7 +2448,7 @@ export default function SodabotSettingsScreen() {
                           rx={3} 
                           fill={editColor} 
                         />
-                        {/* Right Brow: REX(220) - ew/2, browY + tiltOffset */}
+                        {/* Right Brow */}
                         <rect 
                           x={220 - eyeWidth / 2} 
                           y={120 - eyeHeight / 2 - 12 + Math.max(-15, Math.min(15, eyebrowTilt / 3))} 
@@ -2456,15 +2460,13 @@ export default function SodabotSettingsScreen() {
                       </g>
                     )}
 
-                    {/* 2. Eyes (눈 렌더링) */}
+                    {/* 2. Eyes */}
                     {editShape === 'happy' ? (
-                      /* Happy: Thick Arches */
                       <g fill="none" stroke={editColor} strokeWidth="12" strokeLinecap="round">
                         <path d={`M ${100 - 36 + pupilX} ${132 + pupilY} A 36 36 0 0 1 ${100 + 36 + pupilX} ${132 + pupilY}`} />
                         <path d={`M ${220 - 36 + pupilX} ${132 + pupilY} A 36 36 0 0 1 ${220 + 36 + pupilX} ${132 + pupilY}`} />
                       </g>
                     ) : editShape === 'wink' ? (
-                      /* Wink: Left Line, Right Round Eye */
                       <g>
                         <rect x={100 - 36} y={120 - 4} width={72} height={8} rx={4} fill={editColor} />
                         <rect 
@@ -2477,7 +2479,6 @@ export default function SodabotSettingsScreen() {
                         />
                       </g>
                     ) : editShape === 'sleepy' ? (
-                      /* Sleepy: Top Half Masked Eyes */
                       <g>
                         <rect 
                           x={100 - eyeWidth / 2 + pupilX} 
@@ -2495,24 +2496,19 @@ export default function SodabotSettingsScreen() {
                           rx={eyeRadius} 
                           fill={editColor} 
                         />
-                        {/* Mask Top Half */}
                         <rect x={100 - eyeWidth / 2 - 2} y={120 - eyeHeight / 2 - 2} width={eyeWidth + 4} height={eyeHeight / 2} fill="#000000" />
                         <rect x={220 - eyeWidth / 2 - 2} y={120 - eyeHeight / 2 - 2} width={eyeWidth + 4} height={eyeHeight / 2} fill="#000000" />
                       </g>
                     ) : editShape === 'heart' ? (
-                      /* Heart: Dual Hearts */
                       <g fill={editColor === '#22D3EE' ? '#FF3264' : editColor}>
-                        {/* Left Heart */}
                         <circle cx={100 - 18 + pupilX} cy={120 - 20 + pupilY} r={19} />
                         <circle cx={100 + 18 + pupilX} cy={120 - 20 + pupilY} r={19} />
                         <polygon points={`${100 - 36 + pupilX},${120 - 14 + pupilY} ${100 + 36 + pupilX},${120 - 14 + pupilY} ${100 + pupilX},${120 + 26 + pupilY}`} />
-                        {/* Right Heart */}
                         <circle cx={220 - 18 + pupilX} cy={120 - 20 + pupilY} r={19} />
                         <circle cx={220 + 18 + pupilX} cy={120 - 20 + pupilY} r={19} />
                         <polygon points={`${220 - 36 + pupilX},${120 - 14 + pupilY} ${220 + 36 + pupilX},${120 - 14 + pupilY} ${220 + pupilX},${120 + 26 + pupilY}`} />
                       </g>
                     ) : editShape === 'angry' ? (
-                      /* Angry: Upper Corner Masked */
                       <g>
                         <rect 
                           x={100 - eyeWidth / 2 + pupilX} 
@@ -2530,35 +2526,28 @@ export default function SodabotSettingsScreen() {
                           rx={eyeRadius} 
                           fill={editColor} 
                         />
-                        {/* Upper Angled Cuts */}
                         <polygon points={`${100 - eyeWidth / 2},${120 - eyeHeight / 2} ${100 + eyeWidth / 2},${120 - eyeHeight / 2} ${100 + eyeWidth / 2},${120 - eyeHeight / 2 + 25}`} fill="#000000" />
                         <polygon points={`${220 - eyeWidth / 2},${120 - eyeHeight / 2} ${220 + eyeWidth / 2},${120 - eyeHeight / 2} ${220 - eyeWidth / 2},${120 - eyeHeight / 2 + 25}`} fill="#000000" />
                       </g>
                     ) : editShape === 'cat' ? (
-                      /* Cat: Arches + Whiskers + Nose */
                       <g>
                         <g fill="none" stroke={editColor} strokeWidth="10" strokeLinecap="round">
                           <path d="M 64 132 A 36 36 0 0 1 136 132" />
                           <path d="M 184 132 A 36 36 0 0 1 256 132" />
                         </g>
-                        {/* Nose */}
                         <polygon points="160,142 153,154 167,154" fill={editColor} />
-                        {/* Cat Mouth (w) */}
                         <g fill="none" stroke={editColor} strokeWidth="3">
                           <path d="M 140 156 A 8 8 0 0 0 160 156" />
                           <path d="M 160 156 A 8 8 0 0 0 180 156" />
                         </g>
-                        {/* Pink Cheeks */}
                         <circle cx={55} cy={146} r={10} fill="#FF82AA" />
                         <circle cx={265} cy={146} r={10} fill="#FF82AA" />
-                        {/* Whiskers */}
                         <line x1={35} y1={135} x2={59} y2={135} stroke={editColor} strokeWidth="2" />
                         <line x1={40} y1={148} x2={62} y2={148} stroke={editColor} strokeWidth="2" />
                         <line x1={261} y1={135} x2={285} y2={135} stroke={editColor} strokeWidth="2" />
                         <line x1={258} y1={148} x2={280} y2={148} stroke={editColor} strokeWidth="2" />
                       </g>
                     ) : (
-                      /* Default / Pupil / Custom Eyes */
                       <g>
                         <rect 
                           x={100 - eyeWidth / 2 + pupilX} 
@@ -2579,7 +2568,7 @@ export default function SodabotSettingsScreen() {
                       </g>
                     )}
 
-                    {/* 3. Gloss Highlights (광택) */}
+                    {/* 3. Gloss */}
                     {hasGloss && editShape !== 'heart' && editShape !== 'happy' && editShape !== 'cat' && (
                       <g fill="#FFFFFF">
                         <circle cx={100 - eyeWidth / 4 + pupilX} cy={120 - eyeHeight / 4 + pupilY} r={5} />
@@ -2587,7 +2576,7 @@ export default function SodabotSettingsScreen() {
                       </g>
                     )}
 
-                    {/* 4. Sparkles (반짝이 별) */}
+                    {/* 4. Sparkles */}
                     {hasSparkle && (
                       <g fill="#FFDC64" fontSize="24" fontFamily="monospace" fontWeight="bold">
                         <text x={100 + 36} y={120 - 36}>*</text>
@@ -2595,7 +2584,7 @@ export default function SodabotSettingsScreen() {
                       </g>
                     )}
 
-                    {/* 5. Mouth (입 모양) */}
+                    {/* 5. Mouth */}
                     {editShape !== 'cat' && editMouth !== 'none' && (
                       <g>
                         {editMouth === 'smile' && (
@@ -2626,15 +2615,15 @@ export default function SodabotSettingsScreen() {
               <div className="space-y-4 text-xs">
                 
                 {/* Palette & Tools */}
-                <div className="flex flex-wrap items-center justify-between gap-2 bg-[#FAF9F6] p-2.5 rounded-2xl border border-[#EAE6DF]">
+                <div className="flex flex-wrap items-center justify-between gap-2 bg-[#FBFBFA] p-2.5 rounded-xl border border-[#EBEBEA]">
                   <div className="flex items-center gap-1.5">
-                    <span className="font-bold text-[#1D1D1F] mr-1">팔레트:</span>
+                    <span className="font-semibold text-[#191919] mr-1">팔레트:</span>
                     {['#22D3EE', '#F59E0B', '#10B981', '#F43F5E', '#8B5CF6', '#FFFFFF', '#090D16'].map(c => (
                       <button
                         key={c}
                         type="button"
                         onClick={() => setDrawColor(c)}
-                        className={`w-6 h-6 rounded-full border transition-all cursor-pointer ${drawColor === c ? 'ring-2 ring-amber-500 scale-110' : ''}`}
+                        className={`w-6 h-6 rounded-full border transition-all cursor-pointer ${drawColor === c ? 'ring-2 ring-neutral-900 scale-110' : 'border-neutral-200'}`}
                         style={{ backgroundColor: c }}
                         title={c === '#090D16' ? '지우개' : c}
                       />
@@ -2645,28 +2634,28 @@ export default function SodabotSettingsScreen() {
                     <button
                       type="button"
                       onClick={() => setIsMirror(!isMirror)}
-                      className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-colors cursor-pointer ${isMirror ? 'bg-amber-100 border-amber-300 text-amber-800' : 'bg-white border-[#EAE6DF] text-[#86868B]'}`}
+                      className={`px-2 py-1 rounded-lg text-[10px] font-semibold border transition-colors cursor-pointer ${isMirror ? 'bg-neutral-900 border-neutral-900 text-white' : 'bg-white border-[#E5E5E3] text-neutral-700'}`}
                     >
                       🔄 좌우대칭 {isMirror ? 'ON' : 'OFF'}
                     </button>
                     <button
                       type="button"
                       onClick={handleClearPixelGrid}
-                      className="px-2 py-1 bg-white hover:bg-rose-50 border border-[#EAE6DF] text-rose-600 rounded-lg text-[10px] font-bold transition-colors cursor-pointer"
+                      className="px-2 py-1 bg-white hover:bg-rose-50 border border-[#E5E5E3] hover:border-rose-200 text-neutral-500 hover:text-rose-600 rounded-lg text-[10px] font-medium transition-colors cursor-pointer"
                     >
-                      🧹 전체지우기
+                      전체지우기
                     </button>
                   </div>
                 </div>
 
                 {/* 16x16 Drawing Grid */}
                 <div className="flex flex-col items-center">
-                  <div className="text-[10px] text-[#86868B] mb-1 font-mono">마우스로 클릭하거나 드래그하여 픽셀 도안을 그려보세요</div>
+                  <div className="text-[10px] text-[#787774] mb-1 font-mono">마우스로 클릭하거나 드래그하여 픽셀 도안을 그려보세요</div>
                   <div 
                     onMouseDown={() => setIsMouseDown(true)}
                     onMouseUp={() => setIsMouseDown(false)}
                     onMouseLeave={() => setIsMouseDown(false)}
-                    className="grid grid-cols-16 gap-[1.5px] bg-[#374151] p-2 rounded-xl border border-[#4B5563] shadow-md select-none cursor-crosshair"
+                    className="grid grid-cols-16 gap-[1.5px] bg-[#2C2C2E] p-2 rounded-xl border border-neutral-700 shadow-md select-none cursor-crosshair"
                   >
                     {pixelGrid.map((color, idx) => (
                       <div
@@ -2682,11 +2671,11 @@ export default function SodabotSettingsScreen() {
 
                 {/* Preset Load Buttons */}
                 <div className="flex items-center gap-2 pt-1">
-                  <span className="font-bold text-[#1D1D1F] text-[11px]">도안 추천:</span>
-                  <button type="button" onClick={() => handleLoadPixelPreset('heart')} className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg text-[10px] font-bold border border-rose-200 cursor-pointer">
+                  <span className="font-semibold text-[#191919] text-[11px]">추천 도안:</span>
+                  <button type="button" onClick={() => handleLoadPixelPreset('heart')} className="px-2.5 py-1 bg-white hover:bg-neutral-50 text-neutral-700 rounded-lg text-[10px] font-medium border border-[#E5E5E3] cursor-pointer">
                     ❤️ 하트 픽셀
                   </button>
-                  <button type="button" onClick={() => handleLoadPixelPreset('star')} className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-lg text-[10px] font-bold border border-amber-200 cursor-pointer">
+                  <button type="button" onClick={() => handleLoadPixelPreset('star')} className="px-2.5 py-1 bg-white hover:bg-neutral-50 text-neutral-700 rounded-lg text-[10px] font-medium border border-[#E5E5E3] cursor-pointer">
                     ⭐ 별 픽셀
                   </button>
                 </div>
@@ -2696,13 +2685,13 @@ export default function SodabotSettingsScreen() {
               /* Editor Mode 2: Fine-Tuning Parameter Sliders with Base Preset Importer */
               <div className="space-y-4 text-xs">
                 
-                {/* 1. Base Preset Importer (기존 기본 표정 불러오기) */}
-                <div className="bg-[#FAF9F6] p-3 rounded-2xl border border-[#EAE6DF] space-y-2">
+                {/* 1. Base Preset Importer */}
+                <div className="bg-[#FBFBFA] p-3 rounded-xl border border-[#EBEBEA] space-y-2">
                   <div className="flex items-center justify-between">
-                    <label className="font-bold text-[#1D1D1F] flex items-center gap-1.5">
-                      <span className="text-amber-500">📥</span> 1. 기존 기본 표정 불러오기 (평면 모드)
+                    <label className="font-bold text-[#191919] flex items-center gap-1.5">
+                      <span>📥</span> 1. 기존 기본 표정 불러오기
                     </label>
-                    <span className="text-[10px] text-[#86868B]">클릭 시 기본 평면 형태를 가져옵니다</span>
+                    <span className="text-[10px] text-[#787774]">클릭 시 기본 형태를 가져옵니다</span>
                   </div>
                   <div className="grid grid-cols-5 gap-1.5">
                     {[
@@ -2721,10 +2710,10 @@ export default function SodabotSettingsScreen() {
                         key={p.id}
                         type="button"
                         onClick={() => handleLoadBaseExpression(p.id)}
-                        className={`py-1.5 px-2 rounded-xl font-bold text-[11px] border transition-all flex items-center justify-center gap-1 cursor-pointer ${
+                        className={`py-1.5 px-2 rounded-lg font-medium text-[11px] border transition-all flex items-center justify-center gap-1 cursor-pointer ${
                           editShape === p.id 
-                            ? 'bg-amber-100 border-amber-400 text-amber-900 shadow-sm' 
-                            : 'bg-white hover:bg-amber-50/50 border-[#EAE6DF] text-[#5C5B57]'
+                            ? 'bg-neutral-900 border-neutral-900 text-white shadow-2xs font-bold' 
+                            : 'bg-white hover:bg-neutral-50 border-[#E5E5E3] text-neutral-700'
                         }`}
                       >
                         <span>{p.emoji}</span>
@@ -2737,22 +2726,22 @@ export default function SodabotSettingsScreen() {
                 {/* 2. Name & Emoji & Color */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
                   <div className="space-y-1">
-                    <label className="font-bold text-[#1D1D1F]">표정 이름</label>
+                    <label className="font-bold text-[#191919]">표정 이름</label>
                     <input 
                       type="text"
                       value={editName}
                       onChange={(e) => setEditName(e.target.value)}
-                      placeholder="e.g. Sparkle Eyes, Lovely Face"
-                      className="w-full p-2 bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl outline-none focus:bg-white focus:border-amber-400 font-bold"
+                      placeholder="e.g. Sparkle Eyes"
+                      className="w-full p-2 bg-white border border-[#E5E5E3] rounded-xl outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 font-medium transition-all"
                     />
                   </div>
 
                   <div className="space-y-1">
-                    <label className="font-bold text-[#1D1D1F]">대표 이모지</label>
+                    <label className="font-bold text-[#191919]">대표 이모지</label>
                     <select 
                       value={editEmoji}
                       onChange={(e) => setEditEmoji(e.target.value)}
-                      className="w-full p-2 bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl outline-none focus:bg-white font-bold cursor-pointer"
+                      className="w-full p-2 bg-white border border-[#E5E5E3] rounded-xl outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 font-medium cursor-pointer transition-all"
                     >
                       {['🥹', '😜', '🤩', '💖', '😈', '😭', '🐶', '🦄', '⭐', '✨', '🤖', '😆', '😡', '😢', '😴', '😲', '😉', '👀', '🐱'].map(e => (
                         <option key={e} value={e}>{e}</option>
@@ -2761,14 +2750,14 @@ export default function SodabotSettingsScreen() {
                   </div>
 
                   <div className="space-y-1">
-                    <label className="font-bold text-[#1D1D1F]">눈 색상</label>
-                    <div className="flex items-center gap-1.5 p-1 bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl h-[38px]">
+                    <label className="font-bold text-[#191919]">눈 색상</label>
+                    <div className="flex items-center gap-1.5 p-1 bg-white border border-[#E5E5E3] rounded-xl h-[38px]">
                       {['#22D3EE', '#F59E0B', '#10B981', '#F43F5E', '#8B5CF6', '#FFFFFF'].map(c => (
                         <button
                           key={c}
                           type="button"
                           onClick={() => setEditColor(c)}
-                          className={`flex-1 h-6 rounded-lg transition-all cursor-pointer ${editColor === c ? 'ring-2 ring-amber-500 scale-105 shadow-sm' : 'opacity-80'}`}
+                          className={`flex-1 h-6 rounded-md transition-all cursor-pointer ${editColor === c ? 'ring-2 ring-neutral-900 scale-105 shadow-2xs' : 'opacity-70 hover:opacity-100'}`}
                           style={{ backgroundColor: c }}
                         />
                       ))}
@@ -2779,11 +2768,11 @@ export default function SodabotSettingsScreen() {
                 {/* 3. Shape & Mouth Selectors */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
                   <div className="space-y-1">
-                    <label className="font-bold text-[#1D1D1F]">기본 눈 모양 (Shape)</label>
+                    <label className="font-bold text-[#191919]">기본 눈 모양 (Shape)</label>
                     <select
                       value={editShape}
                       onChange={(e: any) => setEditShape(e.target.value)}
-                      className="w-full p-2 bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl outline-none focus:bg-white font-bold cursor-pointer"
+                      className="w-full p-2 bg-white border border-[#E5E5E3] rounded-xl outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 font-medium cursor-pointer transition-all"
                     >
                       <option value="default">기본 사각 (Default)</option>
                       <option value="happy">웃는 눈 (Happy Arch)</option>
@@ -2798,11 +2787,11 @@ export default function SodabotSettingsScreen() {
                   </div>
 
                   <div className="space-y-1">
-                    <label className="font-bold text-[#1D1D1F]">입 모양 (Mouth)</label>
+                    <label className="font-bold text-[#191919]">입 모양 (Mouth)</label>
                     <select
                       value={editMouth}
                       onChange={(e: any) => setEditMouth(e.target.value)}
-                      className="w-full p-2 bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl outline-none focus:bg-white font-bold cursor-pointer"
+                      className="w-full p-2 bg-white border border-[#E5E5E3] rounded-xl outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 font-medium cursor-pointer transition-all"
                     >
                       <option value="none">없음 (None)</option>
                       <option value="smile">미소 (◡ Smile)</option>
@@ -2814,53 +2803,53 @@ export default function SodabotSettingsScreen() {
                 </div>
 
                 {/* 4. Fine-Tuning Sliders Grid */}
-                <div className="grid grid-cols-2 gap-3 bg-[#FAF9F6] p-3.5 rounded-2xl border border-[#EAE6DF]">
+                <div className="grid grid-cols-2 gap-3 bg-[#FBFBFA] p-3.5 rounded-xl border border-[#EBEBEA]">
                   <div className="space-y-1">
-                    <div className="flex justify-between text-[11px] font-bold">
+                    <div className="flex justify-between text-[11px] font-medium text-[#191919]">
                       <span>눈 가로 폭</span>
-                      <span className="font-mono text-amber-600">{eyeWidth}px</span>
+                      <span className="font-mono text-neutral-600">{eyeWidth}px</span>
                     </div>
-                    <input type="range" min={40} max={110} value={eyeWidth} onChange={e => setEyeWidth(+e.target.value)} className="w-full accent-amber-500 cursor-pointer" />
+                    <input type="range" min={40} max={110} value={eyeWidth} onChange={e => setEyeWidth(+e.target.value)} className="w-full accent-blue-600 cursor-pointer" />
                   </div>
 
                   <div className="space-y-1">
-                    <div className="flex justify-between text-[11px] font-bold">
+                    <div className="flex justify-between text-[11px] font-medium text-[#191919]">
                       <span>눈 세로 높이</span>
-                      <span className="font-mono text-amber-600">{eyeHeight}px</span>
+                      <span className="font-mono text-neutral-600">{eyeHeight}px</span>
                     </div>
-                    <input type="range" min={20} max={90} value={eyeHeight} onChange={e => setEyeHeight(+e.target.value)} className="w-full accent-amber-500 cursor-pointer" />
+                    <input type="range" min={20} max={90} value={eyeHeight} onChange={e => setEyeHeight(+e.target.value)} className="w-full accent-blue-600 cursor-pointer" />
                   </div>
 
                   <div className="space-y-1">
-                    <div className="flex justify-between text-[11px] font-bold">
+                    <div className="flex justify-between text-[11px] font-medium text-[#191919]">
                       <span>동공 좌우 위치 (Pupil X)</span>
-                      <span className="font-mono text-amber-600">{pupilX}px</span>
+                      <span className="font-mono text-neutral-600">{pupilX}px</span>
                     </div>
-                    <input type="range" min={-20} max={20} value={pupilX} onChange={e => setPupilX(+e.target.value)} className="w-full accent-amber-500 cursor-pointer" />
+                    <input type="range" min={-20} max={20} value={pupilX} onChange={e => setPupilX(+e.target.value)} className="w-full accent-blue-600 cursor-pointer" />
                   </div>
 
                   <div className="space-y-1">
-                    <div className="flex justify-between text-[11px] font-bold">
+                    <div className="flex justify-between text-[11px] font-medium text-[#191919]">
                       <span>동공 상하 위치 (Pupil Y)</span>
-                      <span className="font-mono text-amber-600">{pupilY}px</span>
+                      <span className="font-mono text-neutral-600">{pupilY}px</span>
                     </div>
-                    <input type="range" min={-20} max={20} value={pupilY} onChange={e => setPupilY(+e.target.value)} className="w-full accent-amber-500 cursor-pointer" />
+                    <input type="range" min={-20} max={20} value={pupilY} onChange={e => setPupilY(+e.target.value)} className="w-full accent-blue-600 cursor-pointer" />
                   </div>
 
                   <div className="space-y-1">
-                    <div className="flex justify-between text-[11px] font-bold">
+                    <div className="flex justify-between text-[11px] font-medium text-[#191919]">
                       <span>눈썹 사선 각도</span>
-                      <span className="font-mono text-amber-600">{eyebrowTilt}°</span>
+                      <span className="font-mono text-neutral-600">{eyebrowTilt}°</span>
                     </div>
-                    <input type="range" min={-45} max={45} value={eyebrowTilt} onChange={e => setEyebrowTilt(+e.target.value)} className="w-full accent-amber-500 cursor-pointer" />
+                    <input type="range" min={-45} max={45} value={eyebrowTilt} onChange={e => setEyebrowTilt(+e.target.value)} className="w-full accent-blue-600 cursor-pointer" />
                   </div>
 
                   <div className="space-y-1">
-                    <div className="flex justify-between text-[11px] font-bold">
+                    <div className="flex justify-between text-[11px] font-medium text-[#191919]">
                       <span>모서리 둥글기 (Radius)</span>
-                      <span className="font-mono text-amber-600">{eyeRadius}px</span>
+                      <span className="font-mono text-neutral-600">{eyeRadius}px</span>
                     </div>
-                    <input type="range" min={0} max={35} value={eyeRadius} onChange={e => setEyeRadius(+e.target.value)} className="w-full accent-amber-500 cursor-pointer" />
+                    <input type="range" min={0} max={35} value={eyeRadius} onChange={e => setEyeRadius(+e.target.value)} className="w-full accent-blue-600 cursor-pointer" />
                   </div>
                 </div>
 
@@ -2869,7 +2858,7 @@ export default function SodabotSettingsScreen() {
                   <button
                     type="button"
                     onClick={() => setHasSparkle(!hasSparkle)}
-                    className={`flex-1 py-2 rounded-xl text-[11px] font-bold border transition-colors cursor-pointer ${hasSparkle ? 'bg-amber-100 border-amber-300 text-amber-800' : 'bg-white border-[#EAE6DF] text-[#86868B]'}`}
+                    className={`flex-1 py-2 rounded-xl text-[11px] font-semibold border transition-colors cursor-pointer ${hasSparkle ? 'bg-neutral-900 border-neutral-900 text-white' : 'bg-white border-[#E5E5E3] text-neutral-700'}`}
                   >
                     ✨ 반짝이 오버레이 {hasSparkle ? 'ON' : 'OFF'}
                   </button>
@@ -2877,7 +2866,7 @@ export default function SodabotSettingsScreen() {
                   <button
                     type="button"
                     onClick={() => setHasGloss(!hasGloss)}
-                    className={`flex-1 py-2 rounded-xl text-[11px] font-bold border transition-colors cursor-pointer ${hasGloss ? 'bg-amber-100 border-amber-300 text-amber-800' : 'bg-white border-[#EAE6DF] text-[#86868B]'}`}
+                    className={`flex-1 py-2 rounded-xl text-[11px] font-semibold border transition-colors cursor-pointer ${hasGloss ? 'bg-neutral-900 border-neutral-900 text-white' : 'bg-white border-[#E5E5E3] text-neutral-700'}`}
                   >
                     💎 광택 하이라이트 {hasGloss ? 'ON' : 'OFF'}
                   </button>
@@ -2887,11 +2876,11 @@ export default function SodabotSettingsScreen() {
             )}
 
             {/* Modal Actions */}
-            <div className="flex items-center gap-2 border-t border-[#EAE6DF] pt-4">
+            <div className="flex items-center gap-2 border-t border-[#E5E5E3] pt-4">
               <button 
                 type="button"
                 onClick={() => setShowExprEditor(false)}
-                className="py-2.5 px-4 bg-[#FAF9F6] border border-[#EAE6DF] text-[#5C5B57] text-xs font-bold rounded-xl hover:bg-[#EAE6DF] transition-colors cursor-pointer"
+                className="py-2.5 px-4 bg-white border border-[#E5E5E3] text-neutral-700 text-xs font-medium rounded-xl hover:bg-neutral-50 transition-colors cursor-pointer"
               >
                 취소
               </button>
@@ -2905,15 +2894,15 @@ export default function SodabotSettingsScreen() {
                   }
                   showToast('소다봇 화면으로 실시간 테스트 전송 완료!');
                 }}
-                className="flex-1 py-2.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                className="flex-1 py-2.5 bg-white hover:bg-neutral-50 border border-[#E5E5E3] text-neutral-800 text-xs font-semibold rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
               >
-                <Zap className="w-3.5 h-3.5 text-indigo-600" />
+                <Zap className="w-3.5 h-3.5 text-blue-600" />
                 소다봇 화면에 즉시 테스트 ⚡
               </button>
               <button 
                 type="button"
                 onClick={handleSaveCustomExpr}
-                className="flex-1 py-2.5 bg-amber-400 hover:bg-amber-500 text-amber-950 text-xs font-bold rounded-xl transition-colors shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
+                className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl transition-colors shadow-2xs flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <Save className="w-3.5 h-3.5" />
                 나만의 표정 저장하기

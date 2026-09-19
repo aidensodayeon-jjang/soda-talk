@@ -1774,22 +1774,22 @@ export default function App() {
                       }
                       setCurrentView('settings');
                     }}
-                    className={`w-full text-left px-2.5 py-2 rounded-xl text-xs font-semibold flex items-center justify-between transition-all cursor-pointer ${
+                    className={`w-full text-left px-2.5 py-2 rounded-xl text-xs font-medium flex items-center justify-between transition-all cursor-pointer ${
                       !isSodabotConnected
-                        ? 'text-[#A1A1A6] hover:bg-amber-50/50 hover:text-amber-800'
+                        ? 'text-[#A1A1A6] hover:bg-neutral-100/50 hover:text-neutral-700'
                         : currentView === 'settings'
-                        ? 'bg-indigo-50 text-indigo-700 font-bold border border-indigo-200 shadow-2xs'
+                        ? 'bg-blue-50/70 text-blue-900 font-bold border border-blue-200/70 shadow-2xs'
                         : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20 hover:text-[#1D1D1F]'
                     }`}
                   >
                     <div className="flex items-center gap-2 min-w-0">
-                      <Settings className={`w-3.5 h-3.5 shrink-0 ${isSodabotConnected ? 'text-blue-600' : 'text-slate-400'}`} />
+                      <Settings className={`w-3.5 h-3.5 shrink-0 ${isSodabotConnected ? (currentView === 'settings' ? 'text-blue-600' : 'text-neutral-600') : 'text-slate-400'}`} />
                       <span className="truncate">6주차: 소다봇 설정하기</span>
                     </div>
                     {!isSodabotConnected ? (
-                      <Lock className="w-3 h-3 text-amber-500 shrink-0" />
+                      <Lock className="w-3 h-3 text-neutral-400 shrink-0" />
                     ) : (
-                      <span className="text-[9px] text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded font-mono font-bold shrink-0">
+                      <span className="text-[9px] text-blue-700 bg-blue-50 border border-blue-200/60 px-1.5 py-0.5 rounded font-mono font-semibold shrink-0">
                         설정
                       </span>
                     )}
@@ -1805,22 +1805,22 @@ export default function App() {
                       }
                       setCurrentView('sodabot_builder');
                     }}
-                    className={`w-full text-left px-2.5 py-2 rounded-xl text-xs font-semibold flex items-center justify-between transition-all cursor-pointer ${
+                    className={`w-full text-left px-2.5 py-2 rounded-xl text-xs font-medium flex items-center justify-between transition-all cursor-pointer ${
                       !isSodabotConnected
-                        ? 'text-[#A1A1A6] hover:bg-amber-50/50 hover:text-amber-800'
+                        ? 'text-[#A1A1A6] hover:bg-neutral-100/50 hover:text-neutral-700'
                         : currentView === 'sodabot_builder'
-                        ? 'bg-indigo-50 text-indigo-700 font-bold border border-indigo-200 shadow-2xs'
+                        ? 'bg-blue-50/70 text-blue-900 font-bold border border-blue-200/70 shadow-2xs'
                         : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20 hover:text-[#1D1D1F]'
                     }`}
                   >
                     <div className="flex items-center gap-2 min-w-0">
-                      <Sparkles className={`w-3.5 h-3.5 shrink-0 ${isSodabotConnected ? 'text-amber-500' : 'text-slate-400'}`} />
+                      <Sparkles className={`w-3.5 h-3.5 shrink-0 ${isSodabotConnected ? (currentView === 'sodabot_builder' ? 'text-blue-600' : 'text-neutral-600') : 'text-slate-400'}`} />
                       <span className="truncate">7주차: 소다봇 빌더</span>
                     </div>
                     {!isSodabotConnected ? (
-                      <Lock className="w-3 h-3 text-amber-500 shrink-0" />
+                      <Lock className="w-3 h-3 text-neutral-400 shrink-0" />
                     ) : (
-                      <span className="text-[9px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded font-mono font-bold shrink-0">
+                      <span className="text-[9px] text-neutral-700 bg-neutral-100 border border-neutral-200 px-1.5 py-0.5 rounded font-mono font-semibold shrink-0">
                         빌더
                       </span>
                     )}
@@ -1836,22 +1836,22 @@ export default function App() {
                       }
                       setCurrentView('chat');
                     }}
-                    className={`w-full text-left px-2.5 py-2 rounded-xl text-xs font-semibold flex items-center justify-between transition-all cursor-pointer ${
+                    className={`w-full text-left px-2.5 py-2 rounded-xl text-xs font-medium flex items-center justify-between transition-all cursor-pointer ${
                       !isSodabotConnected
-                        ? 'text-[#A1A1A6] hover:bg-amber-50/50 hover:text-amber-800'
+                        ? 'text-[#A1A1A6] hover:bg-neutral-100/50 hover:text-neutral-700'
                         : currentView === 'chat'
-                        ? 'bg-indigo-50 text-indigo-700 font-bold border border-indigo-200 shadow-2xs'
+                        ? 'bg-blue-50/70 text-blue-900 font-bold border border-blue-200/70 shadow-2xs'
                         : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20 hover:text-[#1D1D1F]'
                     }`}
                   >
                     <div className="flex items-center gap-2 min-w-0">
-                      <MessageSquare className={`w-3.5 h-3.5 shrink-0 ${isSodabotConnected ? 'text-indigo-600' : 'text-slate-400'}`} />
+                      <MessageSquare className={`w-3.5 h-3.5 shrink-0 ${isSodabotConnected ? (currentView === 'chat' ? 'text-blue-600' : 'text-neutral-600') : 'text-slate-400'}`} />
                       <span className="truncate">8주차: 소다와 대화하기</span>
                     </div>
                     {!isSodabotConnected ? (
-                      <Lock className="w-3 h-3 text-amber-500 shrink-0" />
+                      <Lock className="w-3 h-3 text-neutral-400 shrink-0" />
                     ) : (
-                      <span className="text-[9px] text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded font-mono font-bold shrink-0">
+                      <span className="text-[9px] text-neutral-700 bg-neutral-100 border border-neutral-200 px-1.5 py-0.5 rounded font-mono font-semibold shrink-0">
                         AI 대화
                       </span>
                     )}
