@@ -729,30 +729,6 @@ export default function SodabotSettingsScreen() {
     showToast(`'${newItem.name}' 단계를 새로 추가했습니다.`);
   };
 
-  // Welcome Screen Studio Modal State (테마, 글자색상, 마스코트, 사운드 영구 연동)
-  const [showWelcomeStudio, setShowWelcomeStudio] = useState(false);
-  
-  const getInitialWelcomeConfig = () => {
-    try {
-      const saved = localStorage.getItem('sodabot_welcome_config');
-      if (saved) return JSON.parse(saved);
-    } catch (e) {}
-    return {
-      text: localStorage.getItem('sodabot_welcome_msg') || 'HELLO!\nI AM LUMI :)\nNICE TO SEE YOU TODAY!',
-      theme: 'starry',
-      color: '#22D3EE',
-      mascot: 'happy',
-      sound: 'greeting'
-    };
-  };
-
-  const initialWelCfg = getInitialWelcomeConfig();
-  const [studioText, setStudioText] = useState(initialWelCfg.text || 'HELLO!\nI AM LUMI :)\nNICE TO SEE YOU TODAY!');
-  const [studioTheme, setStudioTheme] = useState<'starry' | 'neon' | 'sunset' | 'emerald'>(initialWelCfg.theme || 'starry');
-  const [studioColor, setStudioColor] = useState(initialWelCfg.color || '#22D3EE');
-  const [studioMascot, setStudioMascot] = useState(initialWelCfg.mascot || 'happy');
-  const [studioSound, setStudioSound] = useState(initialWelCfg.sound || 'greeting');
-
   const showToast = (msg: string) => {
     setSaveToast(msg);
     setTimeout(() => setSaveToast(null), 2500);
@@ -969,51 +945,9 @@ export default function SodabotSettingsScreen() {
               {/* Eye Graphics & Boot Simulator synced 1:1 with hardware drawing logic */}
               <div className="flex-1 w-full flex items-center justify-center relative z-10">
                 {bootingState === 'greeting' ? (
-                  <div 
-                    className="w-full h-full flex flex-col justify-between items-center p-2 rounded-2xl animate-fade-in relative overflow-hidden"
-                    style={{
-                      background: studioTheme === 'starry' 
-                        ? 'radial-gradient(circle at center, #1e1b4b 0%, #09090b 100%)' 
-                        : studioTheme === 'neon'
-                        ? 'linear-gradient(135deg, #0284c7 0%, #0f172a 100%)'
-                        : studioTheme === 'sunset'
-                        ? 'linear-gradient(135deg, #be185d 0%, #312e81 100%)'
-                        : 'linear-gradient(135deg, #047857 0%, #064e3b 100%)'
-                    }}
-                  >
-                    {/* Background Particle Effects */}
-                    <div className="absolute inset-0 opacity-30 bg-[radial-gradient(#fff_1px,transparent_1px)] [background-size:12px_12px] pointer-events-none"></div>
-
-                    {/* Mascot Eyes */}
-                    <div className="flex items-center gap-4 z-10 pt-1">
-                      {studioMascot === 'happy' && (
-                        <>
-                          <div className="w-8 h-6 border-t-[5px] border-cyan-300 rounded-t-full transform -rotate-12"></div>
-                          <div className="w-8 h-6 border-t-[5px] border-cyan-300 rounded-t-full transform rotate-12"></div>
-                        </>
-                      )}
-                      {studioMascot === 'heart' && (
-                        <div className="text-2xl animate-bounce">😍</div>
-                      )}
-                      {studioMascot === 'sunglasses' && (
-                        <div className="text-2xl">😎</div>
-                      )}
-                      {studioMascot === 'cat' && (
-                        <div className="text-2xl">🐱</div>
-                      )}
-                      {studioMascot === 'default' && (
-                        <>
-                          <div className="w-7 h-7 bg-cyan-300 rounded-xl shadow-[0_0_10px_rgba(103,232,249,0.8)]"></div>
-                          <div className="w-7 h-7 bg-cyan-300 rounded-xl shadow-[0_0_10px_rgba(103,232,249,0.8)]"></div>
-                        </>
-                      )}
-                    </div>
-
-                    {/* Styled Welcome Text */}
-                    <div 
-                      className="text-[12px] font-black leading-snug tracking-wide whitespace-pre-line text-center z-10 px-2 pb-1 drop-shadow-md font-sans"
-                      style={{ color: studioColor }}
-                    >
+                  <div className="text-center px-2 animate-fade-in space-y-1">
+                    <div className="text-[10px] text-amber-300 font-bold flex items-center justify-center gap-1">💬 GREETING</div>
+                    <div className="text-[13px] text-white font-bold leading-snug tracking-wide whitespace-pre-line bg-black/60 px-3 py-2.5 rounded-xl border border-white/10 shadow-inner font-mono">
                       {bootingMessage || welcomeMsg || 'HELLO!\nI AM LUMI :)\nNICE TO SEE YOU TODAY!'}
                     </div>
                   </div>
@@ -1447,15 +1381,7 @@ export default function SodabotSettingsScreen() {
               <div className="space-y-1 bg-[#FAF9F6] p-2.5 rounded-2xl border border-[#EAE6DF]">
                 <div className="flex justify-between items-center">
                   <label className="text-[10px] font-bold text-[#5C5B57]">💬 환영 인사 문구</label>
-                  <button 
-                    onClick={() => {
-                      setStudioText(welcomeMsg);
-                      setShowWelcomeStudio(true);
-                    }}
-                    className="text-[9px] font-bold text-blue-600 hover:text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100 flex items-center gap-0.5 cursor-pointer"
-                  >
-                    <Sparkles className="w-2.5 h-2.5 text-blue-500" /> 스튜디오
-                  </button>
+                  <span className="text-[9px] text-[#86868B]">부팅 시 2.5초간 화면에 표시</span>
                 </div>
                 <div className="relative">
                   <textarea 
@@ -1561,21 +1487,20 @@ export default function SodabotSettingsScreen() {
 
             <button 
               onClick={() => {
-                const cfg = {
-                  text: welcomeMsg,
-                  theme: studioTheme,
-                  color: studioColor,
-                  mascot: studioMascot,
-                  sound: studioSound
-                };
-                localStorage.setItem('sodabot_welcome_msg', welcomeMsg);
-                localStorage.setItem('sodabot_welcome_config', JSON.stringify(cfg));
+                const cleanedText = welcomeMsg.trim();
+                localStorage.setItem('sodabot_welcome_msg', cleanedText);
                 localStorage.setItem('sodabot_standby_face', standbyFace);
                 localStorage.setItem('sodabot_standby_time', standbyTime);
                 localStorage.setItem('sodabot_default_idle_expr', defaultIdleExpr);
-                sendWsCommand("set_welcome", JSON.stringify(cfg), "환영 화면 설정 전송");
+                sendWsCommand("set_welcome", cleanedText, "환영 인사 설정 전송");
                 sendWsCommand("set_expression", mapToSafeHardwareExpr(defaultIdleExpr), "대기 기본 표정 전송");
-                showToast('환영 인사 및 대기 표정 설정이 소다봇에 영구 저장 및 적용되었습니다!');
+                
+                // 실시간 미리보기
+                setBootingState('greeting');
+                setBootingMessage(cleanedText);
+                setTimeout(() => setBootingState(null), 3000);
+
+                showToast('환영 인사 및 대기 표정 설정이 소다봇에 영구 저장 및 전송되었습니다!');
               }}
               className="mt-4 w-full py-2.5 bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold rounded-xl transition-colors shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
             >
@@ -1838,7 +1763,7 @@ export default function SodabotSettingsScreen() {
               className="mt-2 w-full py-2.5 bg-teal-500 hover:bg-teal-600 text-white text-xs font-bold rounded-xl transition-colors shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <Play className="w-3.5 h-3.5" />
-              시작 시퀀스 테스트 (2.0" LCD & 소다봇 동기화)
+              시작 시퀀스
             </button>
           </div>
         </div>
@@ -1853,219 +1778,7 @@ export default function SodabotSettingsScreen() {
 
       </div>
 
-      {/* ── Custom Welcome Screen Studio Modal ────────────────────────────────────── */}
-      {showWelcomeStudio && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-white border border-[#EAE6DF] rounded-3xl max-w-2xl w-full p-6 shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto font-sans">
-            
-            {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-[#EAE6DF] pb-4">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-lg">
-                  ✨
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-[#1D1D1F]">나만의 환영화면 스튜디오</h3>
-                  <p className="text-xs text-[#86868B]">부팅 시 소다봇 2.0" LCD 화면에 표시될 개성 있는 환영 연출을 만드세요.</p>
-                </div>
-              </div>
-              <button 
-                onClick={() => setShowWelcomeStudio(false)}
-                className="w-8 h-8 rounded-full bg-[#FAF9F6] border border-[#EAE6DF] hover:bg-[#EAE6DF] flex items-center justify-center text-xs text-[#5C5B57] transition-colors"
-              >
-                ✕
-              </button>
-            </div>
 
-            {/* 320x240 Live Canvas Display Simulator inside Modal */}
-            <div className="flex flex-col items-center justify-center space-y-2 bg-[#FAF9F6] p-4 rounded-2xl border border-[#EAE6DF]">
-              <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
-                2.0" LCD (320x240) 환영화면 캔버스 미리보기
-              </span>
-
-              <div 
-                className={`w-72 h-52 border-4 border-slate-700 rounded-2xl p-4 flex flex-col justify-between items-center relative overflow-hidden shadow-2xl transition-all duration-500`}
-                style={{
-                  background: studioTheme === 'starry' 
-                    ? 'radial-gradient(circle at center, #1e1b4b 0%, #09090b 100%)' 
-                    : studioTheme === 'neon'
-                    ? 'linear-gradient(135deg, #0284c7 0%, #0f172a 100%)'
-                    : studioTheme === 'sunset'
-                    ? 'linear-gradient(135deg, #be185d 0%, #312e81 100%)'
-                    : 'linear-gradient(135deg, #047857 0%, #064e3b 100%)'
-                }}
-              >
-                {/* Background Particle Effects */}
-                <div className="absolute inset-0 opacity-30 bg-[radial-gradient(#fff_1px,transparent_1px)] [background-size:16px_16px]"></div>
-
-                {/* Top Status */}
-                <div className="w-full flex justify-between text-[9px] font-mono text-white/70 z-10">
-                  <span>SODA_LAB</span>
-                  <span>WELCOME!</span>
-                </div>
-
-                {/* Mascot Eyes */}
-                <div className="flex items-center gap-6 z-10">
-                  {studioMascot === 'happy' && (
-                    <>
-                      <div className="w-12 h-10 border-t-8 border-cyan-300 rounded-t-full transform -rotate-12"></div>
-                      <div className="w-12 h-10 border-t-8 border-cyan-300 rounded-t-full transform rotate-12"></div>
-                    </>
-                  )}
-                  {studioMascot === 'heart' && (
-                    <div className="text-4xl animate-bounce">😍</div>
-                  )}
-                  {studioMascot === 'sunglasses' && (
-                    <div className="text-4xl">😎</div>
-                  )}
-                  {studioMascot === 'cat' && (
-                    <div className="text-4xl">🐱</div>
-                  )}
-                  {studioMascot === 'default' && (
-                    <>
-                      <div className="w-12 h-12 bg-cyan-300 rounded-full shadow-[0_0_12px_rgba(103,232,249,0.8)]"></div>
-                      <div className="w-12 h-12 bg-cyan-300 rounded-full shadow-[0_0_12px_rgba(103,232,249,0.8)]"></div>
-                    </>
-                  )}
-                </div>
-
-                {/* Custom Welcome Message Lines */}
-                <div className="w-full text-center z-10 font-black whitespace-pre-line text-sm leading-relaxed tracking-wide drop-shadow-md" style={{ color: studioColor }}>
-                  {studioText}
-                </div>
-              </div>
-            </div>
-
-            {/* Studio Customization Options Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-              
-              {/* Option 1: Welcome Text */}
-              <div className="space-y-1.5">
-                <label className="font-bold text-[#1D1D1F]">1. 환영 문구 편집</label>
-                <textarea 
-                  value={studioText}
-                  onChange={(e) => setStudioText(e.target.value)}
-                  rows={3}
-                  className="w-full p-2.5 bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl outline-none focus:bg-white focus:border-blue-400 font-sans leading-relaxed text-xs"
-                />
-              </div>
-
-              {/* Option 2: Background Theme */}
-              <div className="space-y-1.5">
-                <label className="font-bold text-[#1D1D1F]">2. 배경 테마 선택</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    { id: 'starry', name: '🌌 은하수 우주' },
-                    { id: 'neon', name: '⚡ 네온 사이버' },
-                    { id: 'sunset', name: '🌅 핑크 석양' },
-                    { id: 'emerald', name: '🌿 에메랄드' },
-                  ].map(t => (
-                    <button
-                      key={t.id}
-                      onClick={() => setStudioTheme(t.id as any)}
-                      className={`p-2 rounded-xl border text-[11px] font-bold text-left transition-all ${studioTheme === t.id ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-sm' : 'border-[#EAE6DF] bg-white hover:border-blue-200'}`}
-                    >
-                      {t.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Option 3: Mascot Character */}
-              <div className="space-y-1.5">
-                <label className="font-bold text-[#1D1D1F]">3. 마스코트 표정</label>
-                <div className="flex gap-2">
-                  {[
-                    { id: 'happy', emoji: '😆' },
-                    { id: 'heart', emoji: '😍' },
-                    { id: 'sunglasses', emoji: '😎' },
-                    { id: 'cat', emoji: '🐱' },
-                    { id: 'default', emoji: '🤖' },
-                  ].map(m => (
-                    <button
-                      key={m.id}
-                      onClick={() => setStudioMascot(m.id)}
-                      className={`flex-1 py-2 rounded-xl border text-xl flex items-center justify-center transition-all ${studioMascot === m.id ? 'border-blue-500 bg-blue-50 scale-110 shadow-sm' : 'border-[#EAE6DF] bg-white hover:border-blue-200'}`}
-                    >
-                      {m.emoji}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Option 4: Text Color */}
-              <div className="space-y-1.5">
-                <label className="font-bold text-[#1D1D1F]">4. 문구 글자 색상</label>
-                <div className="flex gap-2">
-                  {[
-                    { color: '#22D3EE', name: '시안' },
-                    { color: '#FACC15', name: '옐로우' },
-                    { color: '#34D399', name: '민트' },
-                    { color: '#F472B6', name: '핑크' },
-                    { color: '#FFFFFF', name: '화이트' },
-                  ].map(c => (
-                    <button
-                      key={c.color}
-                      onClick={() => setStudioColor(c.color)}
-                      className={`flex-1 py-2 rounded-xl border transition-all flex items-center justify-center ${studioColor === c.color ? 'ring-2 ring-blue-500 scale-105' : ''}`}
-                      style={{ backgroundColor: c.color }}
-                      title={c.name}
-                    >
-                      <span className="w-2 h-2 rounded-full bg-slate-900/30"></span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-            </div>
-
-            {/* Modal Actions */}
-            <div className="flex items-center gap-3 border-t border-[#EAE6DF] pt-4">
-              <button 
-                onClick={() => setShowWelcomeStudio(false)}
-                className="flex-1 py-2.5 bg-[#FAF9F6] border border-[#EAE6DF] text-[#5C5B57] text-xs font-bold rounded-xl hover:bg-[#EAE6DF] transition-colors"
-              >
-                취소
-              </button>
-              <button 
-                onClick={() => {
-                  const cleanedText = studioText.trim();
-                  if (!cleanedText) {
-                    showToast('환영 인사 문구를 입력해 주세요.');
-                    return;
-                  }
-                  const cfg = {
-                    text: cleanedText,
-                    theme: studioTheme,
-                    color: studioColor,
-                    mascot: studioMascot,
-                    sound: studioSound
-                  };
-                  setWelcomeMsg(cleanedText);
-                  localStorage.setItem('sodabot_welcome_msg', cleanedText);
-                  localStorage.setItem('sodabot_welcome_config', JSON.stringify(cfg));
-                  sendWsCommand("set_welcome", JSON.stringify(cfg), "환영 화면 설정 전송");
-                  
-                  // 실시간 LCD 미리보기 (테마, 마스코트, 텍스트 색상) & 사운드 재생
-                  setBootingState('greeting');
-                  setBootingMessage(cleanedText);
-                  playWebSound(studioSound || 'greeting');
-                  sendWsCommand("play_sound", studioSound || 'greeting');
-                  setTimeout(() => { setBootingState(null); }, 3500);
-
-                  setShowWelcomeStudio(false);
-                  showToast('✨ 나만의 테마 & 환영화면이 소다봇에 영구 저장 및 전송되었습니다!');
-                }}
-                className="flex-1 py-2.5 bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold rounded-xl transition-colors shadow-sm flex items-center justify-center gap-1.5 cursor-pointer active:scale-98"
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                소다봇에 환영화면 적용 및 저장
-              </button>
-            </div>
-
-          </div>
-        </div>
-      )}
 
       {/* Modal 2: Custom Expression Studio Editor (showExprEditor - 2 Modes) */}
       {showExprEditor && (

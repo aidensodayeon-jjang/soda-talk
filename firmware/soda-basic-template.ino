@@ -1237,66 +1237,9 @@ void drawMessage(const String& message, uint8_t reqSize = 0) {
   drawMessageWithStyle(message, reqSize, ST77XX_WHITE, LCD_BG_COLOR, 0);
 }
 
-// ── 나만의 환영화면 (테마 배경 + 마스코트 + 커스텀 글자 색상) 렌더링 엔진 ───
-void drawWelcomeScreenCustom(const String& text, const String& theme, const String& colorHex, const String& mascot) {
-  // 1. 테마별 배경색 결정
-  uint16_t bgColor = ST77XX_BLACK;
-  if (theme == "starry") bgColor = 0x0845;       // 딥 네이비 우주
-  else if (theme == "neon") bgColor = 0x0113;     // 사이버 다크 블루
-  else if (theme == "sunset") bgColor = 0x384B;   // 핑크 석양 퍼플
-  else if (theme == "emerald") bgColor = 0x0224;  // 에메랄드 그린
-  
-  tft.fillScreen(bgColor);
-
-  // 별빛 효과 (starry 테마)
-  if (theme == "starry") {
-    for (int i = 0; i < 24; i++) {
-      int sx = (i * 37 + 13) % 318 + 1;
-      int sy = (i * 29 + 7) % 238 + 1;
-      tft.drawPixel(sx, sy, ST77XX_WHITE);
-      if (i % 3 == 0) tft.drawPixel(sx + 1, sy, 0xCE79);
-    }
-  }
-
-  // 2. 글자 색상 파싱
-  uint16_t textColor = parseHexColor565(colorHex, 0x269D);
-
-  // 3. 상단 마스코트 눈 렌더링 (Y=35 중심)
-  if (mascot == "heart") {
-    // 하트 이모지 스타일 눈
-    tft.fillCircle(110, 42, 14, 0xF9B8); // 핑크
-    tft.fillCircle(130, 42, 14, 0xF9B8);
-    tft.fillTriangle(98, 48, 142, 48, 120, 68, 0xF9B8);
-    tft.fillCircle(190, 42, 14, 0xF9B8);
-    tft.fillCircle(210, 42, 14, 0xF9B8);
-    tft.fillTriangle(178, 48, 222, 48, 200, 68, 0xF9B8);
-  } else if (mascot == "happy") {
-    // 반원형 행복 눈
-    tft.fillRoundRect(100, 36, 44, 28, 12, textColor);
-    tft.fillRoundRect(104, 46, 36, 20, 8, bgColor);
-    tft.fillRoundRect(176, 36, 44, 28, 12, textColor);
-    tft.fillRoundRect(180, 46, 36, 20, 8, bgColor);
-  } else if (mascot == "sunglasses" || mascot == "cat") {
-    // 캣/선글라스 눈
-    tft.fillRoundRect(95, 34, 48, 30, 8, textColor);
-    tft.fillRoundRect(177, 34, 48, 30, 8, textColor);
-    tft.fillRect(140, 44, 40, 6, textColor);
-  } else {
-    // 기본 로봇 눈
-    tft.fillRoundRect(100, 35, 42, 34, 10, textColor);
-    tft.fillRoundRect(178, 35, 42, 34, 10, textColor);
-  }
-
-  // 4. 하단 환영 문구 렌더링 (Y=105부터 시작)
-  drawMessageWithStyle(text, 0, textColor, bgColor, 105);
-}
-
 // ── 영구 플래시 저장소 (NVS Preferences) ────────────────────────────────────
 Preferences prefs;
 String welcomeMsg = "HELLO!\nI AM LUMI :)\nNICE TO SEE YOU TODAY!";
-String welcomeTheme = "starry";
-String welcomeColor = "#22D3EE";
-String welcomeMascot = "happy";
 
 String defaultIdleExpr = "default"; // 기본 펌웨어 기본 표정: "default"
 String standbyMode = "default";    // "default", "clock", "weather", "off", etc.
@@ -1312,10 +1255,6 @@ String btnLongAction = "greeting";
 void loadSettingsFromNVS() {
   if (prefs.begin("sodabot", true)) { // 읽기 모드로 오픈
     welcomeMsg = prefs.getString("welcome", "HELLO!\nI AM LUMI :)\nNICE TO SEE YOU TODAY!");
-    welcomeTheme = prefs.getString("wel_theme", "starry");
-    welcomeColor = prefs.getString("wel_color", "#22D3EE");
-    welcomeMascot = prefs.getString("wel_mascot", "happy");
-
     defaultIdleExpr = prefs.getString("idle_expr", "default");
     standbyMode = prefs.getString("standby", "default");
     btnSingleAction = prefs.getString("btn_single", "random_face");
@@ -1325,12 +1264,9 @@ void loadSettingsFromNVS() {
   }
 }
 
-void saveWelcomeMsgToNVS(const String& msg, const String& theme = "starry", const String& color = "#22D3EE", const String& mascot = "happy") {
+void saveWelcomeMsgToNVS(const String& msg) {
   if (prefs.begin("sodabot", false)) {
     prefs.putString("welcome", msg);
-    prefs.putString("wel_theme", theme);
-    prefs.putString("wel_color", color);
-    prefs.putString("wel_mascot", mascot);
     prefs.end();
   }
 }
@@ -1608,19 +1544,16 @@ void processMessage(const IncomingMessage& message) {
     sleeping = false; customExpression = true; expressionUntil = millis() + 10000;
   } else if (action == "set_welcome" || action == "set_welcome_screen") {
     if (value.startsWith("{")) {
-      DynamicJsonDocument welDoc(1024);
-      if (!deserializeJson(welDoc, value)) {
-        if (welDoc.containsKey("text")) welcomeMsg = welDoc["text"].as<String>();
-        if (welDoc.containsKey("theme")) welcomeTheme = welDoc["theme"].as<String>();
-        if (welDoc.containsKey("color")) welcomeColor = welDoc["color"].as<String>();
-        if (welDoc.containsKey("mascot")) welcomeMascot = welDoc["mascot"].as<String>();
+      DynamicJsonDocument welDoc(512);
+      if (!deserializeJson(welDoc, value) && welDoc.containsKey("text")) {
+        welcomeMsg = welDoc["text"].as<String>();
       }
     } else {
       if (value.length() > 0 && value.length() <= 360) welcomeMsg = value;
     }
-    saveWelcomeMsgToNVS(welcomeMsg, welcomeTheme, welcomeColor, welcomeMascot);
-    drawWelcomeScreenCustom(welcomeMsg, welcomeTheme, welcomeColor, welcomeMascot);
-    sleeping = false; customExpression = true; expressionUntil = millis() + 5000;
+    saveWelcomeMsgToNVS(welcomeMsg);
+    drawMessage(welcomeMsg, 0);
+    sleeping = false; customExpression = true; expressionUntil = millis() + 4000;
   } else if (action == "set_button_action") {
     if (value.startsWith("{")) {
       DynamicJsonDocument btnDoc(512);
@@ -1694,8 +1627,8 @@ void setup() {
   Serial0.end(); // USB CDC Serial 유지, GPIO44는 스피커
   setupSpeaker();
 
-  // 4. 부팅 시 환영인사 화면(테마, 마스코트, 색상) 표시 + 부팅 멜로디 출력
-  drawWelcomeScreenCustom(welcomeMsg, welcomeTheme, welcomeColor, welcomeMascot);
+  // 4. 부팅 시 환영인사 화면 표시 + 부팅 멜로디 출력
+  drawMessage(welcomeMsg, 0);
   if (speakerReady) {
     playToneI2S(523, 100); // C5
     playToneI2S(659, 100); // E5
