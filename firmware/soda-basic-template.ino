@@ -1249,7 +1249,7 @@ bool isStandbyActive = false;
 
 // 물리 버튼 기본 동작
 String btnSingleAction = "random_face";
-String btnDoubleAction = "show_time";
+String btnDoubleAction = "happy_face";
 String btnLongAction = "greeting";
 
 void loadSettingsFromNVS() {
@@ -1258,7 +1258,7 @@ void loadSettingsFromNVS() {
     defaultIdleExpr = prefs.getString("idle_expr", "default");
     standbyMode = prefs.getString("standby", "default");
     btnSingleAction = prefs.getString("btn_single", "random_face");
-    btnDoubleAction = prefs.getString("btn_double", "show_time");
+    btnDoubleAction = prefs.getString("btn_double", "happy_face");
     btnLongAction = prefs.getString("btn_long", "greeting");
     prefs.end();
   }
@@ -1355,10 +1355,40 @@ void triggerExpressionByName(const String& name) {
   expressionUntil = millis() + 3000;
 }
 
+// ==============================================================================
+// 🎓 학생 실습용 사용자 정의 함수 (Arduino Custom Functions)
+// 학생이 개발한 새로운 기능을 여기에 함수로 작성하고 SODA TALK에 등록하여 연결하세요!
+// ==============================================================================
+void handleUserCustomFunction(const String& funcName) {
+  Serial.println("[MY FUNCTION] 사용자 정의 함수 실행: " + funcName);
+  
+  // 예시: 학생이 등록한 함수명에 따라 원하는 동작을 수행
+  if (funcName == "showClock" || funcName == "clock") {
+    // 실습 예: 학생이 구현할 시계 동작
+    drawMessage("MY FUNCTION\n" + funcName + "()", 0);
+    sleeping = false; customExpression = true; expressionUntil = millis() + 3000;
+    if (speakerReady) playToneI2S(1000, 100);
+  } else {
+    // 기본 사용자 함수 피드백
+    drawMessage("MY FUNCTION\n" + funcName + "()", 0);
+    sleeping = false; customExpression = true; expressionUntil = millis() + 3000;
+    if (speakerReady) playToneI2S(1200, 80);
+  }
+}
+
 void executeLocalButtonAction(const String& act, const char* clickType) {
   lastActivityTime = millis();
   if (isStandbyActive) { isStandbyActive = false; }
   broadcastButtonEvent(clickType, act);
+
+  // 1. 사용자 정의 함수 (custom:xxx 또는 사용자 등록 함수명) 처리
+  if (act.startsWith("custom:")) {
+    String fn = act.substring(7);
+    handleUserCustomFunction(fn);
+    return;
+  }
+
+  // 2. 기본 내장 기능 처리
   if (act == "random_face") {
     int count = sizeof(EXPRESSIONS_POOL) / sizeof(EXPRESSIONS_POOL[0]);
     int r = random(0, count);
@@ -1375,12 +1405,8 @@ void executeLocalButtonAction(const String& act, const char* clickType) {
   } else if (act == "wink_face" || act == "wink") {
     triggerExpressionByName("wink");
     if (speakerReady) playToneI2S(1100, 80);
-  } else if (act == "show_time") {
-    drawMessage("TIME\n12:00", 0);
-    sleeping = false; customExpression = true; expressionUntil = millis() + 3000;
-    if (speakerReady) playToneI2S(880, 80);
   } else if (act == "greeting") {
-    drawMessage("HELLO!\nI AM LUMI :)\nNICE TO SEE YOU TODAY!", 0);
+    drawMessage(welcomeMsg.length() > 0 ? welcomeMsg : "HELLO!\nI AM LUMI :)", 0);
     sleeping = false; customExpression = true; expressionUntil = millis() + 4000;
     if (speakerReady) { playToneI2S(523, 120); playToneI2S(659, 120); playToneI2S(784, 200); }
   } else if (act == "play_sound") {
@@ -1390,9 +1416,8 @@ void executeLocalButtonAction(const String& act, const char* clickType) {
     customExpression = false; sleeping = false;
     if (speakerReady) playToneI2S(800, 60);
   } else {
-    int count = sizeof(EXPRESSIONS_POOL) / sizeof(EXPRESSIONS_POOL[0]);
-    int r = random(0, count);
-    triggerExpressionByName(EXPRESSIONS_POOL[r]);
+    // 등록된 사용자 함수명이 직접 전달되었거나 알 수 없는 액션일 경우 사용자 함수 핸들러로 전달
+    handleUserCustomFunction(act);
   }
 }
 
@@ -1596,6 +1621,8 @@ void processMessage(const IncomingMessage& message) {
       else if (value == "greeting") { playToneI2S(523, 120); playToneI2S(659, 120); playToneI2S(784, 200); }
       else if (value == "touch_react") { playToneI2S(400, 100); playToneI2S(600, 150); }
     }
+  } else if (action == "call_function" || action == "custom_func") {
+    handleUserCustomFunction(value);
   } else {
     // 알 수 없는 명령이어도 안전하게 성공 응답 처리하여 웹 에러 방지
   }

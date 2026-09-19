@@ -557,9 +557,51 @@ export default function SodabotSettingsScreen() {
   const [soundTab, setSoundTab] = useState<'basic' | 'custom'>('basic');
   const [playingSound, setPlayingSound] = useState<string | null>(null);
 
-  const [btnSingleClick, setBtnSingleClick] = useState(localStorage.getItem('sodabot_btn_single') || 'random_face');
-  const [btnDoubleClick, setBtnDoubleClick] = useState(localStorage.getItem('sodabot_btn_double') || 'show_time');
-  const [btnLongPress, setBtnLongPress] = useState(localStorage.getItem('sodabot_btn_long') || 'greeting');
+  // 사용자 정의 아두이노 기능 (MY FUNCTIONS) 상태 관리
+  const [customFunctions, setCustomFunctions] = useState<Array<{
+    id: string;
+    name: string;
+    functionName: string;
+    description: string;
+    createdAt?: number;
+  }>>(() => {
+    try {
+      const saved = localStorage.getItem('sodabot_custom_functions');
+      if (saved) return JSON.parse(saved);
+      return [
+        {
+          id: 'func_clock_demo',
+          name: '인터넷 시계',
+          functionName: 'showClock',
+          description: '인터넷에서 현재 시간을 가져와 화면에 표시합니다.',
+          createdAt: Date.now()
+        }
+      ];
+    } catch {
+      return [];
+    }
+  });
+
+  // 새 기능 등록 / 수정 모달 상태
+  const [showFuncModal, setShowFuncModal] = useState(false);
+  const [editingFunc, setEditingFunc] = useState<{ id: string; name: string; functionName: string; description: string; createdAt?: number } | null>(null);
+  const [funcNameInput, setFuncNameInput] = useState('');
+  const [funcIdentifierInput, setFuncIdentifierInput] = useState('');
+  const [funcDescInput, setFuncDescInput] = useState('');
+  const [connectTargetFunc, setConnectTargetFunc] = useState<{ id: string; name: string; functionName: string; description: string } | null>(null);
+
+  const [btnSingleClick, setBtnSingleClick] = useState(() => {
+    const saved = localStorage.getItem('sodabot_btn_single');
+    return saved && saved !== 'show_time' ? saved : 'random_face';
+  });
+  const [btnDoubleClick, setBtnDoubleClick] = useState(() => {
+    const saved = localStorage.getItem('sodabot_btn_double');
+    return saved && saved !== 'show_time' ? saved : 'happy_face';
+  });
+  const [btnLongPress, setBtnLongPress] = useState(() => {
+    const saved = localStorage.getItem('sodabot_btn_long');
+    return saved && saved !== 'show_time' ? saved : 'greeting';
+  });
 
   const previewStandbyScreen = (face: string) => {
     showToast(`🌙 [대기 화면: ${face}] 미리보기를 시작합니다.`);
@@ -594,8 +636,130 @@ export default function SodabotSettingsScreen() {
     }
   };
 
+  const handleOpenNewFuncModal = () => {
+    setEditingFunc(null);
+    setFuncNameInput('');
+    setFuncIdentifierInput('');
+    setFuncDescInput('');
+    setShowFuncModal(true);
+  };
+
+  const handleOpenEditFuncModal = (fn: { id: string; name: string; functionName: string; description: string; createdAt?: number }) => {
+    setEditingFunc(fn);
+    setFuncNameInput(fn.name);
+    setFuncIdentifierInput(fn.functionName);
+    setFuncDescInput(fn.description);
+    setShowFuncModal(true);
+  };
+
+  const handleSaveCustomFunction = (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmedName = funcNameInput.trim();
+    const trimmedIdent = funcIdentifierInput.trim().replace(/\(\)$/, '');
+    const trimmedDesc = funcDescInput.trim();
+
+    if (!trimmedName) {
+      alert('기능 이름을 입력해주세요.');
+      return;
+    }
+    if (!trimmedIdent) {
+      alert('함수 이름을 입력해주세요 (예: showClock).');
+      return;
+    }
+
+    let updatedList: Array<{ id: string; name: string; functionName: string; description: string; createdAt?: number }>;
+    if (editingFunc) {
+      updatedList = customFunctions.map(item => item.id === editingFunc.id ? {
+        ...item,
+        name: trimmedName,
+        functionName: trimmedIdent,
+        description: trimmedDesc
+      } : item);
+      showToast(`'${trimmedName}' 기능 정보가 수정되었습니다.`);
+    } else {
+      const newItem = {
+        id: `func_${Date.now()}`,
+        name: trimmedName,
+        functionName: trimmedIdent,
+        description: trimmedDesc,
+        createdAt: Date.now()
+      };
+      updatedList = [...customFunctions, newItem];
+      showToast(`✨ 새 기능 '${trimmedName}'이(가) 등록되었습니다!`);
+    }
+
+    setCustomFunctions(updatedList);
+    localStorage.setItem('sodabot_custom_functions', JSON.stringify(updatedList));
+    setShowFuncModal(false);
+  };
+
+  const handleDeleteCustomFunction = (id: string, name: string) => {
+    if (window.confirm(`'${name}' 기능을 삭제하시겠습니까?`)) {
+      const updated = customFunctions.filter(item => item.id !== id);
+      setCustomFunctions(updated);
+      localStorage.setItem('sodabot_custom_functions', JSON.stringify(updated));
+      showToast(`'${name}' 기능이 삭제되었습니다.`);
+    }
+  };
+
+  const handleConnectToButton = (fn: { id: string; name: string; functionName: string }, targetButton: 'single' | 'double' | 'long') => {
+    const customValue = `custom:${fn.functionName}`;
+    let singleVal = btnSingleClick;
+    let doubleVal = btnDoubleClick;
+    let longVal = btnLongPress;
+
+    if (targetButton === 'single') {
+      setBtnSingleClick(customValue);
+      singleVal = customValue;
+      localStorage.setItem('sodabot_btn_single', customValue);
+    } else if (targetButton === 'double') {
+      setBtnDoubleClick(customValue);
+      doubleVal = customValue;
+      localStorage.setItem('sodabot_btn_double', customValue);
+    } else if (targetButton === 'long') {
+      setBtnLongPress(customValue);
+      longVal = customValue;
+      localStorage.setItem('sodabot_btn_long', customValue);
+    }
+
+    sendWsCommand("set_button_action", JSON.stringify({
+      single: singleVal,
+      double: doubleVal,
+      long: longVal
+    }), `버튼 동작 설정 (${fn.name} 연결)`);
+
+    setConnectTargetFunc(null);
+    showToast(`🔗 '${fn.name}' 기능이 [${targetButton === 'single' ? '한 번 누름' : targetButton === 'double' ? '더블 클릭' : '길게 누름'}]에 연결되었습니다!`);
+
+    // 물리 버튼 설정 카드로 부드럽게 스크롤
+    const el = document.getElementById('card-button-settings');
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  };
+
   const executeButtonAction = (targetAction: string, triggerName: string) => {
     showToast(`🔘 [${triggerName}] 동작을 테스트합니다!`);
+
+    // 1. 커스텀 사용자 정의 함수 실행
+    if (targetAction.startsWith('custom:')) {
+      const funcName = targetAction.replace('custom:', '');
+      const matchedFunc = customFunctions.find(f => f.functionName === funcName);
+      const funcTitle = matchedFunc ? matchedFunc.name : funcName;
+
+      // 소다봇에 사용자 정의 함수 실행 명령 전송
+      sendWsCommand("call_function", funcName, `사용자 함수 '${funcTitle}(${funcName}())' 실행`);
+
+      // LCD 화면 시뮬레이터에 표시
+      setBootingState('greeting');
+      setBootingMessage(`[MY FUNCTION]\n${funcTitle}\n${funcName}()`);
+      playWebSound('touch_react');
+      setTimeout(() => { setBootingState(null); setSelectedExpr(defaultIdleExpr); }, 3000);
+      showToast(`⚡ [${triggerName}] 내가 만든 기능 '${funcTitle}(${funcName}())' 실행!`);
+      return;
+    }
+
+    // 2. 기본 내장 기능 실행
     switch (targetAction) {
       case 'random_face': {
         const exprs = ['happy', 'wink', 'surprised', 'heart', 'pupil', 'sleepy', 'cat'];
@@ -610,19 +774,11 @@ export default function SodabotSettingsScreen() {
         break;
       }
       case 'happy_face':
-        triggerExpression('happy', '행복');
+        triggerExpression('happy', '기쁨');
         break;
       case 'wink_face':
         triggerExpression('wink', '윙크');
         break;
-      case 'show_time': {
-        setBootingState('time');
-        const now = new Date();
-        const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-        sendWsCommand("send_message", `TIME\n${timeStr}`, "현재 시간 표시");
-        setTimeout(() => { setBootingState(null); setSelectedExpr('default'); }, 3000);
-        break;
-      }
       case 'greeting': {
         setBootingState('greeting');
         const text = welcomeMsg || 'HELLO!\nI AM LUMI :)';
@@ -630,7 +786,7 @@ export default function SodabotSettingsScreen() {
         sendWsCommand("send_message", text.replace(/\n/g, ' '), "환영 인사");
         playWebSound('greeting');
         sendWsCommand("play_sound", "greeting");
-        setTimeout(() => { setBootingState(null); setSelectedExpr('default'); }, 3000);
+        setTimeout(() => { setBootingState(null); setSelectedExpr(defaultIdleExpr); }, 3000);
         break;
       }
       case 'play_sound':
@@ -639,8 +795,8 @@ export default function SodabotSettingsScreen() {
         break;
       case 'default_face':
       default:
-        setSelectedExpr('default');
-        sendWsCommand("set_expression", "default", "기본 표정");
+        setSelectedExpr(defaultIdleExpr);
+        sendWsCommand("set_expression", mapToSafeHardwareExpr(defaultIdleExpr), "기본 표정");
         break;
     }
   };
@@ -899,12 +1055,11 @@ export default function SodabotSettingsScreen() {
     { id: 'notification', name: '알림', duration: '00:02' },
   ];
 
-  const buttonActionOptions = [
+  const baseButtonActions = [
     { id: 'random_face', label: '🎲 랜덤 표정 전환' },
     { id: 'next_face', label: '🔄 다음 표정 전환' },
     { id: 'happy_face', label: '😆 기쁨 표정' },
     { id: 'wink_face', label: '😉 윙크 표정' },
-    { id: 'show_time', label: '⏰ 현재 시간 표시' },
     { id: 'greeting', label: '💬 환영 인사 & 소리' },
     { id: 'play_sound', label: '🔔 반응 효과음' },
     { id: 'default_face', label: '🤖 기본 표정 복귀' },
@@ -1511,7 +1666,7 @@ export default function SodabotSettingsScreen() {
 
 
           {/* Card 3: 단일 물리 버튼 동작 설정 */}
-          <div className="bg-white border-2 border-rose-400/30 hover:border-rose-400/60 rounded-3xl p-5 shadow-sm flex flex-col justify-between transition-all">
+          <div id="card-button-settings" className="bg-white border-2 border-rose-400/30 hover:border-rose-400/60 rounded-3xl p-5 shadow-sm flex flex-col justify-between transition-all scroll-mt-6">
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-rose-600 bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-100">
@@ -1519,9 +1674,11 @@ export default function SodabotSettingsScreen() {
                 </span>
                 <Sliders className="w-4 h-4 text-rose-500" />
               </div>
-              <p className="text-[11px] text-[#86868B] leading-snug">
-                하드웨어 단일 버튼 1개로 사용할 3가지 입력 동작을 지정해요.
-              </p>
+              <div className="flex items-center justify-between">
+                <p className="text-[11px] text-[#86868B] leading-snug">
+                  단일 버튼에 기본 기능 및 내가 만든 아두이노 기능을 연결해요.
+                </p>
+              </div>
 
               {/* Single Button 3 Actions */}
               <div className="space-y-2 pt-1">
@@ -1545,9 +1702,22 @@ export default function SodabotSettingsScreen() {
                     aria-label="한 번 누름 동작 선택"
                     className="w-full text-[10px] font-semibold text-[#1D1D1F] bg-white border border-[#EAE6DF] rounded-lg px-2 py-1 focus:outline-none focus:border-rose-400 cursor-pointer shadow-2xs"
                   >
-                    {buttonActionOptions.map((opt) => (
-                      <option key={opt.id} value={opt.id}>{opt.label}</option>
-                    ))}
+                    <optgroup label="🤖 기본 기능">
+                      {baseButtonActions.map((opt) => (
+                        <option key={opt.id} value={opt.id}>{opt.label}</option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="✨ 내가 만든 기능">
+                      {customFunctions.length === 0 ? (
+                        <option disabled value="">아직 등록된 기능이 없습니다</option>
+                      ) : (
+                        customFunctions.map((fn) => (
+                          <option key={fn.id} value={`custom:${fn.functionName}`}>
+                            ✨ {fn.name} ({fn.functionName}())
+                          </option>
+                        ))
+                      )}
+                    </optgroup>
                   </select>
                 </div>
 
@@ -1571,9 +1741,22 @@ export default function SodabotSettingsScreen() {
                     aria-label="더블 클릭 동작 선택"
                     className="w-full text-[10px] font-semibold text-[#1D1D1F] bg-white border border-[#EAE6DF] rounded-lg px-2 py-1 focus:outline-none focus:border-rose-400 cursor-pointer shadow-2xs"
                   >
-                    {buttonActionOptions.map((opt) => (
-                      <option key={opt.id} value={opt.id}>{opt.label}</option>
-                    ))}
+                    <optgroup label="🤖 기본 기능">
+                      {baseButtonActions.map((opt) => (
+                        <option key={opt.id} value={opt.id}>{opt.label}</option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="✨ 내가 만든 기능">
+                      {customFunctions.length === 0 ? (
+                        <option disabled value="">아직 등록된 기능이 없습니다</option>
+                      ) : (
+                        customFunctions.map((fn) => (
+                          <option key={fn.id} value={`custom:${fn.functionName}`}>
+                            ✨ {fn.name} ({fn.functionName}())
+                          </option>
+                        ))
+                      )}
+                    </optgroup>
                   </select>
                 </div>
 
@@ -1597,12 +1780,34 @@ export default function SodabotSettingsScreen() {
                     aria-label="길게 누름 동작 선택"
                     className="w-full text-[10px] font-semibold text-[#1D1D1F] bg-white border border-[#EAE6DF] rounded-lg px-2 py-1 focus:outline-none focus:border-rose-400 cursor-pointer shadow-2xs"
                   >
-                    {buttonActionOptions.map((opt) => (
-                      <option key={opt.id} value={opt.id}>{opt.label}</option>
-                    ))}
+                    <optgroup label="🤖 기본 기능">
+                      {baseButtonActions.map((opt) => (
+                        <option key={opt.id} value={opt.id}>{opt.label}</option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="✨ 내가 만든 기능">
+                      {customFunctions.length === 0 ? (
+                        <option disabled value="">아직 등록된 기능이 없습니다</option>
+                      ) : (
+                        customFunctions.map((fn) => (
+                          <option key={fn.id} value={`custom:${fn.functionName}`}>
+                            ✨ {fn.name} ({fn.functionName}())
+                          </option>
+                        ))
+                      )}
+                    </optgroup>
                   </select>
                 </div>
               </div>
+
+              {/* Quick Add Custom Function Link */}
+              <button
+                onClick={handleOpenNewFuncModal}
+                className="w-full py-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200/80 rounded-xl text-[10px] font-bold text-indigo-700 flex items-center justify-center gap-1 transition-all cursor-pointer shadow-2xs"
+              >
+                <Plus className="w-3 h-3" />
+                새 아두이노 기능 등록하기
+              </button>
             </div>
 
             <button 
@@ -1617,7 +1822,7 @@ export default function SodabotSettingsScreen() {
                 }), "단일 버튼 동작 설정 저장 및 전송");
                 showToast('단일 버튼 동작 설정이 저장 및 소다봇에 적용되었습니다!');
               }}
-              className="mt-4 w-full py-2.5 bg-rose-400 hover:bg-rose-500 text-white text-xs font-bold rounded-xl transition-colors shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
+              className="mt-3 w-full py-2.5 bg-rose-400 hover:bg-rose-500 text-white text-xs font-bold rounded-xl transition-colors shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <Save className="w-3.5 h-3.5" />
               저장 후 소다봇에 적용
@@ -1768,10 +1973,355 @@ export default function SodabotSettingsScreen() {
           </div>
         </div>
 
+        {/* ========================================================================= */}
+        {/* Section: 내 기능 (MY FUNCTIONS) - 아두이노 사용자 정의 기능 등록 및 버튼 연결 */}
+        {/* ========================================================================= */}
+        <div className="bg-white border-2 border-indigo-400/30 hover:border-indigo-400/50 rounded-3xl p-6 lg:p-7 shadow-sm transition-all space-y-6">
+          
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#EAE6DF] pb-5">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-600 text-lg font-bold shadow-2xs">
+                  ✨
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-base font-bold text-[#1D1D1F]">내 기능</h2>
+                    <span className="text-[10px] font-extrabold text-indigo-600 bg-indigo-50 px-2.5 py-0.5 rounded-lg border border-indigo-200/80 uppercase tracking-wider">
+                      MY FUNCTIONS
+                    </span>
+                  </div>
+                  <p className="text-xs text-[#86868B] mt-0.5">
+                    Arduino에서 만든 기능을 등록하면 버튼 동작으로 사용할 수 있습니다.
+                  </p>
+                </div>
+              </div>
+            </div>
 
+            <button
+              onClick={handleOpenNewFuncModal}
+              className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-2xl shadow-sm hover:shadow transition-all flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+            >
+              <Plus className="w-4 h-4" />
+              + 새 기능 등록
+            </button>
+          </div>
 
+          {/* Educational Workflow Banner */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-[#FAF9F6] p-3 rounded-2xl border border-[#EAE6DF] text-center">
+            <div className="flex items-center justify-center gap-2 p-1.5 text-xs font-bold text-[#5C5B57]">
+              <span className="w-5 h-5 rounded-full bg-white border border-[#EAE6DF] text-[10px] font-bold flex items-center justify-center text-indigo-600 shadow-2xs shrink-0">1</span>
+              <span className="truncate">Arduino 기능 개발</span>
+            </div>
+            <div className="flex items-center justify-center gap-2 p-1.5 text-xs font-bold text-[#5C5B57]">
+              <span className="w-5 h-5 rounded-full bg-white border border-[#EAE6DF] text-[10px] font-bold flex items-center justify-center text-indigo-600 shadow-2xs shrink-0">2</span>
+              <span className="truncate">SODA TALK 기능 등록</span>
+            </div>
+            <div className="flex items-center justify-center gap-2 p-1.5 text-xs font-bold text-[#5C5B57]">
+              <span className="w-5 h-5 rounded-full bg-white border border-[#EAE6DF] text-[10px] font-bold flex items-center justify-center text-indigo-600 shadow-2xs shrink-0">3</span>
+              <span className="truncate">물리 버튼에 연결</span>
+            </div>
+            <div className="flex items-center justify-center gap-2 p-1.5 text-xs font-bold text-[#5C5B57]">
+              <span className="w-5 h-5 rounded-full bg-white border border-[#EAE6DF] text-[10px] font-bold flex items-center justify-center text-indigo-600 shadow-2xs shrink-0">4</span>
+              <span className="truncate">소다봇에서 실행</span>
+            </div>
+          </div>
+
+          {/* Custom Functions Cards Grid */}
+          {customFunctions.length === 0 ? (
+            <div className="text-center py-12 px-4 bg-[#FAF9F6] rounded-2xl border border-dashed border-[#D2CFC7] space-y-3">
+              <div className="text-4xl">🧩</div>
+              <div className="space-y-1">
+                <p className="text-xs font-bold text-[#1D1D1F]">아직 등록된 기능이 없습니다.</p>
+                <p className="text-[11px] text-[#86868B]">
+                  Arduino에서 개발한 함수(예: showClock, getWeather)를 등록하고 소다봇 버튼에 연결해 보세요!
+                </p>
+              </div>
+              <button
+                onClick={handleOpenNewFuncModal}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-white hover:bg-indigo-50 border border-[#EAE6DF] hover:border-indigo-300 text-xs font-bold text-indigo-600 rounded-xl transition-all shadow-2xs cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                + 새 기능 등록하기
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {customFunctions.map((fn) => {
+                const isConnectedSingle = btnSingleClick === `custom:${fn.functionName}`;
+                const isConnectedDouble = btnDoubleClick === `custom:${fn.functionName}`;
+                const isConnectedLong = btnLongPress === `custom:${fn.functionName}`;
+                const connectedButtons = [
+                  isConnectedSingle && '한 번 누름',
+                  isConnectedDouble && '더블 클릭',
+                  isConnectedLong && '길게 누름'
+                ].filter(Boolean) as string[];
+
+                return (
+                  <div
+                    key={fn.id}
+                    className="bg-[#FAF9F6] border border-[#EAE6DF] hover:border-indigo-300 rounded-2xl p-4.5 space-y-3.5 shadow-2xs hover:shadow-xs transition-all flex flex-col justify-between"
+                  >
+                    <div className="space-y-2.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="font-bold text-sm text-[#1D1D1F] flex items-center gap-1.5">
+                          <span>💡</span> {fn.name}
+                        </div>
+                        {connectedButtons.length > 0 && (
+                          <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-md shrink-0 flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                            버튼 연결됨
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="bg-white px-3 py-2 rounded-xl border border-[#EAE6DF] font-mono text-[11px] text-indigo-600 flex items-center justify-between shadow-2xs">
+                        <span className="text-[#86868B] font-sans text-[10px] font-medium">함수명:</span>
+                        <span className="font-bold bg-indigo-50/70 px-1.5 py-0.5 rounded border border-indigo-100">
+                          {fn.functionName}()
+                        </span>
+                      </div>
+
+                      <p className="text-[11px] text-[#5C5B57] leading-relaxed line-clamp-2">
+                        {fn.description || '등록된 기능 설명이 없습니다.'}
+                      </p>
+
+                      {connectedButtons.length > 0 && (
+                        <div className="text-[10px] font-semibold text-emerald-700 bg-emerald-50/70 p-2 rounded-xl border border-emerald-200/60 flex items-center gap-1.5">
+                          <span>🔗</span>
+                          <span>연결된 버튼: <strong>{connectedButtons.join(', ')}</strong></span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="pt-2 border-t border-[#EAE6DF]/80 flex items-center gap-1.5">
+                      <button
+                        onClick={() => setConnectTargetFunc(fn)}
+                        className="flex-1 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] font-bold rounded-xl border border-indigo-200/70 transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                      >
+                        <Link className="w-3 h-3" />
+                        버튼에 연결
+                      </button>
+                      <button
+                        onClick={() => handleOpenEditFuncModal(fn)}
+                        className="px-2.5 py-1.5 bg-white hover:bg-neutral-100 text-[#5C5B57] text-[11px] font-bold rounded-xl border border-[#EAE6DF] transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                        title="수정"
+                      >
+                        <Edit3 className="w-3 h-3" />
+                        수정
+                      </button>
+                      <button
+                        onClick={() => handleDeleteCustomFunction(fn.id, fn.name)}
+                        className="px-2.5 py-1.5 bg-white hover:bg-rose-50 text-rose-600 hover:text-rose-700 text-[11px] font-bold rounded-xl border border-[#EAE6DF] hover:border-rose-200 transition-colors flex items-center justify-center cursor-pointer"
+                        title="삭제"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
 
       </div>
+
+
+
+      {/* Modal: 새 기능 등록 / 수정 모달 (showFuncModal) */}
+      {showFuncModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white border border-[#EAE6DF] rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5">
+            
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-[#EAE6DF] pb-3.5">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-2xl bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-600 text-lg font-bold">
+                  ✨
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-[#1D1D1F]">
+                    {editingFunc ? '기능 정보 수정' : '새 기능 등록'}
+                  </h3>
+                  <p className="text-[11px] text-[#86868B]">
+                    Arduino에서 만든 함수를 SODA TALK에 등록해요.
+                  </p>
+                </div>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setShowFuncModal(false)}
+                className="w-7 h-7 rounded-full bg-[#FAF9F6] border border-[#EAE6DF] flex items-center justify-center text-xs text-[#86868B] hover:text-[#1D1D1F] cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Form */}
+            <form onSubmit={handleSaveCustomFunction} className="space-y-4">
+              
+              {/* 1. 기능 이름 */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-[#1D1D1F] flex items-center justify-between">
+                  <span>기능 이름</span>
+                  <span className="text-[10px] text-rose-500 font-normal">* 필수</span>
+                </label>
+                <input
+                  type="text"
+                  value={funcNameInput}
+                  onChange={(e) => setFuncNameInput(e.target.value)}
+                  placeholder="예: 인터넷 시계, 날씨 정보, 공부 타이머"
+                  className="w-full px-3.5 py-2.5 bg-[#FAF9F6] border border-[#EAE6DF] focus:border-indigo-500 focus:bg-white rounded-xl text-xs font-medium text-[#1D1D1F] outline-none transition-all"
+                  required
+                />
+                <p className="text-[10px] text-[#86868B]">버튼 동작 목록과 소다톡 화면에 표시될 직관적인 한글 이름입니다.</p>
+              </div>
+
+              {/* 2. 함수 이름 */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-[#1D1D1F] flex items-center justify-between">
+                  <span>함수 이름 (Arduino Function)</span>
+                  <span className="text-[10px] text-rose-500 font-normal">* 필수</span>
+                </label>
+                <input
+                  type="text"
+                  value={funcIdentifierInput}
+                  onChange={(e) => setFuncIdentifierInput(e.target.value)}
+                  placeholder="예: showClock, getWeather, startTimer"
+                  className="w-full px-3.5 py-2.5 bg-[#FAF9F6] border border-[#EAE6DF] focus:border-indigo-500 focus:bg-white rounded-xl text-xs font-mono text-indigo-700 outline-none transition-all"
+                  required
+                />
+                <div className="p-2 bg-indigo-50/60 rounded-xl border border-indigo-100 text-[10px] text-indigo-900 leading-snug">
+                  💡 <strong>Arduino 코드</strong>에서 작성한 함수명과 동일하게 입력하세요.<br />
+                  <span className="font-mono text-indigo-600">예: void <strong>showClock</strong>() {'{ ... }'}</span>
+                </div>
+              </div>
+
+              {/* 3. 설명 */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-[#1D1D1F]">
+                  기능 설명 (선택)
+                </label>
+                <textarea
+                  value={funcDescInput}
+                  onChange={(e) => setFuncDescInput(e.target.value)}
+                  rows={2}
+                  placeholder="예: 인터넷에서 현재 시간을 가져와 화면에 표시합니다."
+                  className="w-full px-3.5 py-2 bg-[#FAF9F6] border border-[#EAE6DF] focus:border-indigo-500 focus:bg-white rounded-xl text-xs font-medium text-[#1D1D1F] outline-none transition-all resize-none"
+                />
+              </div>
+
+              {/* Action Buttons */}
+              <div className="pt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowFuncModal(false)}
+                  className="flex-1 py-2.5 bg-[#FAF9F6] hover:bg-[#EAE6DF] text-[#5C5B57] text-xs font-bold rounded-xl transition-colors cursor-pointer"
+                >
+                  취소
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-sm transition-colors cursor-pointer"
+                >
+                  {editingFunc ? '수정 완료' : '기능 등록'}
+                </button>
+              </div>
+
+            </form>
+
+          </div>
+        </div>
+      )}
+
+
+
+      {/* Modal: 버튼에 빠른 연결 모달 (connectTargetFunc) */}
+      {connectTargetFunc && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white border border-[#EAE6DF] rounded-3xl max-w-sm w-full p-6 shadow-2xl space-y-4">
+            
+            <div className="flex items-center justify-between border-b border-[#EAE6DF] pb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-base">🔗</span>
+                <div>
+                  <h3 className="text-sm font-bold text-[#1D1D1F]">물리 버튼 동작에 연결</h3>
+                  <p className="text-[10px] text-[#86868B]">{connectTargetFunc.name} ({connectTargetFunc.functionName}())</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setConnectTargetFunc(null)}
+                className="w-6 h-6 rounded-full bg-[#FAF9F6] border border-[#EAE6DF] flex items-center justify-center text-xs text-[#86868B] hover:text-[#1D1D1F] cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-[#5C5B57]">
+              어떤 버튼 동작에 <strong>'{connectTargetFunc.name}'</strong> 기능을 연결할까요?
+            </p>
+
+            <div className="space-y-2">
+              <button
+                onClick={() => handleConnectToButton(connectTargetFunc, 'single')}
+                className="w-full p-3 bg-[#FAF9F6] hover:bg-indigo-50 border border-[#EAE6DF] hover:border-indigo-300 rounded-2xl flex items-center justify-between transition-all cursor-pointer group"
+              >
+                <div className="flex items-center gap-2 text-left">
+                  <span className="text-base">🔘</span>
+                  <div>
+                    <div className="text-xs font-bold text-[#1D1D1F] group-hover:text-indigo-600">한 번 누름 (클릭)</div>
+                    <div className="text-[10px] text-[#86868B]">
+                      현재: {btnSingleClick.startsWith('custom:') ? btnSingleClick.replace('custom:', '⚙️ ') : btnSingleClick}
+                    </div>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-[#86868B] group-hover:text-indigo-600 group-hover:translate-x-0.5 transition-all" />
+              </button>
+
+              <button
+                onClick={() => handleConnectToButton(connectTargetFunc, 'double')}
+                className="w-full p-3 bg-[#FAF9F6] hover:bg-indigo-50 border border-[#EAE6DF] hover:border-indigo-300 rounded-2xl flex items-center justify-between transition-all cursor-pointer group"
+              >
+                <div className="flex items-center gap-2 text-left">
+                  <span className="text-base">⚡️</span>
+                  <div>
+                    <div className="text-xs font-bold text-[#1D1D1F] group-hover:text-indigo-600">더블 클릭 (2회)</div>
+                    <div className="text-[10px] text-[#86868B]">
+                      현재: {btnDoubleClick.startsWith('custom:') ? btnDoubleClick.replace('custom:', '⚙️ ') : btnDoubleClick}
+                    </div>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-[#86868B] group-hover:text-indigo-600 group-hover:translate-x-0.5 transition-all" />
+              </button>
+
+              <button
+                onClick={() => handleConnectToButton(connectTargetFunc, 'long')}
+                className="w-full p-3 bg-[#FAF9F6] hover:bg-indigo-50 border border-[#EAE6DF] hover:border-indigo-300 rounded-2xl flex items-center justify-between transition-all cursor-pointer group"
+              >
+                <div className="flex items-center gap-2 text-left">
+                  <span className="text-base">⏳</span>
+                  <div>
+                    <div className="text-xs font-bold text-[#1D1D1F] group-hover:text-indigo-600">길게 누름 (1초)</div>
+                    <div className="text-[10px] text-[#86868B]">
+                      현재: {btnLongPress.startsWith('custom:') ? btnLongPress.replace('custom:', '⚙️ ') : btnLongPress}
+                    </div>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-[#86868B] group-hover:text-indigo-600 group-hover:translate-x-0.5 transition-all" />
+              </button>
+            </div>
+
+            <button
+              onClick={() => setConnectTargetFunc(null)}
+              className="w-full py-2 text-xs font-semibold text-[#86868B] hover:text-[#1D1D1F] transition-colors cursor-pointer"
+            >
+              닫기
+            </button>
+          </div>
+        </div>
+      )}
 
 
 
