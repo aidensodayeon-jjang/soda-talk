@@ -689,17 +689,30 @@ export default function SodabotSettingsScreen() {
 
     const slotObj = USER_FUNCTION_SLOTS.find(s => s.slot === selectedSlot) || USER_FUNCTION_SLOTS[0];
 
+    // Check if slot is already occupied by another function
+    const existingInSlot = customFunctions.find(item => item.slot === slotObj.slot && (!editingFunc || item.id !== editingFunc.id));
+    if (existingInSlot) {
+      if (!window.confirm(`'${slotObj.displayName}'에는 이미 '${existingInSlot.name}' 기능이 등록되어 있습니다.\n덮어쓰시겠습니까?`)) {
+        return;
+      }
+    }
+
     let updatedList: Array<{ id: string; name: string; slot: string; arduinoFunction: string; description: string; createdAt?: number }>;
     if (editingFunc) {
-      updatedList = customFunctions.map(item => item.id === editingFunc.id ? {
-        ...item,
+      // Remove any other function that was occupying this slot if overwriting
+      const filtered = customFunctions.filter(item => item.id !== editingFunc.id && item.slot !== slotObj.slot);
+      const updatedItem = {
+        ...editingFunc,
         name: trimmedName,
         slot: slotObj.slot,
         arduinoFunction: slotObj.arduinoFunction,
         description: trimmedDesc
-      } : item);
+      };
+      updatedList = [...filtered, updatedItem];
       showToast(`'${trimmedName}' 기능 정보가 수정되었습니다.`);
     } else {
+      // Remove occupied item if overwriting
+      const filtered = customFunctions.filter(item => item.slot !== slotObj.slot);
       const newItem = {
         id: `func_${Date.now()}`,
         name: trimmedName,
@@ -708,7 +721,7 @@ export default function SodabotSettingsScreen() {
         description: trimmedDesc,
         createdAt: Date.now()
       };
-      updatedList = [...customFunctions, newItem];
+      updatedList = [...filtered, newItem];
       showToast(`✨ 새 기능 '${trimmedName}'이(가) 등록되었습니다!`);
     }
 
@@ -2176,7 +2189,7 @@ export default function SodabotSettingsScreen() {
                     {editingFunc ? '기능 정보 수정' : '새 기능 등록'}
                   </h3>
                   <p className="text-[11px] text-[#787774]">
-                    Arduino에서 만든 기능을 등록합니다.
+                    Arduino에서 만든 기능을 등록해요.
                   </p>
                 </div>
               </div>
@@ -2190,7 +2203,7 @@ export default function SodabotSettingsScreen() {
             </div>
 
             {/* Form */}
-            <form onSubmit={handleSaveCustomFunction} className="space-y-3.5">
+            <form onSubmit={handleSaveCustomFunction} className="space-y-4">
               
               {/* 1. 기능 이름 */}
               <div className="space-y-1">
@@ -2208,33 +2221,60 @@ export default function SodabotSettingsScreen() {
                 />
               </div>
 
-              {/* 2. 사용자 함수 선택 */}
-              <div className="space-y-1">
+              {/* 2. 어디에 저장할까요? (3개 슬롯 카드 선택) */}
+              <div className="space-y-1.5">
                 <label className="text-xs font-bold text-[#191919] flex items-center justify-between">
-                  <span>사용자 함수 선택</span>
+                  <span>어디에 저장할까요?</span>
                   <span className="text-[10px] text-rose-500 font-normal">* 필수</span>
                 </label>
-                <div className="relative">
-                  <select
-                    value={selectedSlot}
-                    onChange={(e) => setSelectedSlot(e.target.value)}
-                    className="w-full px-3 py-2 bg-white border border-[#E5E5E3] focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 rounded-xl text-xs font-semibold text-[#191919] outline-none transition-all appearance-none cursor-pointer"
-                  >
-                    {USER_FUNCTION_SLOTS.map((slot) => (
-                      <option key={slot.slot} value={slot.slot}>
-                        {slot.displayName}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown className="w-4 h-4 text-[#787774] absolute right-3 top-2.5 pointer-events-none" />
-                </div>
-                <div className="flex items-center justify-between pt-0.5 px-0.5">
-                  <span className="text-[11px] font-mono font-bold text-blue-600">
-                    {USER_FUNCTION_SLOTS.find(s => s.slot === selectedSlot)?.arduinoFunction}()
-                  </span>
-                  <span className="text-[10px] text-[#787774]">
-                    Arduino에서 코드를 작성한 함수 슬롯을 선택하세요.
-                  </span>
+
+                <div className="grid grid-cols-3 gap-2">
+                  {USER_FUNCTION_SLOTS.map((slot) => {
+                    const isSelected = selectedSlot === slot.slot;
+                    const existingFn = customFunctions.find(fn => fn.slot === slot.slot && (!editingFunc || fn.id !== editingFunc.id));
+                    const isCurrentEditingSlot = editingFunc && editingFunc.slot === slot.slot;
+
+                    return (
+                      <button
+                        key={slot.slot}
+                        type="button"
+                        onClick={() => setSelectedSlot(slot.slot)}
+                        className={`p-2.5 rounded-xl border text-left flex flex-col justify-between gap-1.5 transition-all cursor-pointer ${
+                          isSelected 
+                            ? 'border-blue-600 bg-blue-50/50 ring-2 ring-blue-500/20' 
+                            : 'border-[#E5E5E3] bg-white hover:border-neutral-300 hover:bg-[#FBFBFA]'
+                        }`}
+                      >
+                        <div className="space-y-0.5 w-full">
+                          <div className={`text-xs font-bold truncate ${isSelected ? 'text-blue-700' : 'text-[#191919]'}`}>
+                            {slot.displayName}
+                          </div>
+                          
+                          {/* Slot Status */}
+                          <div className="text-[10px] truncate">
+                            {existingFn ? (
+                              <span className="font-semibold text-neutral-700 truncate block">
+                                {existingFn.name}
+                              </span>
+                            ) : isCurrentEditingSlot ? (
+                              <span className="text-blue-600 font-semibold truncate block">
+                                현재 슬롯
+                              </span>
+                            ) : (
+                              <span className="text-neutral-400 font-normal">
+                                비어 있음
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Arduino Function Subtext */}
+                        <div className="text-[9px] font-mono text-[#86868B] truncate pt-1 border-t border-neutral-100">
+                          {slot.arduinoFunction}()
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
