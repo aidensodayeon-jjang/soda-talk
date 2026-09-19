@@ -1,6 +1,8 @@
 // SODABOT BASIC: ESP32-S3, BLE/Wi-Fi/USB 명령 및 기본 표정
 #include <Arduino.h>
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <Preferences.h>
 #include <driver/i2s.h>
