@@ -273,35 +273,43 @@ export function generateCustomFirmware(
   );
 
   // ④ FUNCTION 및 슬롯 자동 연결
-  // 대상 슬롯(예: CUSTOM_1)의 customFunction1() 내부에서 대표 함수를 호출할 수 있도록 슬롯 내부 코드 업데이트
-  const targetSlot = parts.targetSlot || 'CUSTOM_1';
-  let slotCallSnippet = '';
-  if (mainFunctionName) {
-    slotCallSnippet = `\n  // 커스텀 기능 [${parts.name}] 자동 실행\n  ${mainFunctionName}();`;
-  }
-
-  if (targetSlot === 'CUSTOM_1') {
-    merged = merged.replace(
-      /(void customFunction1\(\) \{[\s\S]*?)(drawMessage\([^)]+\);)/,
-      `$1${slotCallSnippet}\n  $2`
-    );
-  } else if (targetSlot === 'CUSTOM_2') {
-    merged = merged.replace(
-      /(void customFunction2\(\) \{[\s\S]*?)(drawMessage\([^)]+\);)/,
-      `$1${slotCallSnippet}\n  $2`
-    );
-  } else if (targetSlot === 'CUSTOM_3') {
-    merged = merged.replace(
-      /(void customFunction3\(\) \{[\s\S]*?)(drawMessage\([^)]+\);)/,
-      `$1${slotCallSnippet}\n  $2`
-    );
-  }
-
   const functionsBlock = cleanFunctions ? `\n// ==============================================================================\n// [CUSTOM FUNCTION: ${parts.name}]\n// ==============================================================================\n${cleanFunctions}\n` : '';
   merged = merged.replace(
     /\/\/\s*===\s*CUSTOM_FUNCTIONS_START\s*===[\s\S]*?\/\/\s*===\s*CUSTOM_FUNCTIONS_END\s*===/,
     `// === CUSTOM_FUNCTIONS_START ===${functionsBlock}// === CUSTOM_FUNCTIONS_END ===`
   );
+
+  const targetSlot = parts.targetSlot || 'CUSTOM_1';
+
+  // customFunction1 중복 정의 방지 및 연결
+  if (/\bvoid\s+customFunction1\s*\(\s*\)/.test(cleanFunctions)) {
+    merged = merged.replace(/void customFunction1\(\)\s*\{[\s\S]*?\n\}/, '// (customFunction1은 상단 커스텀 영역에서 정의됨)');
+  } else if (targetSlot === 'CUSTOM_1' && mainFunctionName && mainFunctionName !== 'customFunction1') {
+    merged = merged.replace(
+      /void customFunction1\(\)\s*\{[\s\S]*?\n\}/,
+      `void customFunction1() {\n  Serial.println("[MY FUNCTION] customFunction1() 실행");\n  ${mainFunctionName}();\n}`
+    );
+  }
+
+  // customFunction2 중복 정의 방지 및 연결
+  if (/\bvoid\s+customFunction2\s*\(\s*\)/.test(cleanFunctions)) {
+    merged = merged.replace(/void customFunction2\(\)\s*\{[\s\S]*?\n\}/, '// (customFunction2는 상단 커스텀 영역에서 정의됨)');
+  } else if (targetSlot === 'CUSTOM_2' && mainFunctionName && mainFunctionName !== 'customFunction2') {
+    merged = merged.replace(
+      /void customFunction2\(\)\s*\{[\s\S]*?\n\}/,
+      `void customFunction2() {\n  Serial.println("[MY FUNCTION] customFunction2() 실행");\n  ${mainFunctionName}();\n}`
+    );
+  }
+
+  // customFunction3 중복 정의 방지 및 연결
+  if (/\bvoid\s+customFunction3\s*\(\s*\)/.test(cleanFunctions)) {
+    merged = merged.replace(/void customFunction3\(\)\s*\{[\s\S]*?\n\}/, '// (customFunction3는 상단 커스텀 영역에서 정의됨)');
+  } else if (targetSlot === 'CUSTOM_3' && mainFunctionName && mainFunctionName !== 'customFunction3') {
+    merged = merged.replace(
+      /void customFunction3\(\)\s*\{[\s\S]*?\n\}/,
+      `void customFunction3() {\n  Serial.println("[MY FUNCTION] customFunction3() 실행");\n  ${mainFunctionName}();\n}`
+    );
+  }
 
   return {
     mergedCode: merged,
