@@ -557,14 +557,14 @@ export default function SodabotSettingsScreen() {
   const [soundTab, setSoundTab] = useState<'basic' | 'custom'>('basic');
   const [playingSound, setPlayingSound] = useState<string | null>(null);
 
-  // 미리 준비된 아두이노 사용자 함수 슬롯 정의 (확장 가능)
+  // 미리 준비된 아두이노 기능 슬롯 정의 (슬롯 1, 2, 3)
   const USER_FUNCTION_SLOTS = [
-    { slot: 'CUSTOM_1', arduinoFunction: 'customFunction1', label: 'customFunction1()', displayName: '사용자 함수 1' },
-    { slot: 'CUSTOM_2', arduinoFunction: 'customFunction2', label: 'customFunction2()', displayName: '사용자 함수 2' },
-    { slot: 'CUSTOM_3', arduinoFunction: 'customFunction3', label: 'customFunction3()', displayName: '사용자 함수 3' },
+    { slot: 'CUSTOM_1', arduinoFunction: 'customFunction1', label: 'customFunction1()', displayName: '기능 슬롯 1' },
+    { slot: 'CUSTOM_2', arduinoFunction: 'customFunction2', label: 'customFunction2()', displayName: '기능 슬롯 2' },
+    { slot: 'CUSTOM_3', arduinoFunction: 'customFunction3', label: 'customFunction3()', displayName: '기능 슬롯 3' },
   ];
 
-  // 사용자 정의 아두이노 기능 (MY FUNCTIONS) 상태 관리
+  // 사용자 정의 아두이노 기능 (MY FUNCTIONS) 상태 관리 (기본 더미 데이터 없음)
   const [customFunctions, setCustomFunctions] = useState<Array<{
     id: string;
     name: string;
@@ -577,37 +577,32 @@ export default function SodabotSettingsScreen() {
       const saved = localStorage.getItem('sodabot_custom_functions');
       if (saved) {
         const parsed = JSON.parse(saved);
-        return parsed.map((item: any, idx: number) => {
-          const slotObj = USER_FUNCTION_SLOTS.find(s => s.slot === item.slot || s.arduinoFunction === item.functionName || s.arduinoFunction === item.arduinoFunction)
-            || USER_FUNCTION_SLOTS[idx % USER_FUNCTION_SLOTS.length];
-          return {
-            id: item.id || `func_${Date.now()}_${idx}`,
-            name: item.name || '인터넷 시계',
-            slot: slotObj.slot,
-            arduinoFunction: slotObj.arduinoFunction,
-            description: item.description || '',
-            createdAt: item.createdAt || Date.now()
-          };
-        });
+        // Remove legacy demo if present without explicit user creation
+        return parsed
+          .filter((item: any) => item.id !== 'func_clock_demo')
+          .map((item: any, idx: number) => {
+            const slotObj = USER_FUNCTION_SLOTS.find(s => s.slot === item.slot || s.arduinoFunction === item.functionName || s.arduinoFunction === item.arduinoFunction)
+              || USER_FUNCTION_SLOTS[idx % USER_FUNCTION_SLOTS.length];
+            return {
+              id: item.id || `func_${Date.now()}_${idx}`,
+              name: item.name || `기능 ${idx + 1}`,
+              slot: slotObj.slot,
+              arduinoFunction: slotObj.arduinoFunction,
+              description: item.description || '',
+              createdAt: item.createdAt || Date.now()
+            };
+          });
       }
-      return [
-        {
-          id: 'func_clock_demo',
-          name: '인터넷 시계',
-          slot: 'CUSTOM_1',
-          arduinoFunction: 'customFunction1',
-          description: '인터넷에서 현재 시간을 가져와 화면에 표시합니다.',
-          createdAt: Date.now()
-        }
-      ];
+      return [];
     } catch {
       return [];
     }
   });
 
-  // 새 기능 등록 / 수정 모달 상태
-  const [showFuncModal, setShowFuncModal] = useState(false);
-  const [editingFunc, setEditingFunc] = useState<{ id: string; name: string; slot: string; arduinoFunction: string; description: string; createdAt?: number } | null>(null);
+  // 모달 상태 관리
+  const [showFuncModal, setShowFuncModal] = useState(false); // 새 기능 등록 모달
+  const [editingFunc, setEditingFunc] = useState<{ id: string; name: string; slot: string; arduinoFunction: string; description: string; createdAt?: number } | null>(null); // 수정 모달
+  const [deletingFunc, setDeletingFunc] = useState<{ id: string; name: string; slot: string; arduinoFunction: string } | null>(null); // 삭제 확인 모달
   const [funcNameInput, setFuncNameInput] = useState('');
   const [selectedSlot, setSelectedSlot] = useState('CUSTOM_1');
   const [funcDescInput, setFuncDescInput] = useState('');
@@ -646,7 +641,7 @@ export default function SodabotSettingsScreen() {
     } else {
       setBootingState(null);
       // 1. Check custom expressions
-      const foundCustom = customExprList.find(c => face.includes(c.label) || face.includes(c.id) || face.includes(`[내 표정] ${c.label}`));
+      const foundCustom = customExprList.find(c => face.includes(c.label) || face.includes(c.id));
       if (foundCustom) {
         triggerCustomExpression(foundCustom);
         return;
@@ -659,25 +654,18 @@ export default function SodabotSettingsScreen() {
     }
   };
 
+  // 1. 새 기능 등록 모달 열기 (비어 있는 첫 번째 슬롯 자동 선택)
   const handleOpenNewFuncModal = () => {
-    setEditingFunc(null);
     setFuncNameInput('');
+    setFuncDescInput('');
     const usedSlots = customFunctions.map(f => f.slot);
     const availableSlot = USER_FUNCTION_SLOTS.find(s => !usedSlots.includes(s.slot)) || USER_FUNCTION_SLOTS[0];
     setSelectedSlot(availableSlot.slot);
-    setFuncDescInput('');
     setShowFuncModal(true);
   };
 
-  const handleOpenEditFuncModal = (fn: { id: string; name: string; slot: string; arduinoFunction: string; description: string; createdAt?: number }) => {
-    setEditingFunc(fn);
-    setFuncNameInput(fn.name);
-    setSelectedSlot(fn.slot);
-    setFuncDescInput(fn.description);
-    setShowFuncModal(true);
-  };
-
-  const handleSaveCustomFunction = (e: React.FormEvent) => {
+  // 새 기능 등록 제출
+  const handleSaveNewFunction = (e: React.FormEvent) => {
     e.preventDefault();
     const trimmedName = funcNameInput.trim();
     const trimmedDesc = funcDescInput.trim();
@@ -687,56 +675,119 @@ export default function SodabotSettingsScreen() {
       return;
     }
 
+    // 이미 사용 중인 슬롯인지 확인
+    if (customFunctions.some(f => f.slot === selectedSlot)) {
+      alert('이미 다른 기능이 저장된 슬롯입니다. 비어 있는 슬롯을 선택해주세요.');
+      return;
+    }
+
     const slotObj = USER_FUNCTION_SLOTS.find(s => s.slot === selectedSlot) || USER_FUNCTION_SLOTS[0];
+    const newItem = {
+      id: `func_${Date.now()}`,
+      name: trimmedName,
+      slot: slotObj.slot,
+      arduinoFunction: slotObj.arduinoFunction,
+      description: trimmedDesc,
+      createdAt: Date.now()
+    };
 
-    // Check if slot is already occupied by another function
-    const existingInSlot = customFunctions.find(item => item.slot === slotObj.slot && (!editingFunc || item.id !== editingFunc.id));
-    if (existingInSlot) {
-      if (!window.confirm(`'${slotObj.displayName}'에는 이미 '${existingInSlot.name}' 기능이 등록되어 있습니다.\n덮어쓰시겠습니까?`)) {
-        return;
-      }
-    }
-
-    let updatedList: Array<{ id: string; name: string; slot: string; arduinoFunction: string; description: string; createdAt?: number }>;
-    if (editingFunc) {
-      // Remove any other function that was occupying this slot if overwriting
-      const filtered = customFunctions.filter(item => item.id !== editingFunc.id && item.slot !== slotObj.slot);
-      const updatedItem = {
-        ...editingFunc,
-        name: trimmedName,
-        slot: slotObj.slot,
-        arduinoFunction: slotObj.arduinoFunction,
-        description: trimmedDesc
-      };
-      updatedList = [...filtered, updatedItem];
-      showToast(`'${trimmedName}' 기능 정보가 수정되었습니다.`);
-    } else {
-      // Remove occupied item if overwriting
-      const filtered = customFunctions.filter(item => item.slot !== slotObj.slot);
-      const newItem = {
-        id: `func_${Date.now()}`,
-        name: trimmedName,
-        slot: slotObj.slot,
-        arduinoFunction: slotObj.arduinoFunction,
-        description: trimmedDesc,
-        createdAt: Date.now()
-      };
-      updatedList = [...filtered, newItem];
-      showToast(`✨ 새 기능 '${trimmedName}'이(가) 등록되었습니다!`);
-    }
-
+    const updatedList = [...customFunctions, newItem];
     setCustomFunctions(updatedList);
     localStorage.setItem('sodabot_custom_functions', JSON.stringify(updatedList));
     setShowFuncModal(false);
+    showToast(`✨ 새 기능 '${trimmedName}'이(가) 등록되었습니다!`);
   };
 
-  const handleDeleteCustomFunction = (id: string, name: string) => {
-    if (window.confirm(`'${name}' 기능을 삭제하시겠습니까?`)) {
-      const updated = customFunctions.filter(item => item.id !== id);
-      setCustomFunctions(updated);
-      localStorage.setItem('sodabot_custom_functions', JSON.stringify(updated));
-      showToast(`'${name}' 기능이 삭제되었습니다.`);
+  // 2. 기능 수정 모달 열기
+  const handleOpenEditFuncModal = (fn: { id: string; name: string; slot: string; arduinoFunction: string; description: string; createdAt?: number }) => {
+    setEditingFunc(fn);
+    setFuncNameInput(fn.name);
+    setFuncDescInput(fn.description);
+  };
+
+  // 기능 수정 저장
+  const handleSaveEditFunction = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingFunc) return;
+
+    const trimmedName = funcNameInput.trim();
+    const trimmedDesc = funcDescInput.trim();
+
+    if (!trimmedName) {
+      alert('기능 이름을 입력해주세요.');
+      return;
     }
+
+    const updatedList = customFunctions.map(item => {
+      if (item.id === editingFunc.id) {
+        return {
+          ...item,
+          name: trimmedName,
+          description: trimmedDesc
+        };
+      }
+      return item;
+    });
+
+    setCustomFunctions(updatedList);
+    localStorage.setItem('sodabot_custom_functions', JSON.stringify(updatedList));
+    setEditingFunc(null);
+    showToast(`'${trimmedName}' 기능이 수정되었습니다.`);
+  };
+
+  // 3. 기능 삭제 확인 모달 열기
+  const handleRequestDeleteFunction = (fn: { id: string; name: string; slot: string; arduinoFunction: string }) => {
+    setDeletingFunc(fn);
+  };
+
+  // 기능 삭제 확정 (SODA TALK 등록 및 버튼 연결만 해제, Arduino 코드는 보존)
+  const handleConfirmDeleteFunction = () => {
+    if (!deletingFunc) return;
+
+    const deletedName = deletingFunc.name;
+    const deletedSlot = deletingFunc.slot;
+
+    // 1. 등록 목록에서 삭제
+    const updated = customFunctions.filter(item => item.id !== deletingFunc.id);
+    setCustomFunctions(updated);
+    localStorage.setItem('sodabot_custom_functions', JSON.stringify(updated));
+
+    // 2. 물리 버튼에 연결되어 있었다면 기본 기능으로 리셋
+    const customSlotKey = `custom:${deletedSlot}`;
+    let singleVal = btnSingleClick;
+    let doubleVal = btnDoubleClick;
+    let longVal = btnLongPress;
+    let changed = false;
+
+    if (btnSingleClick === customSlotKey) {
+      singleVal = 'random_face';
+      setBtnSingleClick(singleVal);
+      localStorage.setItem('sodabot_btn_single', singleVal);
+      changed = true;
+    }
+    if (btnDoubleClick === customSlotKey) {
+      doubleVal = 'happy_face';
+      setBtnDoubleClick(doubleVal);
+      localStorage.setItem('sodabot_btn_double', doubleVal);
+      changed = true;
+    }
+    if (btnLongPress === customSlotKey) {
+      longVal = 'greeting';
+      setBtnLongPress(longVal);
+      localStorage.setItem('sodabot_btn_long', longVal);
+      changed = true;
+    }
+
+    if (changed) {
+      sendWsCommand("set_button_action", JSON.stringify({
+        single: singleVal,
+        double: doubleVal,
+        long: longVal
+      }), "삭제된 기능 버튼 연결 해제");
+    }
+
+    setDeletingFunc(null);
+    showToast(`'${deletedName}' 기능 등록이 삭제되었습니다.`);
   };
 
   const handleConnectToButton = (fn: { id: string; name: string; slot: string; arduinoFunction: string }, targetButton: 'single' | 'double' | 'long') => {
@@ -1842,14 +1893,94 @@ export default function SodabotSettingsScreen() {
                 </div>
               </div>
 
-              {/* Quick Add Custom Function Link */}
-              <button
-                onClick={handleOpenNewFuncModal}
-                className="w-full py-2 bg-white hover:bg-neutral-50 border border-[#E5E5E3] rounded-xl text-[11px] font-semibold text-blue-600 flex items-center justify-center gap-1 transition-all cursor-pointer shadow-2xs"
-              >
-                <Plus className="w-3.5 h-3.5 text-blue-600" />
-                새 아두이노 기능 등록하기
-              </button>
+              {/* 내가 등록한 기능 목록 */}
+              <div className="space-y-1.5 pt-2 border-t border-[#E5E5E3]">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-[#191919]">
+                    내가 등록한 기능 ({customFunctions.length}/3)
+                  </span>
+                  <span className="text-[9px] text-[#787774]">슬롯 관리</span>
+                </div>
+
+                {customFunctions.length === 0 ? (
+                  <div className="p-3 bg-[#FBFBFA] border border-[#EBEBEA] rounded-xl text-center space-y-0.5">
+                    <p className="text-[11px] font-medium text-neutral-600">
+                      아직 등록된 기능이 없습니다.
+                    </p>
+                    <p className="text-[10px] text-[#787774]">
+                      Arduino에서 코드를 작성한 후 새 기능을 등록해보세요.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {customFunctions.map((fn) => {
+                      const slotObj = USER_FUNCTION_SLOTS.find(s => s.slot === fn.slot);
+                      return (
+                        <div 
+                          key={fn.id} 
+                          className="p-2.5 bg-[#FBFBFA] border border-[#EBEBEA] rounded-xl space-y-2 transition-all hover:border-neutral-300"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-xs font-bold text-[#191919] truncate">{fn.name}</span>
+                                <span className="px-1.5 py-0.5 bg-neutral-200/70 text-neutral-700 text-[9px] font-medium rounded">
+                                  {slotObj?.displayName || fn.slot}
+                                </span>
+                                <span className="text-[9px] font-mono text-[#787774]">
+                                  {fn.arduinoFunction}()
+                                </span>
+                              </div>
+                              {fn.description && (
+                                <p className="text-[10px] text-[#787774] mt-0.5 truncate">
+                                  {fn.description}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1 pt-1 border-t border-neutral-200/50">
+                            <button
+                              onClick={() => setConnectTargetFunc(fn)}
+                              className="flex-1 py-1 px-2 bg-white hover:bg-neutral-100 text-blue-600 border border-[#E5E5E3] text-[10px] font-semibold rounded-lg flex items-center justify-center gap-1 transition-all cursor-pointer"
+                            >
+                              <Link className="w-3 h-3" />
+                              버튼에 연결
+                            </button>
+                            <button
+                              onClick={() => handleOpenEditFuncModal(fn)}
+                              className="py-1 px-2 bg-white hover:bg-neutral-100 text-neutral-700 border border-[#E5E5E3] text-[10px] font-medium rounded-lg transition-all cursor-pointer"
+                            >
+                              수정
+                            </button>
+                            <button
+                              onClick={() => handleRequestDeleteFunction(fn)}
+                              className="py-1 px-2 bg-white hover:bg-rose-50 text-neutral-500 hover:text-rose-600 border border-[#E5E5E3] text-[10px] font-medium rounded-lg transition-all cursor-pointer"
+                            >
+                              삭제
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* 새 기능 등록 버튼 */}
+                {customFunctions.length < 3 ? (
+                  <button
+                    onClick={handleOpenNewFuncModal}
+                    className="w-full py-2 bg-white hover:bg-neutral-50 border border-[#E5E5E3] rounded-xl text-[11px] font-semibold text-blue-600 flex items-center justify-center gap-1 transition-all cursor-pointer shadow-2xs mt-1"
+                  >
+                    <Plus className="w-3.5 h-3.5 text-blue-600" />
+                    새 기능 등록
+                  </button>
+                ) : (
+                  <div className="py-1.5 px-2 bg-neutral-100/70 border border-neutral-200 rounded-xl text-center text-[10px] text-neutral-500">
+                    모든 기능 슬롯(3개)이 사용 중입니다
+                  </div>
+                )}
+              </div>
             </div>
 
             <button 
@@ -1904,22 +2035,23 @@ export default function SodabotSettingsScreen() {
                       }`}
                     >
                       {/* Step Header */}
-                      <div className="flex items-center justify-between gap-1">
-                        <div className="flex items-center gap-1.5">
+                      <div className="flex items-center justify-between gap-1.5">
+                        <div className="flex items-center gap-1.5 min-w-0">
                           <input 
-                            type="checkbox" 
-                            checked={seq.enabled} 
+                            type="checkbox"
+                            checked={seq.enabled}
                             onChange={() => toggleSeqEnabled(seq.id)}
-                            className="w-3.5 h-3.5 accent-blue-600 cursor-pointer rounded"
-                            title="이 단계 켜기/끄기"
+                            className="w-3.5 h-3.5 text-blue-600 rounded border-neutral-300 focus:ring-blue-500 cursor-pointer"
                           />
-                          <span className="font-mono font-semibold text-neutral-600 text-[10px]">{index + 1}</span>
                           <span className="text-xs">{seq.icon}</span>
-                          <span className="text-[11px] font-medium text-[#191919] truncate max-w-[80px]">{seq.name}</span>
+                          <span className="text-[11px] font-bold text-[#191919] truncate">{seq.label}</span>
+                          <span className="text-[9px] text-[#787774] truncate max-w-[80px]">
+                            {seq.type === 'greeting' ? `"${seq.value}"` : seq.type === 'expression' ? seq.value : seq.type === 'sound' ? seq.value : `${seq.duration}초`}
+                          </span>
                         </div>
 
                         {/* Reorder controls */}
-                        <div className="flex items-center gap-0.5">
+                        <div className="flex items-center gap-0.5 shrink-0">
                           <button 
                             disabled={index === 0}
                             onClick={() => moveSeqUp(index)}
@@ -2020,7 +2152,7 @@ export default function SodabotSettingsScreen() {
 
 
 
-      {/* Modal: 새 기능 등록 / 수정 모달 (showFuncModal) */}
+      {/* 1. Modal: 새 기능 등록 (showFuncModal) */}
       {showFuncModal && (
         <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
           <div className="bg-white border border-[#E5E5E3] rounded-2xl max-w-sm sm:max-w-md w-full p-5 sm:p-6 shadow-xl space-y-4">
@@ -2033,10 +2165,10 @@ export default function SodabotSettingsScreen() {
                 </div>
                 <div>
                   <h3 className="text-sm sm:text-base font-bold text-[#191919]">
-                    {editingFunc ? '기능 정보 수정' : '새 기능 등록'}
+                    새 기능 등록
                   </h3>
                   <p className="text-[11px] text-[#787774]">
-                    Arduino에서 만든 기능을 등록해요.
+                    Arduino에서 만든 기능을 SODA TALK에 등록해요.
                   </p>
                 </div>
               </div>
@@ -2050,7 +2182,7 @@ export default function SodabotSettingsScreen() {
             </div>
 
             {/* Form */}
-            <form onSubmit={handleSaveCustomFunction} className="space-y-4">
+            <form onSubmit={handleSaveNewFunction} className="space-y-4">
               
               {/* 1. 기능 이름 */}
               <div className="space-y-1">
@@ -2065,6 +2197,7 @@ export default function SodabotSettingsScreen() {
                   placeholder="예: 인터넷 시계"
                   className="w-full px-3 py-2 bg-white border border-[#E5E5E3] focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 rounded-xl text-xs font-medium text-[#191919] outline-none transition-all placeholder:text-[#A1A1A0]"
                   required
+                  autoFocus
                 />
               </div>
 
@@ -2077,35 +2210,34 @@ export default function SodabotSettingsScreen() {
 
                 <div className="grid grid-cols-3 gap-2">
                   {USER_FUNCTION_SLOTS.map((slot) => {
+                    const existingFn = customFunctions.find(fn => fn.slot === slot.slot);
                     const isSelected = selectedSlot === slot.slot;
-                    const existingFn = customFunctions.find(fn => fn.slot === slot.slot && (!editingFunc || fn.id !== editingFunc.id));
-                    const isCurrentEditingSlot = editingFunc && editingFunc.slot === slot.slot;
+                    const isUsed = !!existingFn;
 
                     return (
                       <button
                         key={slot.slot}
                         type="button"
-                        onClick={() => setSelectedSlot(slot.slot)}
-                        className={`p-2.5 rounded-xl border text-left flex flex-col justify-between gap-1.5 transition-all cursor-pointer ${
-                          isSelected 
-                            ? 'border-blue-600 bg-blue-50/50 ring-2 ring-blue-500/20' 
-                            : 'border-[#E5E5E3] bg-white hover:border-neutral-300 hover:bg-[#FBFBFA]'
+                        disabled={isUsed}
+                        onClick={() => !isUsed && setSelectedSlot(slot.slot)}
+                        className={`p-2.5 rounded-xl border text-left flex flex-col justify-between gap-1.5 transition-all ${
+                          isUsed 
+                            ? 'bg-neutral-100/80 border-neutral-200 opacity-60 cursor-not-allowed'
+                            : isSelected 
+                              ? 'border-blue-600 bg-blue-50/50 ring-2 ring-blue-500/20 cursor-pointer' 
+                              : 'border-[#E5E5E3] bg-white hover:border-neutral-300 hover:bg-[#FBFBFA] cursor-pointer'
                         }`}
                       >
                         <div className="space-y-0.5 w-full">
-                          <div className={`text-xs font-bold truncate ${isSelected ? 'text-blue-700' : 'text-[#191919]'}`}>
+                          <div className={`text-xs font-bold truncate ${isSelected && !isUsed ? 'text-blue-700' : isUsed ? 'text-neutral-500' : 'text-[#191919]'}`}>
                             {slot.displayName}
                           </div>
                           
                           {/* Slot Status */}
                           <div className="text-[10px] truncate">
-                            {existingFn ? (
-                              <span className="font-semibold text-neutral-700 truncate block">
-                                {existingFn.name}
-                              </span>
-                            ) : isCurrentEditingSlot ? (
-                              <span className="text-blue-600 font-semibold truncate block">
-                                현재 슬롯
+                            {isUsed ? (
+                              <span className="font-semibold text-neutral-500 truncate block">
+                                {existingFn.name} (사용 중)
                               </span>
                             ) : (
                               <span className="text-neutral-400 font-normal">
@@ -2152,11 +2284,183 @@ export default function SodabotSettingsScreen() {
                   type="submit"
                   className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow-2xs transition-colors cursor-pointer"
                 >
-                  {editingFunc ? '수정 완료' : '기능 등록'}
+                  기능 등록
                 </button>
               </div>
 
             </form>
+
+          </div>
+        </div>
+      )}
+
+
+
+      {/* 2. Modal: 기존 기능 정보 수정 (editingFunc) */}
+      {editingFunc && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white border border-[#E5E5E3] rounded-2xl max-w-sm sm:max-w-md w-full p-5 sm:p-6 shadow-xl space-y-4">
+            
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-[#E5E5E3] pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-neutral-100 border border-neutral-200 flex items-center justify-center text-neutral-800 text-sm font-bold">
+                  ✏️
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-bold text-[#191919]">
+                    기능 정보 수정
+                  </h3>
+                  <p className="text-[11px] text-[#787774]">
+                    등록된 기능의 이름과 설명을 수정해요.
+                  </p>
+                </div>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setEditingFunc(null)}
+                className="w-7 h-7 rounded-lg bg-[#FBFBFA] border border-[#E5E5E3] flex items-center justify-center text-xs text-[#787774] hover:text-[#191919] cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Form */}
+            <form onSubmit={handleSaveEditFunction} className="space-y-4">
+              
+              {/* 1. 기능 이름 */}
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-[#191919] flex items-center justify-between">
+                  <span>기능 이름</span>
+                  <span className="text-[10px] text-rose-500 font-normal">* 필수</span>
+                </label>
+                <input
+                  type="text"
+                  value={funcNameInput}
+                  onChange={(e) => setFuncNameInput(e.target.value)}
+                  placeholder="예: 인터넷 시계"
+                  className="w-full px-3 py-2 bg-white border border-[#E5E5E3] focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 rounded-xl text-xs font-medium text-[#191919] outline-none transition-all placeholder:text-[#A1A1A0]"
+                  required
+                />
+              </div>
+
+              {/* 2. 연결된 슬롯 (고정/유지 안내) */}
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-[#191919]">
+                  연결된 기능 슬롯
+                </label>
+                <div className="p-2.5 bg-[#FBFBFA] border border-[#EBEBEA] rounded-xl flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-bold text-[#191919]">
+                      {USER_FUNCTION_SLOTS.find(s => s.slot === editingFunc.slot)?.displayName || editingFunc.slot}
+                    </span>
+                    <span className="text-[10px] text-[#787774] ml-2">
+                      (기본 슬롯 유지)
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-mono text-[#787774]">
+                    {editingFunc.arduinoFunction}()
+                  </span>
+                </div>
+              </div>
+
+              {/* 3. 기능 설명 (선택) */}
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-[#191919]">
+                  기능 설명 (선택)
+                </label>
+                <input
+                  type="text"
+                  value={funcDescInput}
+                  onChange={(e) => setFuncDescInput(e.target.value)}
+                  placeholder="예: 현재 시간을 화면에 표시"
+                  className="w-full px-3 py-2 bg-white border border-[#E5E5E3] focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 rounded-xl text-xs font-medium text-[#191919] outline-none transition-all placeholder:text-[#A1A1A0]"
+                />
+              </div>
+
+              {/* Action Buttons */}
+              <div className="pt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingFunc(null)}
+                  className="flex-1 py-2.5 bg-white hover:bg-neutral-50 text-neutral-700 border border-[#E5E5E3] text-xs font-medium rounded-xl transition-colors cursor-pointer"
+                >
+                  취소
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow-2xs transition-colors cursor-pointer"
+                >
+                  수정 완료
+                </button>
+              </div>
+
+            </form>
+
+          </div>
+        </div>
+      )}
+
+
+
+      {/* 3. Modal: 기능 삭제 확인 모달 (deletingFunc) */}
+      {deletingFunc && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white border border-[#E5E5E3] rounded-2xl max-w-sm sm:max-w-md w-full p-5 sm:p-6 shadow-xl space-y-4">
+            
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-[#E5E5E3] pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 text-sm font-bold">
+                  🗑️
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-bold text-[#191919]">
+                    '{deletingFunc.name}' 기능을 삭제할까요?
+                  </h3>
+                  <p className="text-[11px] text-[#787774]">
+                    {USER_FUNCTION_SLOTS.find(s => s.slot === deletingFunc.slot)?.displayName || deletingFunc.slot} ({deletingFunc.arduinoFunction}())
+                  </p>
+                </div>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setDeletingFunc(null)}
+                className="w-7 h-7 rounded-lg bg-[#FBFBFA] border border-[#E5E5E3] flex items-center justify-center text-xs text-[#787774] hover:text-[#191919] cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Content & Warning */}
+            <div className="p-3.5 bg-[#FBFBFA] border border-[#EBEBEA] rounded-xl space-y-2.5 text-xs leading-relaxed">
+              <div className="flex items-start gap-2 text-neutral-700">
+                <span className="text-amber-500 font-bold shrink-0">⚠️</span>
+                <span>SODA TALK의 기능 등록과 버튼 연결이 삭제됩니다.</span>
+              </div>
+              <div className="flex items-start gap-2 text-emerald-800 bg-emerald-50/80 p-2.5 rounded-lg border border-emerald-200/80 font-medium text-[11px]">
+                <span className="shrink-0">💡</span>
+                <span>Arduino에 작성한 코드는 삭제되지 않습니다.</span>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="pt-2 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setDeletingFunc(null)}
+                className="flex-1 py-2.5 bg-white hover:bg-neutral-50 text-neutral-700 border border-[#E5E5E3] text-xs font-medium rounded-xl transition-colors cursor-pointer"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteFunction}
+                className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold rounded-xl shadow-2xs transition-colors cursor-pointer"
+              >
+                삭제
+              </button>
+            </div>
 
           </div>
         </div>
