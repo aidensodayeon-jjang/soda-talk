@@ -1,11 +1,11 @@
 import { sodabotTransport } from '../utils/sodabotTransport';
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Bot, Edit3, Save, Smile, Volume2, Sparkles, Sliders, Play, Plus, 
   Wifi, Clock, MapPin, Download, Upload, Share2, Link, RefreshCw, 
   Check, Power, Battery, Cpu, HardDrive, Thermometer, Droplets, Sun, 
   ChevronRight, HelpCircle, MessageCircle, FileText, MoveUp, MoveDown,
-  ChevronDown, Layers, ShieldCheck, Zap, Bluetooth, Usb
+  ChevronDown, Layers, ShieldCheck, Zap, Bluetooth, Usb, Trash2
 } from 'lucide-react';
 
 export default function SodabotSettingsScreen() {
@@ -17,31 +17,80 @@ export default function SodabotSettingsScreen() {
   }, []);
 
   // State variables for interactive UI controls
-  const [profileName, setProfileName] = useState('루미');
-  const [profileDesc, setProfileDesc] = useState('항상 옆에서 응원해주는 친구');
-  const [startupPrompt, setStartupPrompt] = useState(localStorage.getItem("sodabot_startup_prompt") || '소다봇 시작 테스트야. 한 문장으로 짧게 인사해줘.');
+  const [profileName, setProfileName] = useState(localStorage.getItem("sodabot_profile_name") || 'LUMI');
+  const [profileDesc, setProfileDesc] = useState(localStorage.getItem("sodabot_profile_desc") || 'Your Smart AI Companion');
+  const [startupPrompt, setStartupPrompt] = useState(localStorage.getItem("sodabot_startup_prompt") || 'Hello, I am Lumi! Ready to assist you.');
   const [exprTab, setExprTab] = useState<'basic' | 'custom'>('basic');
   const [selectedExpr, setSelectedExpr] = useState('happy');
+  const [activeCustomFace, setActiveCustomFace] = useState<any>(null);
   const exprTimeoutRef = React.useRef<any>(null);
   const sendWsCommand = (action: string, value: string, label?: string) => {
     window.dispatchEvent(new CustomEvent('sodabot-send-command', { detail: { action, value, label } }));
   };
 
+  // Hardware-compatible safe expression mapper (Guarantees no unsupported_expression errors)
+  const mapToSafeHardwareExpr = (exprId: string): string => {
+    const validHardwareExprs = ['happy', 'sad', 'angry', 'sleepy', 'surprised', 'wink', 'heart', 'confused', 'pupil', 'cat', 'idle', 'default'];
+    if (validHardwareExprs.includes(exprId)) return exprId;
+    if (exprId === 'squint' || exprId === 'thinking' || exprId === 'listening') return 'confused';
+    if (exprId === 'tongue' || exprId === 'tease') return 'wink';
+    if (exprId === 'sparkle' || exprId === 'star') return 'pupil';
+    return 'default';
+  };
+
   // Immediate Expression Execution with 3-Second Auto-Reset to Default
   const triggerExpression = (exprId: string, label: string) => {
+    setActiveCustomFace(null);
     // 1. Update preview screen immediately
     setSelectedExpr(exprId);
 
-    // 2. Send command to real hardware instantly
-    sendWsCommand("set_expression", exprId, `${label} 표정 전송`);
+    // 2. Send command to real hardware with safe mapping
+    const safeHardwareId = mapToSafeHardwareExpr(exprId);
+    sendWsCommand("set_expression", safeHardwareId, `${label} 표정 전송`);
 
-    showToast(`'${label}' 표정 요청 중…`);
+    showToast(`'${label}' 표정 전송 중…`);
 
     // 3. Reset to default/idle (happy) after 3 seconds
     if (exprTimeoutRef.current) clearTimeout(exprTimeoutRef.current);
     exprTimeoutRef.current = setTimeout(() => {
       setSelectedExpr('happy');
-      // 로봇 펌웨어가 기본 표정으로 복귀하므로 명령을 중복 전송하지 않는다.
+      setActiveCustomFace(null);
+    }, 3000);
+  };
+
+  // Execute and faithfully reproduce a customized expression (Sliders / Pixels)
+  const triggerCustomExpression = (cExpr: any) => {
+    // 1. Set full custom face for 1:1 reproduction on top LCD simulator
+    setActiveCustomFace(cExpr);
+    setSelectedExpr(cExpr.shape || 'custom');
+
+    // 2. Transmit exact fine-tuned parameters or pixel map to hardware
+    if (cExpr.mode === 'pixel' && cExpr.pixelGrid) {
+      syncPixelsToHardware(cExpr.pixelGrid);
+    } else {
+      syncFaceToHardware({
+        eyeWidth: cExpr.eyeWidth ?? 84,
+        eyeHeight: cExpr.eyeHeight ?? 68,
+        pupilX: cExpr.pupilX ?? 0,
+        pupilY: cExpr.pupilY ?? 0,
+        eyebrowTilt: cExpr.eyebrowTilt ?? 0,
+        eyeRadius: cExpr.eyeRadius ?? 20,
+        hasSparkle: cExpr.hasSparkle ?? false,
+        hasGloss: cExpr.hasGloss ?? false,
+        shape: cExpr.shape || 'happy',
+        mouth: cExpr.mouth || 'smile',
+        color: cExpr.color || '#22D3EE',
+        effect: cExpr.effect || 'none'
+      });
+    }
+
+    showToast(`✨ '${cExpr.label}' 맞춤 표정을 소다봇에 재현 중…`);
+
+    // 3. Auto-reset after 3 seconds
+    if (exprTimeoutRef.current) clearTimeout(exprTimeoutRef.current);
+    exprTimeoutRef.current = setTimeout(() => {
+      setActiveCustomFace(null);
+      setSelectedExpr('happy');
     }, 3000);
   };
 
@@ -334,12 +383,38 @@ export default function SodabotSettingsScreen() {
   };
 
   // Custom Created Expression List State
-  const [customExprList, setCustomExprList] = useState<Array<{id: string; label: string; emoji: string; shape: string; mouth: string; color: string; effect: string}>>(() => {
+  const [customExprList, setCustomExprList] = useState<Array<{
+    id: string;
+    label: string;
+    emoji: string;
+    mode: 'slider' | 'pixel';
+    shape?: string;
+    mouth?: string;
+    color?: string;
+    effect?: string;
+    eyeWidth?: number;
+    eyeHeight?: number;
+    pupilX?: number;
+    pupilY?: number;
+    eyebrowTilt?: number;
+    eyeRadius?: number;
+    hasSparkle?: boolean;
+    hasGloss?: boolean;
+    pixelGrid?: string[];
+  }>>(() => {
     try {
       const saved = localStorage.getItem("sodabot_custom_exprs");
       return saved ? JSON.parse(saved) : [
-        { id: 'custom_1', label: '울먹눈', emoji: '🥹', shape: 'happy', mouth: 'smile', color: '#38BDF8', effect: 'pulse' },
-        { id: 'custom_2', label: '메롱', emoji: '😜', shape: 'wink', mouth: 'tongue', color: '#F43F5E', effect: 'bounce' }
+        { 
+          id: 'custom_1', label: '울먹', emoji: '🥹', mode: 'slider',
+          shape: 'happy', mouth: 'smile', color: '#38BDF8', effect: 'pulse',
+          eyeWidth: 84, eyeHeight: 68, pupilX: 0, pupilY: 4, eyebrowTilt: 10, eyeRadius: 20, hasSparkle: true, hasGloss: true
+        },
+        { 
+          id: 'custom_2', label: '메롱', emoji: '😜', mode: 'slider',
+          shape: 'wink', mouth: 'tongue', color: '#F43F5E', effect: 'bounce',
+          eyeWidth: 84, eyeHeight: 68, pupilX: 0, pupilY: 0, eyebrowTilt: 0, eyeRadius: 20, hasSparkle: false, hasGloss: false
+        }
       ];
     } catch {
       return [];
@@ -347,20 +422,30 @@ export default function SodabotSettingsScreen() {
   });
 
   const handleSaveCustomExpr = () => {
-    const newExpr = {
+    const newExpr: typeof customExprList[0] = {
       id: 'custom_' + Date.now(),
-      label: editName || '커스텀 표정',
+      label: editName || '나만의표정',
       emoji: editEmoji || '✨',
+      mode: editorTab,
       shape: editShape,
       mouth: editMouth,
       color: editColor,
-      effect: editEffect
+      effect: editEffect,
+      eyeWidth,
+      eyeHeight,
+      pupilX,
+      pupilY,
+      eyebrowTilt,
+      eyeRadius,
+      hasSparkle,
+      hasGloss,
+      pixelGrid: editorTab === 'pixel' ? [...pixelGrid] : undefined
     };
     const updated = [...customExprList, newExpr];
     setCustomExprList(updated);
     localStorage.setItem("sodabot_custom_exprs", JSON.stringify(updated));
     setShowExprEditor(false);
-    showToast(`✨ '${editName}' 나만의 표정이 라이브러리에 저장되었습니다!`);
+    showToast(`✨ '${newExpr.label}' 나만의 표정이 라이브러리에 저장되었습니다!`);
     setExprTab('custom');
   };
 
@@ -372,13 +457,90 @@ export default function SodabotSettingsScreen() {
     showToast('커스텀 표정이 삭제되었습니다.');
   };
 
-  const [welcomeMsg, setWelcomeMsg] = useState('안녕하세요!\n저는 루미예요 :)\n오늘도 함께해요!');
-  const [standbyFace, setStandbyFace] = useState('기본 표정 표시 🤖');
+  const [welcomeMsg, setWelcomeMsg] = useState(localStorage.getItem('sodabot_welcome_msg') || 'HELLO!\nI AM LUMI :)\nNICE TO MEET YOU!');
+  const [standbyFace, setStandbyFace] = useState(localStorage.getItem('sodabot_standby_face') || '기본 표정 표시 🤖');
 
   const [soundTab, setSoundTab] = useState<'basic' | 'custom'>('basic');
   const [playingSound, setPlayingSound] = useState<string | null>(null);
 
-  const [touchTab, setTouchTab] = useState<'touch' | 'button'>('touch');
+  const [btnSingleClick, setBtnSingleClick] = useState(localStorage.getItem('sodabot_btn_single') || 'random_face');
+  const [btnDoubleClick, setBtnDoubleClick] = useState(localStorage.getItem('sodabot_btn_double') || 'show_time');
+  const [btnLongPress, setBtnLongPress] = useState(localStorage.getItem('sodabot_btn_long') || 'greeting');
+
+  const previewStandbyScreen = (face: string) => {
+    showToast(`🌙 [대기 화면: ${face}] 미리보기를 시작합니다.`);
+    if (face.includes('시계')) {
+      setBootingState('time');
+      const now = new Date();
+      const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      sendWsCommand("send_message", `TIME\n${timeStr}`, "대기 화면 시계 모드");
+      setTimeout(() => setBootingState(null), 3000);
+    } else if (face.includes('날씨')) {
+      setBootingState('greeting');
+      setBootingMessage('WEATHER\nSUNNY 24°C');
+      sendWsCommand("send_message", "WEATHER\nSUNNY 24C", "대기 화면 날씨 모드");
+      setTimeout(() => setBootingState(null), 3000);
+    } else if (face.includes('화면 끄기')) {
+      setBootingState(null);
+      setSelectedExpr('sleepy');
+      sendWsCommand("set_expression", "sleepy", "대기 화면 절전 모드");
+    } else {
+      setBootingState(null);
+      setSelectedExpr('default');
+      sendWsCommand("set_expression", "default", "대기 화면 기본 표정");
+    }
+  };
+
+  const executeButtonAction = (targetAction: string, triggerName: string) => {
+    showToast(`🔘 [${triggerName}] 동작을 테스트합니다!`);
+    switch (targetAction) {
+      case 'random_face': {
+        const exprs = ['happy', 'wink', 'surprised', 'heart', 'pupil', 'sleepy', 'cat'];
+        const random = exprs[Math.floor(Math.random() * exprs.length)];
+        triggerExpression(random, '랜덤');
+        break;
+      }
+      case 'next_face': {
+        const exprs = ['default', 'happy', 'wink', 'surprised', 'heart', 'pupil', 'sleepy', 'cat'];
+        const nextIdx = (exprs.indexOf(selectedExpr) + 1) % exprs.length;
+        triggerExpression(exprs[nextIdx], '다음');
+        break;
+      }
+      case 'happy_face':
+        triggerExpression('happy', '행복');
+        break;
+      case 'wink_face':
+        triggerExpression('wink', '윙크');
+        break;
+      case 'show_time': {
+        setBootingState('time');
+        const now = new Date();
+        const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+        sendWsCommand("send_message", `TIME\n${timeStr}`, "현재 시간 표시");
+        setTimeout(() => { setBootingState(null); setSelectedExpr('default'); }, 3000);
+        break;
+      }
+      case 'greeting': {
+        setBootingState('greeting');
+        const text = welcomeMsg || 'HELLO!\nI AM LUMI :)';
+        setBootingMessage(text);
+        sendWsCommand("send_message", text.replace(/\n/g, ' '), "환영 인사");
+        playWebSound('greeting');
+        sendWsCommand("play_sound", "greeting");
+        setTimeout(() => { setBootingState(null); setSelectedExpr('default'); }, 3000);
+        break;
+      }
+      case 'play_sound':
+        playWebSound('touch_react');
+        sendWsCommand("play_sound", "touch_react");
+        break;
+      case 'default_face':
+      default:
+        setSelectedExpr('default');
+        sendWsCommand("set_expression", "default", "기본 표정");
+        break;
+    }
+  };
 
   const [standbyTime, setStandbyTime] = useState('30초');
 
@@ -390,10 +552,83 @@ export default function SodabotSettingsScreen() {
 
   const [saveToast, setSaveToast] = useState<string | null>(null);
   const [bootingState, setBootingState] = useState<string | null>(null);
+  const [bootingMessage, setBootingMessage] = useState<string>('');
+
+  // Configurable Boot Sequence State
+  const [bootSequence, setBootSequence] = useState<Array<{
+    id: string;
+    type: 'greeting' | 'expression' | 'sound' | 'time';
+    name: string;
+    icon: string;
+    enabled: boolean;
+    value: string;
+  }>>([
+    { id: '1', type: 'greeting', name: '환영 인사 표시', icon: '💬', enabled: true, value: 'HELLO!\nI AM LUMI :)' },
+    { id: '2', type: 'expression', name: '표정 전환', icon: '😃', enabled: true, value: 'happy' },
+    { id: '3', type: 'sound', name: '효과음 재생', icon: '🎵', enabled: true, value: 'greeting' },
+    { id: '4', type: 'time', name: '현재 시간 표시', icon: '⏰', enabled: true, value: '' },
+  ]);
+
+  const moveSeqUp = (index: number) => {
+    if (index === 0) return;
+    setBootSequence(prev => {
+      const next = [...prev];
+      const temp = next[index - 1];
+      next[index - 1] = next[index];
+      next[index] = temp;
+      return next;
+    });
+    showToast('시퀀스 순서를 위로 이동했습니다.');
+  };
+
+  const moveSeqDown = (index: number) => {
+    if (index >= bootSequence.length - 1) return;
+    setBootSequence(prev => {
+      const next = [...prev];
+      const temp = next[index + 1];
+      next[index + 1] = next[index];
+      next[index] = temp;
+      return next;
+    });
+    showToast('시퀀스 순서를 아래로 이동했습니다.');
+  };
+
+  const toggleSeqEnabled = (id: string) => {
+    setBootSequence(prev => prev.map(item => item.id === id ? { ...item, enabled: !item.enabled } : item));
+  };
+
+  const updateSeqValue = (id: string, value: string) => {
+    setBootSequence(prev => prev.map(item => item.id === id ? { ...item, value } : item));
+  };
+
+  const removeSeqItem = (id: string) => {
+    if (bootSequence.length <= 1) {
+      showToast('최소 1개 이상의 시작 시퀀스 단계가 필요합니다.');
+      return;
+    }
+    setBootSequence(prev => prev.filter(item => item.id !== id));
+    showToast('시퀀스 단계를 삭제했습니다.');
+  };
+
+  const addSeqItem = (type: 'greeting' | 'expression' | 'sound' | 'time') => {
+    const newId = Date.now().toString();
+    let newItem: typeof bootSequence[0];
+    if (type === 'greeting') {
+      newItem = { id: newId, type: 'greeting', name: '환영 인사 표시', icon: '💬', enabled: true, value: welcomeMsg || 'HELLO!\nI AM LUMI :)' };
+    } else if (type === 'expression') {
+      newItem = { id: newId, type: 'expression', name: '표정 전환', icon: '😃', enabled: true, value: 'happy' };
+    } else if (type === 'sound') {
+      newItem = { id: newId, type: 'sound', name: '효과음 재생', icon: '🎵', enabled: true, value: 'greeting' };
+    } else {
+      newItem = { id: newId, type: 'time', name: '현재 시간 표시', icon: '⏰', enabled: true, value: '' };
+    }
+    setBootSequence(prev => [...prev, newItem]);
+    showToast(`'${newItem.name}' 단계를 새로 추가했습니다.`);
+  };
 
   // Welcome Screen Studio Modal State
   const [showWelcomeStudio, setShowWelcomeStudio] = useState(false);
-  const [studioText, setStudioText] = useState('안녕하세요!\n저는 루미예요 :)\n오늘도 반가워요!');
+  const [studioText, setStudioText] = useState('HELLO!\nI AM LUMI :)\nNICE TO MEET YOU!');
   const [studioTheme, setStudioTheme] = useState<'starry' | 'neon' | 'sunset' | 'emerald'>('starry');
   const [studioColor, setStudioColor] = useState('#22D3EE');
   const [studioMascot, setStudioMascot] = useState('happy');
@@ -458,29 +693,66 @@ export default function SodabotSettingsScreen() {
     setTimeout(() => setPlayingSound(null), 600);
   };
 
-  // Boot sequence preview simulator
+  // Boot sequence preview simulator & Real Hardware execution
   const playBootSequence = async () => {
-    showToast('🚀 2.0" TFT LCD 화면에서 시작 시퀀스를 재생합니다!');
-    setBootingState('1. 💬 환영 인사 표시');
-    setSelectedExpr('happy');
-    await new Promise(r => setTimeout(r, 1200));
+    const activeSteps = bootSequence.filter(s => s.enabled);
+    if (activeSteps.length === 0) {
+      showToast('⚠️ 활성화된 시작 시퀀스 항목이 없습니다. 체크박스를 켜주세요.');
+      return;
+    }
+    showToast(`🚀 시작 시퀀스 (${activeSteps.length}단계) 실행 중!`);
+    
+    for (let i = 0; i < activeSteps.length; i++) {
+      const step = activeSteps[i];
+      if (step.type === 'greeting') {
+        const text = step.value || welcomeMsg || 'HELLO!\nI AM LUMI :)';
+        setBootingState('greeting');
+        setBootingMessage(text);
+        const cleanMsg = text.replace(/\n/g, ' ');
+        sendWsCommand("send_message", cleanMsg, `[${i+1}/${activeSteps.length}] 환영 인사 전송`);
+        await new Promise(r => setTimeout(r, 2000));
+      } else if (step.type === 'expression') {
+        const expr = step.value || 'happy';
+        setBootingState(expr);
+        setSelectedExpr(expr);
+        sendWsCommand("set_expression", expr, `[${i+1}/${activeSteps.length}] ${expr} 표정 전송`);
+        await new Promise(r => setTimeout(r, 1500));
+      } else if (step.type === 'sound') {
+        const sound = step.value || 'greeting';
+        setBootingState('sound');
+        playWebSound(sound);
+        sendWsCommand("play_sound", sound, `[${i+1}/${activeSteps.length}] ${sound} 효과음 재생`);
+        await new Promise(r => setTimeout(r, 1200));
+      } else if (step.type === 'time') {
+        setBootingState('time');
+        const now = new Date();
+        const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+        sendWsCommand("send_message", `TIME\n${timeStr}`, `[${i+1}/${activeSteps.length}] 현재 시간 전송`);
+        await new Promise(r => setTimeout(r, 2000));
+      }
+    }
 
-    setBootingState('2. 😃 웃는 표정 전환');
-    setSelectedExpr('happy');
-    await new Promise(r => setTimeout(r, 1200));
-
-    setBootingState('3. 🎵 효과음 재생');
-    playWebSound('greeting');
-    await new Promise(r => setTimeout(r, 1200));
-
-    setBootingState('4. ⏰ 현재 시간 표시 (대기)');
-    setSelectedExpr('default');
-    await new Promise(r => setTimeout(r, 1200));
-
+    // 완료 후 기본 표정 복귀
     setBootingState(null);
+    setBootingMessage('');
+    setSelectedExpr('default');
+    sendWsCommand("set_expression", "default", "시작 시퀀스 완료 -> 기본 표정 복귀");
+    showToast('✨ 시작 시퀀스 재생이 완료되었습니다.');
   };
 
-  // Export JSON configuration file
+  // Listen to physical button events from Sodabot
+  useEffect(() => {
+    const handleButtonEvent = (e: any) => {
+      const detail = e.detail;
+      const typeStr = detail.type === 'single' ? '한 번 누름' : detail.type === 'double' ? '더블 클릭' : '길게 누름';
+      showToast(`🤖 소다봇 물리 버튼 감지: [${typeStr}]`);
+      if (detail.action) {
+        executeButtonAction(detail.action, typeStr);
+      }
+    };
+    window.addEventListener('sodabot-button-event', handleButtonEvent);
+    return () => window.removeEventListener('sodabot-button-event', handleButtonEvent);
+  }, [btnSingleClick, btnDoubleClick, btnLongPress]);
   const handleExportConfig = () => {
     const configData = {
       profileName,
@@ -526,15 +798,17 @@ export default function SodabotSettingsScreen() {
 
   const expressionsList = [
     { id: 'default', label: '기본', emoji: '🤖', bg: 'bg-[#FAF9F6]' },
-    { id: 'sleepy', label: '졸림', emoji: '😴', bg: 'bg-indigo-50' },
-    { id: 'heart', label: '러블리 하트 (터치 3회)', emoji: '💖✨', bg: 'bg-pink-50' },
     { id: 'happy', label: '기쁨', emoji: '😆', bg: 'bg-amber-50' },
+    { id: 'wink', label: '윙크', emoji: '😉', bg: 'bg-pink-50' },
+    { id: 'heart', label: '하트', emoji: '💖', bg: 'bg-rose-50' },
+    { id: 'sleepy', label: '졸림', emoji: '😴', bg: 'bg-indigo-50' },
     { id: 'sad', label: '슬픔', emoji: '😢', bg: 'bg-blue-50' },
     { id: 'angry', label: '화남', emoji: '😡', bg: 'bg-rose-50' },
     { id: 'surprised', label: '놀람', emoji: '😲', bg: 'bg-cyan-50' },
-    { id: 'wink', label: '윙크', emoji: '😉', bg: 'bg-pink-50' },
-    { id: 'pupil', label: '초롱이', emoji: '👀', bg: 'bg-cyan-50' },
-    { id: 'cat', label: '고양이', emoji: '🐱', bg: 'bg-yellow-50' },
+    { id: 'confused', label: '갸웃', emoji: '🤔', bg: 'bg-purple-50' },
+    { id: 'pupil', label: '초롱', emoji: '👀', bg: 'bg-cyan-50' },
+    { id: 'cat', label: '냥이', emoji: '🐱', bg: 'bg-yellow-50' },
+    { id: 'idle', label: '평온', emoji: '😊', bg: 'bg-emerald-50' },
   ];
 
   const soundList = [
@@ -545,19 +819,15 @@ export default function SodabotSettingsScreen() {
     { id: 'notification', name: '알림', duration: '00:02' },
   ];
 
-  const touchActions = [
-    { trigger: '탭 (한 번 터치)', icon: '👆', target: '랜덤 표정' },
-    { trigger: '길게 누르기', icon: '👆', target: '환영 인사' },
-    { trigger: '두 번 터치', icon: '✌️', target: '현재 시간' },
-    { trigger: '스와이프 좌', icon: '👈', target: '이전 표정' },
-    { trigger: '스와이프 우', icon: '👉', target: '다음 표정' },
-  ];
-
-  const startSeq = [
-    { id: 1, text: '환영 인사 표시', icon: '💬' },
-    { id: 2, text: '웃는 표정', icon: '😃' },
-    { id: 3, text: '효과음 재생', icon: '🎵' },
-    { id: 4, text: '현재 시간 표시', icon: '⏰' },
+  const buttonActionOptions = [
+    { id: 'random_face', label: '🎲 랜덤 표정 전환' },
+    { id: 'next_face', label: '🔄 다음 표정 전환' },
+    { id: 'happy_face', label: '😆 기쁨 표정' },
+    { id: 'wink_face', label: '😉 윙크 표정' },
+    { id: 'show_time', label: '⏰ 현재 시간 표시' },
+    { id: 'greeting', label: '💬 환영 인사 & 소리' },
+    { id: 'play_sound', label: '🔔 반응 효과음' },
+    { id: 'default_face', label: '🤖 기본 표정 복귀' },
   ];
 
   return (
@@ -578,128 +848,226 @@ export default function SodabotSettingsScreen() {
         <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-6 bg-white p-6 rounded-3xl border border-[#EAE6DF] shadow-sm">
           
           {/* Top-Left: Real-time 2.0" ST7789 TFT LCD Screen Simulator */}
-          <div className="flex flex-col sm:flex-row items-center gap-4 bg-[#FAF9F6] p-3 px-4 rounded-2xl border border-[#EAE6DF] shrink-0">
-            <div className="text-left space-y-1">
-              <div className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100 inline-block">
-                2.0" ST7789 TFT (320x240)
-              </div>
-              <div className="text-xs font-bold text-[#1D1D1F]">실시간 미리보기</div>
-              <div className="text-[10px] text-[#86868B]">선택: <span className="font-bold text-amber-600">{expressionsList.find(e => e.id === selectedExpr)?.label}</span></div>
-            </div>
-
-            {/* Virtual TFT Screen Canvas Frame */}
-            <div className="w-56 h-40 bg-[#111827] border-4 border-[#374151] rounded-2xl p-2.5 flex flex-col justify-between items-center relative overflow-hidden shadow-xl select-none group">
-              {/* Screen Top Status Bar */}
-              <div className="w-full flex justify-between items-center text-[9px] text-cyan-400 font-mono opacity-80 z-10">
-                <span className="flex items-center gap-1"><Wifi className="w-2.5 h-2.5" /> SODA_LAB</span>
-                <span className="font-bold">14:30</span>
-                <span className="flex items-center gap-1">85% <Battery className="w-3 h-3 text-emerald-400" /></span>
+          <div className="flex flex-col items-center">
+            <div className="w-[300px] h-[190px] bg-black rounded-3xl p-3 shadow-2xl border-4 border-[#2C2C2E] flex flex-col justify-between relative overflow-hidden ring-4 ring-black/10">
+              
+              {/* LCD Top Status Bar */}
+              <div className="flex justify-between items-center text-[10px] text-[#86868B] font-mono z-10 select-none">
+                <span className="flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                  2.0" TFT ST7789
+                </span>
+                <span className="text-[9px] text-[#A1A1A6] font-bold">
+                  {bootingState ? `BOOT: ${bootingState.toUpperCase()}` : selectedExpr.toUpperCase()}
+                </span>
               </div>
 
-              {/* Eye Graphics Simulator synced 1:1 with soda-aibot.ino hardware drawing logic */}
-              <div className="flex-1 w-full flex items-center justify-center gap-6 relative z-10">
-                {selectedExpr === 'happy' && (
-                  <div className="flex items-center justify-center gap-6">
-                    <div className="w-12 h-10 border-t-[8px] border-cyan-400 rounded-t-full shadow-[0_0_12px_rgba(34,211,238,0.7)] animate-pulse"></div>
-                    <div className="w-12 h-10 border-t-[8px] border-cyan-400 rounded-t-full shadow-[0_0_12px_rgba(34,211,238,0.7)] animate-pulse"></div>
+              {/* Eye Graphics & Boot Simulator synced 1:1 with hardware drawing logic */}
+              <div className="flex-1 w-full flex items-center justify-center relative z-10">
+                {bootingState === 'greeting' ? (
+                  <div className="text-center px-2 animate-fade-in space-y-1">
+                    <div className="text-[10px] text-amber-300 font-bold flex items-center justify-center gap-1">💬 GREETING</div>
+                    <div className="text-[11px] text-white font-medium leading-tight whitespace-pre-line bg-black/50 p-2 rounded-xl border border-white/10 shadow-inner font-mono">
+                      {bootingMessage || welcomeMsg || 'HELLO!\nI AM LUMI :)'}
+                    </div>
                   </div>
-                )}
-                {selectedExpr === 'angry' && (
-                  <>
-                    <div className="w-12 h-10 bg-cyan-400 rounded-xl relative overflow-hidden shadow-[0_0_12px_rgba(34,211,238,0.7)]">
-                      <div className="absolute top-0 right-0 w-8 h-8 bg-[#111827] transform rotate-45 translate-x-3 -translate-y-3"></div>
-                    </div>
-                    <div className="w-12 h-10 bg-cyan-400 rounded-xl relative overflow-hidden shadow-[0_0_12px_rgba(34,211,238,0.7)]">
-                      <div className="absolute top-0 left-0 w-8 h-8 bg-[#111827] transform -rotate-45 -translate-x-3 -translate-y-3"></div>
-                    </div>
-                  </>
-                )}
-                {selectedExpr === 'sad' && (
-                  <div className="relative w-full flex flex-col items-center justify-center">
-                    <div className="flex items-center justify-center gap-6">
-                      <div className="w-12 h-10 bg-cyan-400 rounded-xl relative overflow-hidden shadow-[0_0_12px_rgba(34,211,238,0.7)]">
-                        <div className="absolute top-0 left-0 w-8 h-8 bg-[#111827] transform rotate-45 -translate-x-3 -translate-y-3"></div>
-                      </div>
-                      <div className="w-12 h-10 bg-cyan-400 rounded-xl relative overflow-hidden shadow-[0_0_12px_rgba(34,211,238,0.7)]">
-                        <div className="absolute top-0 right-0 w-8 h-8 bg-[#111827] transform -rotate-45 translate-x-3 -translate-y-3"></div>
-                      </div>
-                    </div>
-                    {/* Falling teardrop animation */}
-                    <div className="absolute left-6 top-6 text-cyan-400 text-sm animate-bounce">💧</div>
+                ) : bootingState === 'sound' ? (
+                  <div className="flex flex-col items-center justify-center animate-bounce">
+                    <div className="flex gap-3 text-amber-300 text-xl">🎵 🎶 ✨</div>
+                    <div className="text-[10px] text-cyan-300 font-mono font-bold mt-1">GREETING SOUND</div>
                   </div>
-                )}
-                {selectedExpr === 'sleepy' && (
-                  <div className="relative w-full flex items-center justify-center gap-6">
-                    <div className="w-12 h-3 bg-cyan-400 rounded-full my-auto opacity-90 shadow-[0_0_10px_rgba(34,211,238,0.7)]"></div>
-                    <div className="w-12 h-3 bg-cyan-400 rounded-full my-auto opacity-90 shadow-[0_0_10px_rgba(34,211,238,0.7)]"></div>
+                ) : bootingState === 'time' ? (
+                  <div className="flex flex-col items-center justify-center animate-fade-in space-y-0.5">
+                    <div className="text-[9px] text-[#86868B] font-mono">⏰ CURRENT TIME</div>
+                    <div className="text-2xl font-bold font-mono text-emerald-400 tracking-wider">
+                      {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </div>
+                  </div>
+                ) : activeCustomFace ? (
+                  /* Custom Expression 1:1 Live Playback in 2.0" LCD Simulator */
+                  activeCustomFace.mode === 'pixel' && activeCustomFace.pixelGrid ? (
+                    <div className="grid grid-cols-16 gap-[1px] w-28 h-28 bg-[#090D16] p-1 rounded-xl border border-white/10 shadow-inner">
+                      {activeCustomFace.pixelGrid.map((color: string, idx: number) => (
+                        <div key={idx} className="w-1.5 h-1.5 rounded-[1px]" style={{ backgroundColor: color }} />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center relative animate-fade-in">
+                      <div className="flex items-center justify-center gap-5">
+                        {/* Left Custom Eye */}
+                        <div 
+                          className="relative flex items-center justify-center shadow-lg transition-all"
+                          style={{
+                            width: `${Math.max(28, Math.min(52, (activeCustomFace.eyeWidth ?? 84) * 0.5))}px`,
+                            height: `${Math.max(20, Math.min(48, (activeCustomFace.eyeHeight ?? 68) * 0.5))}px`,
+                            backgroundColor: activeCustomFace.color || '#22D3EE',
+                            borderRadius: activeCustomFace.shape === 'happy' || activeCustomFace.shape === 'wink' ? '24px 24px 6px 6px' : `${(activeCustomFace.eyeRadius ?? 20) * 0.5}px`,
+                            transform: `rotate(${(activeCustomFace.eyebrowTilt ?? 0) * 0.5}deg)`,
+                            boxShadow: `0 0 12px ${activeCustomFace.color || '#22D3EE'}88`
+                          }}
+                        >
+                          {/* Pupil */}
+                          <div 
+                            className="w-3.5 h-3.5 bg-[#090D16] rounded-full relative"
+                            style={{
+                              transform: `translate(${(activeCustomFace.pupilX ?? 0) * 0.4}px, ${(activeCustomFace.pupilY ?? 0) * 0.4}px)`
+                            }}
+                          >
+                            {activeCustomFace.hasGloss && <div className="absolute top-0.5 right-0.5 w-1 h-1 bg-white rounded-full" />}
+                          </div>
+                          {activeCustomFace.hasSparkle && <span className="absolute -top-1.5 -right-1.5 text-[8px] text-amber-300">✨</span>}
+                        </div>
 
-                    {/* Floating Z z z animation */}
-                    <div className="absolute right-2 -top-5 flex flex-col text-cyan-300 font-mono font-bold select-none pointer-events-none">
-                      <span className="text-[12px] animate-bounce tracking-widest text-indigo-300">Z</span>
-                      <span className="text-[10px] animate-bounce delay-100 tracking-wider text-cyan-300 -mt-1 ml-2">z</span>
-                      <span className="text-[8px] animate-bounce delay-200 text-cyan-400 -mt-1 ml-4">z</span>
+                        {/* Right Custom Eye */}
+                        <div 
+                          className="relative flex items-center justify-center shadow-lg transition-all"
+                          style={{
+                            width: `${Math.max(28, Math.min(52, (activeCustomFace.eyeWidth ?? 84) * 0.5))}px`,
+                            height: `${Math.max(20, Math.min(48, (activeCustomFace.eyeHeight ?? 68) * 0.5))}px`,
+                            backgroundColor: activeCustomFace.color || '#22D3EE',
+                            borderRadius: activeCustomFace.shape === 'happy' ? '24px 24px 6px 6px' : activeCustomFace.shape === 'wink' ? '12px' : `${(activeCustomFace.eyeRadius ?? 20) * 0.5}px`,
+                            transform: `rotate(-${(activeCustomFace.eyebrowTilt ?? 0) * 0.5}deg)`,
+                            boxShadow: `0 0 12px ${activeCustomFace.color || '#22D3EE'}88`
+                          }}
+                        >
+                          {/* Pupil */}
+                          <div 
+                            className="w-3.5 h-3.5 bg-[#090D16] rounded-full relative"
+                            style={{
+                              transform: `translate(${(activeCustomFace.pupilX ?? 0) * 0.4}px, ${(activeCustomFace.pupilY ?? 0) * 0.4}px)`
+                            }}
+                          >
+                            {activeCustomFace.hasGloss && <div className="absolute top-0.5 right-0.5 w-1 h-1 bg-white rounded-full" />}
+                          </div>
+                          {activeCustomFace.hasSparkle && <span className="absolute -top-1.5 -right-1.5 text-[8px] text-amber-300">✨</span>}
+                        </div>
+                      </div>
+
+                      {/* Custom Mouth */}
+                      {activeCustomFace.mouth && activeCustomFace.mouth !== 'none' && (
+                        <div className="mt-2 text-center text-xs font-mono font-bold" style={{ color: activeCustomFace.color || '#22D3EE' }}>
+                          {activeCustomFace.mouth === 'smile' && '◡'}
+                          {activeCustomFace.mouth === 'open' && 'o'}
+                          {activeCustomFace.mouth === 'cat' && '▲ w ▲'}
+                          {activeCustomFace.mouth === 'tongue' && '👅'}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                )}
-                {selectedExpr === 'surprised' && (
-                  <div className="relative flex items-center justify-center gap-6">
-                    <div className="w-12 h-12 bg-cyan-400 rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(34,211,238,0.9)] animate-pulse">
-                      <div className="w-3 h-3 bg-[#111827] rounded-full"></div>
-                    </div>
-                    <div className="w-12 h-12 bg-cyan-400 rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(34,211,238,0.9)] animate-pulse">
-                      <div className="w-3 h-3 bg-[#111827] rounded-full"></div>
-                    </div>
-                    {/* Gasp exclamation effect */}
-                    <div className="absolute -top-4 font-mono font-bold text-cyan-300 text-xs animate-ping">⚡ 😲 ⚡</div>
-                  </div>
-                )}
-                {selectedExpr === 'wink' && (
-                  <div className="relative flex items-center justify-center gap-6">
-                    {/* Left winking arch */}
-                    <div className="w-12 h-10 border-t-[8px] border-cyan-400 rounded-t-full shadow-[0_0_12px_rgba(34,211,238,0.7)] animate-pulse"></div>
-                    {/* Right open sparkling eye */}
-                    <div className="w-12 h-10 bg-cyan-400 rounded-2xl relative flex items-center justify-center shadow-[0_0_12px_rgba(34,211,238,0.7)]">
-                      <div className="absolute top-1 right-1.5 text-xs text-amber-300 animate-spin">✨</div>
-                    </div>
-                  </div>
-                )}
-                {selectedExpr === 'heart' && (
-                  <div className="flex gap-4 text-rose-500 text-3xl animate-bounce">
-                    ❤️ ❤️
-                  </div>
-                )}
-                {selectedExpr === 'cat' && (
-                  <div className="flex flex-col items-center justify-center relative">
-                    <div className="flex gap-6">
-                      <div className="w-10 h-7 bg-cyan-400 rounded-t-full"></div>
-                      <div className="w-10 h-7 bg-cyan-400 rounded-t-full"></div>
-                    </div>
-                    <div className="text-cyan-400 text-xs font-mono font-bold mt-1">▲ w ▲</div>
-                  </div>
-                )}
-                {selectedExpr === 'pupil' && (
+                  )
+                ) : (
                   <div className="flex items-center justify-center gap-6">
-                    <div className="w-12 h-10 bg-cyan-400 rounded-2xl relative flex items-center justify-center shadow-[0_0_14px_rgba(34,211,238,0.8)] animate-pulse">
-                      <div className="w-5 h-5 bg-[#090D16] rounded-full relative">
-                        <div className="absolute top-0.5 right-0.5 w-1.5 h-1.5 bg-white rounded-full"></div>
-                        <div className="absolute bottom-0.5 left-0.5 w-1 h-1 bg-white/70 rounded-full"></div>
+                    {selectedExpr === 'happy' && (
+                      <div className="flex items-center justify-center gap-6">
+                        <div className="w-12 h-10 border-t-[8px] border-cyan-400 rounded-t-full shadow-[0_0_12px_rgba(34,211,238,0.7)] animate-pulse"></div>
+                        <div className="w-12 h-10 border-t-[8px] border-cyan-400 rounded-t-full shadow-[0_0_12px_rgba(34,211,238,0.7)] animate-pulse"></div>
                       </div>
-                      <div className="absolute -top-1 -right-1 text-[9px]">✨</div>
-                    </div>
-                    <div className="w-12 h-10 bg-cyan-400 rounded-2xl relative flex items-center justify-center shadow-[0_0_14px_rgba(34,211,238,0.8)] animate-pulse">
-                      <div className="w-5 h-5 bg-[#090D16] rounded-full relative">
-                        <div className="absolute top-0.5 right-0.5 w-1.5 h-1.5 bg-white rounded-full"></div>
-                        <div className="absolute bottom-0.5 left-0.5 w-1 h-1 bg-white/70 rounded-full"></div>
+                    )}
+                    {selectedExpr === 'angry' && (
+                      <>
+                        <div className="w-12 h-10 bg-cyan-400 rounded-xl relative overflow-hidden shadow-[0_0_12px_rgba(34,211,238,0.7)]">
+                          <div className="absolute top-0 right-0 w-8 h-8 bg-[#111827] transform rotate-45 translate-x-3 -translate-y-3"></div>
+                        </div>
+                        <div className="w-12 h-10 bg-cyan-400 rounded-xl relative overflow-hidden shadow-[0_0_12px_rgba(34,211,238,0.7)]">
+                          <div className="absolute top-0 left-0 w-8 h-8 bg-[#111827] transform -rotate-45 -translate-x-3 -translate-y-3"></div>
+                        </div>
+                      </>
+                    )}
+                    {selectedExpr === 'sad' && (
+                      <div className="relative w-full flex flex-col items-center justify-center">
+                        <div className="flex items-center justify-center gap-6">
+                          <div className="w-12 h-10 bg-cyan-400 rounded-xl relative overflow-hidden shadow-[0_0_12px_rgba(34,211,238,0.7)]">
+                            <div className="absolute top-0 left-0 w-8 h-8 bg-[#111827] transform rotate-45 -translate-x-3 -translate-y-3"></div>
+                          </div>
+                          <div className="w-12 h-10 bg-cyan-400 rounded-xl relative overflow-hidden shadow-[0_0_12px_rgba(34,211,238,0.7)]">
+                            <div className="absolute top-0 right-0 w-8 h-8 bg-[#111827] transform -rotate-45 translate-x-3 -translate-y-3"></div>
+                          </div>
+                        </div>
+                        <div className="absolute left-6 top-6 text-cyan-400 text-sm animate-bounce">💧</div>
                       </div>
-                      <div className="absolute -top-1 -right-1 text-[9px]">✨</div>
-                    </div>
+                    )}
+                    {selectedExpr === 'sleepy' && (
+                      <div className="relative w-full flex items-center justify-center gap-6">
+                        <div className="w-12 h-3 bg-cyan-400 rounded-full my-auto opacity-90 shadow-[0_0_10px_rgba(34,211,238,0.7)]"></div>
+                        <div className="w-12 h-3 bg-cyan-400 rounded-full my-auto opacity-90 shadow-[0_0_10px_rgba(34,211,238,0.7)]"></div>
+                        <div className="absolute right-2 -top-5 flex flex-col text-cyan-300 font-mono font-bold select-none pointer-events-none">
+                          <span className="text-[12px] animate-bounce tracking-widest text-indigo-300">Z</span>
+                          <span className="text-[10px] animate-bounce delay-100 tracking-wider text-cyan-300 -mt-1 ml-2">z</span>
+                          <span className="text-[8px] animate-bounce delay-200 text-cyan-400 -mt-1 ml-4">z</span>
+                        </div>
+                      </div>
+                    )}
+                    {selectedExpr === 'surprised' && (
+                      <div className="relative flex items-center justify-center gap-6">
+                        <div className="w-12 h-12 bg-cyan-400 rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(34,211,238,0.9)] animate-pulse">
+                          <div className="w-3 h-3 bg-[#111827] rounded-full"></div>
+                        </div>
+                        <div className="w-12 h-12 bg-cyan-400 rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(34,211,238,0.9)] animate-pulse">
+                          <div className="w-3 h-3 bg-[#111827] rounded-full"></div>
+                        </div>
+                        <div className="absolute -top-4 font-mono font-bold text-cyan-300 text-xs animate-ping">⚡ 😲 ⚡</div>
+                      </div>
+                    )}
+                    {selectedExpr === 'wink' && (
+                      <div className="relative flex items-center justify-center gap-6">
+                        <div className="w-12 h-10 border-t-[8px] border-cyan-400 rounded-t-full shadow-[0_0_12px_rgba(34,211,238,0.7)] animate-pulse"></div>
+                        <div className="w-12 h-10 bg-cyan-400 rounded-2xl relative flex items-center justify-center shadow-[0_0_12px_rgba(34,211,238,0.7)]">
+                          <div className="absolute top-1 right-1.5 text-xs text-amber-300 animate-spin">✨</div>
+                        </div>
+                      </div>
+                    )}
+                    {selectedExpr === 'heart' && (
+                      <div className="flex gap-4 text-rose-500 text-3xl animate-bounce">
+                        ❤️ ❤️
+                      </div>
+                    )}
+                    {selectedExpr === 'cat' && (
+                      <div className="flex flex-col items-center justify-center relative">
+                        <div className="flex gap-6">
+                          <div className="w-10 h-7 bg-cyan-400 rounded-t-full"></div>
+                          <div className="w-10 h-7 bg-cyan-400 rounded-t-full"></div>
+                        </div>
+                        <div className="text-cyan-400 text-xs font-mono font-bold mt-1">▲ w ▲</div>
+                      </div>
+                    )}
+                    {selectedExpr === 'pupil' && (
+                      <div className="flex items-center justify-center gap-6">
+                        <div className="w-12 h-10 bg-cyan-400 rounded-2xl relative flex items-center justify-center shadow-[0_0_14px_rgba(34,211,238,0.8)] animate-pulse">
+                          <div className="w-5 h-5 bg-[#090D16] rounded-full relative">
+                            <div className="absolute top-0.5 right-0.5 w-1.5 h-1.5 bg-white rounded-full"></div>
+                            <div className="absolute bottom-0.5 left-0.5 w-1 h-1 bg-white/70 rounded-full"></div>
+                          </div>
+                          <div className="absolute -top-1 -right-1 text-[9px]">✨</div>
+                        </div>
+                        <div className="w-12 h-10 bg-cyan-400 rounded-2xl relative flex items-center justify-center shadow-[0_0_14px_rgba(34,211,238,0.8)] animate-pulse">
+                          <div className="w-5 h-5 bg-[#090D16] rounded-full relative">
+                            <div className="absolute top-0.5 right-0.5 w-1.5 h-1.5 bg-white rounded-full"></div>
+                            <div className="absolute bottom-0.5 left-0.5 w-1 h-1 bg-white/70 rounded-full"></div>
+                          </div>
+                          <div className="absolute -top-1 -right-1 text-[9px]">✨</div>
+                        </div>
+                      </div>
+                    )}
+                    {selectedExpr === 'confused' && (
+                      <div className="relative flex items-center justify-center gap-6">
+                        <div className="w-12 h-12 bg-cyan-400 rounded-full flex items-center justify-center shadow-[0_0_15px_rgba(34,211,238,0.7)]">
+                          <div className="w-4 h-4 bg-[#090D16] rounded-full translate-x-1 -translate-y-1"></div>
+                        </div>
+                        <div className="w-12 h-6 bg-cyan-400 rounded-xl shadow-[0_0_12px_rgba(34,211,238,0.7)]"></div>
+                      </div>
+                    )}
+                    {selectedExpr === 'squint' && (
+                      <div className="relative flex items-center justify-center gap-6">
+                        <div className="w-12 h-3 bg-cyan-400 rounded-full shadow-[0_0_12px_rgba(34,211,238,0.7)]"></div>
+                        <div className="w-12 h-3 bg-cyan-400 rounded-full shadow-[0_0_12px_rgba(34,211,238,0.7)]"></div>
+                      </div>
+                    )}
+                    {(selectedExpr === 'default' || (selectedExpr !== 'happy' && selectedExpr !== 'angry' && selectedExpr !== 'sad' && selectedExpr !== 'sleepy' && selectedExpr !== 'surprised' && selectedExpr !== 'wink' && selectedExpr !== 'heart' && selectedExpr !== 'cat' && selectedExpr !== 'pupil' && selectedExpr !== 'confused' && selectedExpr !== 'squint')) && (
+                      <>
+                        <div className="w-12 h-10 bg-cyan-400 rounded-2xl shadow-[0_0_15px_rgba(34,211,238,0.6)]"></div>
+                        <div className="w-12 h-10 bg-cyan-400 rounded-2xl shadow-[0_0_15px_rgba(34,211,238,0.6)]"></div>
+                      </>
+                    )}
                   </div>
-                )}
-                {(selectedExpr === 'default' || (selectedExpr !== 'happy' && selectedExpr !== 'angry' && selectedExpr !== 'sad' && selectedExpr !== 'sleepy' && selectedExpr !== 'surprised' && selectedExpr !== 'wink' && selectedExpr !== 'heart' && selectedExpr !== 'cat' && selectedExpr !== 'pupil')) && (
-                  <>
-                    <div className="w-12 h-10 bg-cyan-400 rounded-2xl shadow-[0_0_15px_rgba(34,211,238,0.6)]"></div>
-                    <div className="w-12 h-10 bg-cyan-400 rounded-2xl shadow-[0_0_15px_rgba(34,211,238,0.6)]"></div>
-                  </>
                 )}
               </div>
 
@@ -708,17 +1076,15 @@ export default function SodabotSettingsScreen() {
             </div>
           </div>
 
-          {/* Right Header Info */}
-          <div className="flex-1 flex flex-col justify-between space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-xl">
-                  🤖
-                </div>
-                <div>
-                  <h1 className="text-2xl font-bold text-[#1D1D1F] tracking-tight">소다봇 대시보드 & 상태 설정</h1>
-                  <p className="text-xs text-[#86868B] mt-0.5 font-medium">소다봇 2.0인치 LCD 디스플레이 및 사운드, 동작을 제어할 수 있는 통합 워크스페이스</p>
-                </div>
+          {/* Top-Right: 1. 소다봇 챗봇 프로필 통합 헤더 */}
+          <div className="flex-1 flex flex-col justify-between space-y-3 bg-[#FAF9F6] p-4 lg:p-5 rounded-2xl border border-[#EAE6DF]">
+            {/* Top Bar: Section Title + Links & Connection Status */}
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#EAE6DF] pb-2.5">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-emerald-700 bg-emerald-100/80 px-2.5 py-0.5 rounded-lg border border-emerald-200">
+                  1. 챗봇 프로필
+                </span>
+                <span className="text-xs font-bold text-[#1D1D1F]">소다봇 기본 정보 & 시작 설정</span>
               </div>
               <div className="flex items-center gap-2">
                 <button 
@@ -727,131 +1093,109 @@ export default function SodabotSettingsScreen() {
                     if (btn) btn.click();
                     else window.location.hash = "#sodabot_builder";
                   }}
-                  className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-[#1D1D1F] text-white hover:bg-black transition-all cursor-pointer shadow-xs"
+                  className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold bg-[#1D1D1F] text-white hover:bg-black transition-all cursor-pointer shadow-xs"
                 >
-                  <Sparkles className="w-3.5 h-3.5 mr-1 text-indigo-400" />
-                  🛠️ 소다봇빌더 (6주차)
+                  <Sparkles className="w-3 h-3 mr-1 text-indigo-400" />
+                  소다봇빌더 (6주차)
                 </button>
-                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-indigo-50 text-indigo-600 border border-indigo-200">
-                  <Bluetooth className="w-3.5 h-3.5 mr-1 text-indigo-500" />
-                  {connectionType === 'none' ? '연결 대기중' : connectionType.toUpperCase()}
+                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold bg-indigo-50 text-indigo-600 border border-indigo-200">
+                  <Bluetooth className="w-3 h-3 mr-1 text-indigo-500" />
+                  {connectionType === 'none' ? '연결 대기' : connectionType.toUpperCase()}
                 </span>
-                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-600 border border-emerald-200">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 mr-1.5 animate-pulse"></span>
-                  {connectionType === 'none' ? '소다봇 미연결' : '소다봇 연결됨'}
+                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-200">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse"></span>
+                  {connectionType === 'none' ? '미연결' : '연결됨'}
                 </span>
+              </div>
+            </div>
+
+            {/* Profile Content: Name, Bio, Startup Prompt & Save Button */}
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center pt-1">
+              {/* Avatar + Name + Bio (col-span-5) */}
+              <div className="md:col-span-5 flex items-center gap-3 bg-white p-2.5 rounded-xl border border-[#EAE6DF]">
+                <div className="w-12 h-12 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-2xl shrink-0 shadow-2xs">
+                  🤖
+                </div>
+                <div className="flex-1 min-w-0 space-y-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-bold text-[#86868B] shrink-0">이름:</span>
+                    <input 
+                      type="text" 
+                      value={profileName} 
+                      onChange={(e) => setProfileName(e.target.value)}
+                      className="text-xs font-bold text-[#1D1D1F] bg-[#FAF9F6] px-2 py-0.5 rounded border border-[#EAE6DF] outline-none focus:bg-white w-28"
+                    />
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-bold text-[#86868B] shrink-0">소개:</span>
+                    <input 
+                      type="text" 
+                      value={profileDesc}
+                      onChange={(e) => setProfileDesc(e.target.value)}
+                      placeholder="e.g. Your Smart AI Companion"
+                      className="text-[11px] text-[#5C5B57] bg-[#FAF9F6] px-2 py-0.5 rounded border border-[#EAE6DF] outline-none focus:bg-white w-full"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Startup Prompt (col-span-5) */}
+              <div className="md:col-span-5 space-y-1 bg-white p-2.5 rounded-xl border border-[#EAE6DF]">
+                <div className="flex justify-between items-center">
+                  <label className="text-[10px] font-bold text-indigo-600 flex items-center gap-1">
+                    💬 부팅 시작 요청사항 (인사 프롬프트)
+                  </label>
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      localStorage.setItem("sodabot_startup_prompt", startupPrompt);
+                      sendWsCommand("test_startup_prompt", startupPrompt);
+                      showToast("소다봇 텍스트 표시 요청 중…");
+                    }}
+                    className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[9px] font-bold rounded-md transition-colors flex items-center gap-1 shadow-xs cursor-pointer"
+                  >
+                    <Play className="w-2.5 h-2.5" /> 테스트
+                  </button>
+                </div>
+                <input 
+                  type="text"
+                  value={startupPrompt}
+                  onChange={(e) => {
+                    setStartupPrompt(e.target.value);
+                    localStorage.setItem("sodabot_startup_prompt", e.target.value);
+                  }}
+                  placeholder="e.g. Hello, I am Lumi! Ready to assist you."
+                  className="w-full px-2 py-1 bg-indigo-50/40 border border-indigo-100 rounded-lg text-xs text-[#1D1D1F] focus:bg-white outline-none"
+                />
+              </div>
+
+              {/* Save Button (col-span-2) */}
+              <div className="md:col-span-2">
+                <button 
+                  onClick={() => {
+                    sendWsCommand("set_profile", profileName, "프로필 정보 저장");
+                    showToast('소다봇 프로필 정보가 저장되었습니다!');
+                  }}
+                  className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition-colors shadow-sm flex items-center justify-center gap-1 cursor-pointer"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  프로필 저장
+                </button>
               </div>
             </div>
           </div>
 
         </div>
 
-        {/* 4-Column Responsive Grid Layout matching reference image */}
+        {/* 4-Card Single-Row Layout (1단 4열 그리드) */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
 
-          {/* Card 1: 내 소다봇 프로필 */}
-          <div className="bg-white border-2 border-emerald-400/30 hover:border-emerald-400/60 rounded-3xl p-5 shadow-sm flex flex-col justify-between transition-all">
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-100">
-                  1. 내 소다봇 프로필
-                </span>
-                <Edit3 className="w-4 h-4 text-emerald-500 cursor-pointer hover:scale-110 transition-transform" />
-              </div>
-              <p className="text-[11px] text-[#86868B] leading-snug">
-                소다봇의 이름과 아이콘을 설정하고 한눈에 정보를 확인할 수 있어요.
-              </p>
-
-              {/* Profile Card Box */}
-              <div className="bg-[#FAF9F6] border border-[#EAE6DF] rounded-2xl p-4 flex items-center gap-3">
-                <div className="w-16 h-16 rounded-2xl bg-white border border-emerald-200 flex items-center justify-center text-3xl shadow-sm relative group cursor-pointer">
-                  <span>🤖</span>
-                  <div className="absolute -bottom-1 -right-1 bg-emerald-500 text-white rounded-full p-1 shadow">
-                    <Edit3 className="w-2.5 h-2.5" />
-                  </div>
-                </div>
-                <div className="flex-1 space-y-1.5 min-w-0">
-                  <div>
-                    <label className="text-[9px] font-bold text-[#86868B] uppercase">이름</label>
-                    <div className="flex items-center justify-between bg-white border border-[#EAE6DF] px-2.5 py-1 rounded-lg">
-                      <input 
-                        type="text" 
-                        value={profileName} 
-                        onChange={(e) => setProfileName(e.target.value)}
-                        className="text-xs font-bold text-[#1D1D1F] bg-transparent outline-none w-full"
-                      />
-                      <Edit3 className="w-3 h-3 text-[#86868B]" />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Bio & Created Date & Startup Prompt */}
-              <div className="space-y-2.5 text-xs">
-                <div>
-                  <label className="text-[10px] font-semibold text-[#86868B]">한 줄 소개</label>
-                  <input 
-                    type="text" 
-                    value={profileDesc}
-                    onChange={(e) => setProfileDesc(e.target.value)}
-                    className="w-full mt-1 px-3 py-1.5 bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl text-xs text-[#1D1D1F] focus:bg-white outline-none"
-                  />
-                </div>
-
-                {/* 시작 요청사항 (시작 인사 프롬프트) 설정 */}
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="text-[10px] font-bold text-indigo-600">부팅 시 시작 요청사항 (인사 멘트)</label>
-                    <button 
-                      type="button"
-                      onClick={() => {
-                        localStorage.setItem("sodabot_startup_prompt", startupPrompt);
-                        sendWsCommand("test_startup_prompt", startupPrompt);
-                        showToast("소다봇 텍스트 표시 요청 중…");
-                      }}
-                      className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-700 text-white text-[9px] font-bold rounded-lg transition-colors flex items-center gap-1 shadow-sm"
-                    >
-                      <Play className="w-2.5 h-2.5" /> 테스트 실행
-                    </button>
-                  </div>
-                  <textarea 
-                    rows={2}
-                    value={startupPrompt}
-                    onChange={(e) => {
-                      setStartupPrompt(e.target.value);
-                      localStorage.setItem("sodabot_startup_prompt", e.target.value);
-                    }}
-                    placeholder="예: 소다봇 시작 테스트야. 한 문장으로 짧게 인사해줘."
-                    className="w-full px-3 py-1.5 bg-indigo-50/40 border border-indigo-100 rounded-xl text-xs text-[#1D1D1F] focus:bg-white outline-none resize-none"
-                  />
-                </div>
-
-                <div className="flex justify-between items-center text-[10px] pt-0.5 text-[#86868B]">
-                  <span>생성일</span>
-                  <span className="font-mono font-semibold text-[#1D1D1F]">2025.05.20</span>
-                </div>
-              </div>
-            </div>
-
-            <button 
-              onClick={() => {
-                sendWsCommand("set_profile", profileName, "프로필 정보 저장");
-                showToast('소다봇 프로필 정보가 저장되었습니다!');
-              }}
-              className="mt-6 w-full py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold rounded-xl transition-colors shadow-sm flex items-center justify-center gap-1.5"
-            >
-              <Save className="w-3.5 h-3.5" />
-              소다봇 정보 저장
-            </button>
-          </div>
-
-
-          {/* Card 2: 표정 관리 */}
+          {/* Card 1: 표정 관리 */}
           <div className="bg-white border-2 border-amber-400/30 hover:border-amber-400/60 rounded-3xl p-5 shadow-sm flex flex-col justify-between transition-all">
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-amber-600 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-100">
-                  2. 표정 관리
+                  1. 표정 관리
                 </span>
                 <Smile className="w-4 h-4 text-amber-500" />
               </div>
@@ -865,7 +1209,7 @@ export default function SodabotSettingsScreen() {
                   onClick={() => setExprTab('basic')}
                   className={`flex-1 py-1 rounded-lg transition-colors ${exprTab === 'basic' ? 'bg-white text-amber-700 shadow-sm' : 'text-[#86868B]'}`}
                 >
-                  기본 표정 ({expressionsList.length})
+                  기본 ({expressionsList.length})
                 </button>
                 <button 
                   onClick={() => setExprTab('custom')}
@@ -877,37 +1221,45 @@ export default function SodabotSettingsScreen() {
                   onClick={() => setShowExprEditor(true)} 
                   className="px-2 py-1 text-amber-700 hover:bg-amber-100 rounded-lg flex items-center gap-0.5 cursor-pointer font-bold"
                 >
-                  <Plus className="w-3 h-3 text-amber-600" /> 새 만들기
+                  <Plus className="w-3 h-3 text-amber-600" /> 만들기
                 </button>
               </div>
 
-              {/* Expression Grid */}
-              <div className="grid grid-cols-4 gap-2 pt-1">
+              {/* Expression Grid (4x3 12 items single screen visible) */}
+              <div className="grid grid-cols-4 gap-1.5 pt-1">
                 {exprTab === 'basic' ? (
                   expressionsList.map(expr => (
                     <button
                       key={expr.id}
                       onClick={() => triggerExpression(expr.id, expr.label)}
-                      className={`flex flex-col items-center justify-center p-2 rounded-xl border transition-all cursor-pointer ${selectedExpr === expr.id ? 'border-amber-500 bg-amber-50 scale-105 shadow-sm ring-2 ring-amber-400' : 'border-[#EAE6DF] bg-white hover:border-amber-300'}`}
+                      className={`flex flex-col items-center justify-center p-1.5 py-2 rounded-xl border transition-all cursor-pointer ${
+                        selectedExpr === expr.id 
+                          ? 'border-amber-500 bg-amber-50 scale-105 shadow-sm ring-2 ring-amber-400' 
+                          : 'border-[#EAE6DF] bg-white hover:border-amber-300 hover:bg-[#FAF9F6]'
+                      }`}
                       title={`${expr.label} (클릭 시 3초간 소다봇 출력)`}
                     >
-                      <span className="text-xl">{expr.emoji}</span>
-                      <span className="text-[9px] font-bold text-[#1D1D1F] mt-1">{expr.label}</span>
+                      <span className="text-xl leading-none">{expr.emoji}</span>
+                      <span className="text-[10px] font-bold text-[#1D1D1F] mt-1 tracking-tight leading-none">{expr.label}</span>
                     </button>
                   ))
                 ) : customExprList.length === 0 ? (
                   <div className="col-span-4 p-4 text-center text-xs text-[#86868B]">
-                    등록된 나만의 표정이 없습니다.<br />우측 상단 <span className="font-bold text-amber-600">+ 새 만들기</span> 버튼을 눌러보세요!
+                    등록된 나만의 표정이 없습니다.<br />상단 <span className="font-bold text-amber-600">+ 만들기</span> 버튼을 눌러보세요!
                   </div>
                 ) : (
                   customExprList.map(cExpr => (
                     <div
                       key={cExpr.id}
-                      onClick={() => triggerExpression(cExpr.shape || 'happy', cExpr.label)}
-                      className={`relative flex flex-col items-center justify-center p-2 rounded-xl border transition-all cursor-pointer group ${selectedExpr === cExpr.shape ? 'border-amber-500 bg-amber-50 scale-105 shadow-sm ring-2 ring-amber-400' : 'border-[#EAE6DF] bg-white hover:border-amber-300'}`}
+                      onClick={() => triggerCustomExpression(cExpr)}
+                      className={`relative flex flex-col items-center justify-center p-1.5 py-2 rounded-xl border transition-all cursor-pointer group ${
+                        activeCustomFace?.id === cExpr.id 
+                          ? 'border-amber-500 bg-amber-50 scale-105 shadow-sm ring-2 ring-amber-400' 
+                          : 'border-[#EAE6DF] bg-white hover:border-amber-300 hover:bg-[#FAF9F6]'
+                      }`}
                     >
-                      <span className="text-xl">{cExpr.emoji}</span>
-                      <span className="text-[9px] font-bold text-[#1D1D1F] mt-1 truncate max-w-full">{cExpr.label}</span>
+                      <span className="text-xl leading-none">{cExpr.emoji}</span>
+                      <span className="text-[10px] font-bold text-[#1D1D1F] mt-1 truncate max-w-full tracking-tight leading-none">{cExpr.label.slice(0, 2)}</span>
                       <button 
                         onClick={(e) => handleDeleteCustomExpr(cExpr.id, e)}
                         className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 p-0.5 text-rose-500 hover:bg-rose-50 rounded transition-all"
@@ -926,76 +1278,121 @@ export default function SodabotSettingsScreen() {
                 const target = expressionsList.find(e => e.id === selectedExpr);
                 triggerExpression(selectedExpr, target?.label || '선택한');
               }}
-              className="mt-6 w-full py-2.5 bg-amber-400 hover:bg-amber-500 text-amber-950 text-xs font-bold rounded-xl transition-colors shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
+              className="mt-4 w-full py-2.5 bg-amber-400 hover:bg-amber-500 text-amber-950 text-xs font-bold rounded-xl transition-colors shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <Smile className="w-3.5 h-3.5" />
-              즉시 표정 실행 (3초간 유지)
+              즉시 표정 실행 (3초 유지)
             </button>
           </div>
 
 
-          {/* Card 3: 화면 & 메시지 */}
-          <div className="bg-white border-2 border-blue-400/30 hover:border-blue-400/60 rounded-3xl p-5 shadow-sm flex flex-col justify-between transition-all">
+          {/* Card 2: 환영 인사 & 소리·대기 설정 (기존 3 + 4 통합) */}
+          <div className="bg-white border-2 border-blue-400/30 hover:border-blue-400/60 rounded-3xl p-5 shadow-sm flex flex-col justify-between transition-all space-y-3">
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-100">
-                  3. 화면 & 메시지
+                  2. 인사·소리 & 대기 설정
                 </span>
-                <MessageCircle className="w-4 h-4 text-blue-500" />
+                <Volume2 className="w-4 h-4 text-blue-500" />
               </div>
               <p className="text-[11px] text-[#86868B] leading-snug">
-                소다봇 화면에 보여줄 인사말과 메시지를 자유롭게 설정해요.
+                부팅 인사말, 대기 화면, 효과음을 한곳에서 설정해요.
               </p>
 
-              {/* Welcome Message Box */}
-              <div className="space-y-1.5">
+              {/* 1) Welcome Message Box */}
+              <div className="space-y-1 bg-[#FAF9F6] p-2.5 rounded-2xl border border-[#EAE6DF]">
                 <div className="flex justify-between items-center">
-                  <label className="text-[10px] font-bold text-[#5C5B57]">환영 인사 <span className="text-[#86868B] font-normal">(부팅 시 표시)</span></label>
+                  <label className="text-[10px] font-bold text-[#5C5B57]">💬 환영 인사 문구</label>
                   <button 
                     onClick={() => setShowWelcomeStudio(true)}
-                    className="text-[10px] font-bold text-blue-600 hover:text-blue-700 bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-100 flex items-center gap-1 cursor-pointer"
+                    className="text-[9px] font-bold text-blue-600 hover:text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100 flex items-center gap-0.5 cursor-pointer"
                   >
-                    <Sparkles className="w-3 h-3 text-blue-500" /> + 나만의 환영화면 만들기
+                    <Sparkles className="w-2.5 h-2.5 text-blue-500" /> 스튜디오
                   </button>
                 </div>
                 <div className="relative">
                   <textarea 
                     value={welcomeMsg}
                     onChange={(e) => setWelcomeMsg(e.target.value)}
-                    rows={3}
-                    className="w-full p-2.5 text-xs bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl text-[#1D1D1F] outline-none focus:bg-white focus:border-blue-300 resize-none font-sans leading-relaxed"
+                    rows={2}
+                    placeholder="e.g. HELLO!\nI AM LUMI :)"
+                    className="w-full p-2 text-xs bg-white border border-[#EAE6DF] rounded-xl text-[#1D1D1F] outline-none focus:border-blue-300 resize-none font-sans leading-relaxed"
                   />
-                  <span className="absolute bottom-2 right-2 text-[9px] text-[#86868B] font-mono">
+                  <span className="absolute bottom-1 right-2 text-[8px] text-[#86868B] font-mono">
                     {welcomeMsg.length}/100
                   </span>
                 </div>
               </div>
 
-              {/* Standby Screen Box */}
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-[#5C5B57]">대기 화면 <span className="text-[#86868B] font-normal">(아무 동작 없을 때)</span></label>
+              {/* 2) Standby Screen Box */}
+              <div className="space-y-1 bg-[#FAF9F6] p-2.5 rounded-2xl border border-[#EAE6DF]">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold text-[#5C5B57]">🌙 대기 화면 모드</label>
+                  <button
+                    onClick={() => previewStandbyScreen(standbyFace)}
+                    className="px-2 py-0.5 bg-blue-100 hover:bg-blue-200 text-blue-700 text-[9px] font-bold rounded-md transition-colors flex items-center gap-1"
+                    title="대기 화면 미리보기"
+                  >
+                    <Play className="w-2.5 h-2.5" /> 미리보기
+                  </button>
+                </div>
                 <div className="relative">
                   <select 
                     value={standbyFace}
                     onChange={(e) => setStandbyFace(e.target.value)}
-                    className="w-full px-3 py-2 text-xs bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl text-[#1D1D1F] outline-none focus:bg-white font-bold appearance-none cursor-pointer"
+                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#EAE6DF] rounded-xl text-[#1D1D1F] outline-none font-bold appearance-none cursor-pointer"
                   >
                     <option>기본 표정 표시 🤖</option>
                     <option>시계 모드 ⏰</option>
                     <option>날씨 정보 ☀️</option>
                     <option>화면 끄기 🌙</option>
                   </select>
-                  <ChevronDown className="w-3.5 h-3.5 text-[#86868B] absolute right-3 top-3 pointer-events-none" />
+                  <ChevronDown className="w-3 h-3 text-[#86868B] absolute right-2.5 top-2.5 pointer-events-none" />
+                </div>
+              </div>
+
+              {/* 3) Sound Effects Box */}
+              <div className="space-y-1.5 bg-[#FAF9F6] p-2.5 rounded-2xl border border-[#EAE6DF]">
+                <label className="text-[10px] font-bold text-[#5C5B57]">🎵 효과음 테스트 & 선택</label>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {soundList.slice(0, 4).map(s => (
+                    <div key={s.id} className="flex items-center justify-between p-1.5 bg-white rounded-xl border border-[#EAE6DF] text-xs">
+                      <span className="font-semibold text-[#1D1D1F] text-[10px] truncate max-w-[50px]">{s.name}</span>
+                      <div className="flex items-center gap-1">
+                        <button 
+                          onClick={() => playWebSound(s.id)}
+                          className="p-1 bg-[#FAF9F6] hover:bg-purple-100 text-purple-700 rounded-md transition-colors cursor-pointer"
+                          title="웹에서 듣기"
+                        >
+                          <Volume2 className="w-2.5 h-2.5" />
+                        </button>
+                        <button 
+                          onClick={() => playBotSound(s.id)}
+                          className="p-1 bg-purple-600 hover:bg-purple-700 text-white rounded-md transition-colors cursor-pointer shadow-2xs"
+                          title="소다봇에서 듣기"
+                        >
+                          <Bot className="w-2.5 h-2.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
 
             <button 
               onClick={() => {
-                sendWsCommand("set_welcome", welcomeMsg, "대기화면 설정 전송");
-                showToast('환영 인사 및 대기 화면 설정이 저장 후 전송되었습니다!');
+                localStorage.setItem('sodabot_welcome_msg', welcomeMsg);
+                localStorage.setItem('sodabot_standby_face', standbyFace);
+                localStorage.setItem('sodabot_standby_time', standbyTime);
+                sendWsCommand("set_welcome", welcomeMsg, "환영 인사 설정 전송");
+                sendWsCommand("set_standby", JSON.stringify({
+                  mode: standbyFace,
+                  timeout: standbyTime === '15초' ? 15000 : standbyTime === '1분' ? 60000 : standbyTime === '5분' ? 300000 : 30000
+                }), "대기 화면 설정 전송");
+                showToast('환영 인사, 대기 화면 및 소리 설정이 저장 및 적용되었습니다!');
               }}
-              className="mt-6 w-full py-2.5 bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold rounded-xl transition-colors shadow-sm flex items-center justify-center gap-1.5"
+              className="mt-4 w-full py-2.5 bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold rounded-xl transition-colors shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <Save className="w-3.5 h-3.5" />
               저장 후 보내기
@@ -1003,181 +1400,242 @@ export default function SodabotSettingsScreen() {
           </div>
 
 
-          {/* Card 4: 소리 관리 */}
-          <div className="bg-white border-2 border-purple-400/30 hover:border-purple-400/60 rounded-3xl p-5 shadow-sm flex flex-col justify-between transition-all">
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-purple-600 bg-purple-50 px-2.5 py-1 rounded-lg border border-purple-100">
-                  4. 소리 관리
-                </span>
-                <Volume2 className="w-4 h-4 text-purple-500" />
-              </div>
-              <p className="text-[11px] text-[#86868B] leading-snug">
-                소리 효과를 선택하거나 업로드해서 다양한 상황에 적용할 수 있어요.
-              </p>
-
-              {/* Sound Tabs */}
-              <div className="flex bg-[#FAF9F6] p-1 rounded-xl border border-[#EAE6DF] text-[10px] font-bold">
-                <button 
-                  onClick={() => setSoundTab('basic')}
-                  className={`flex-1 py-1 rounded-lg transition-colors ${soundTab === 'basic' ? 'bg-white text-purple-700 shadow-sm' : 'text-[#86868B]'}`}
-                >
-                  기본 소리
-                </button>
-                <button 
-                  onClick={() => setSoundTab('custom')}
-                  className={`flex-1 py-1 rounded-lg transition-colors ${soundTab === 'custom' ? 'bg-white text-purple-700 shadow-sm' : 'text-[#86868B]'}`}
-                >
-                  내 소리
-                </button>
-                <button className="px-2 py-1 text-purple-600 hover:bg-purple-100/50 rounded-lg flex items-center gap-0.5">
-                  <Plus className="w-3 h-3" /> 업로드
-                </button>
-              </div>
-
-              {/* Sound List */}
-              <div className="space-y-2">
-                {soundList.map(s => (
-                  <div key={s.id} className="flex items-center justify-between p-2 px-2.5 bg-[#FAF9F6] hover:bg-purple-50/50 rounded-xl border border-[#EAE6DF] text-xs">
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-semibold text-[#1D1D1F] text-[11px]">{s.name}</span>
-                      <span className="font-mono text-[9px] text-[#86868B]">({s.duration})</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <button 
-                        onClick={() => playWebSound(s.id)}
-                        className="px-2 py-1 bg-white hover:bg-purple-100 border border-[#EAE6DF] rounded-lg text-[10px] font-medium text-purple-700 flex items-center gap-1 transition-colors cursor-pointer"
-                        title="웹 브라우저 스피커로 듣기"
-                      >
-                        <Volume2 className={`w-3 h-3 ${playingSound === `web_${s.id}` ? 'animate-bounce text-purple-600' : ''}`} />
-                        웹에서 듣기
-                      </button>
-                      <button 
-                        onClick={() => playBotSound(s.id)}
-                        className="px-2 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-[10px] font-medium flex items-center gap-1 transition-colors cursor-pointer shadow-xs"
-                        title="소다봇 기기 스피커로 전송하여 듣기"
-                      >
-                        <Bot className={`w-3 h-3 ${playingSound === `bot_${s.id}` ? 'animate-bounce text-yellow-300' : ''}`} />
-                        소다봇에서 듣기
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <button 
-              onClick={() => {
-                sendWsCommand("play_sound", "greeting", "소리 설정 소다봇 전송");
-                showToast('소리 설정이 소다봇으로 성공적으로 전송되었습니다!');
-              }}
-              className="mt-6 w-full py-2.5 bg-purple-500 hover:bg-purple-600 text-white text-xs font-bold rounded-xl transition-colors shadow-sm flex items-center justify-center gap-1.5"
-            >
-              <Volume2 className="w-3.5 h-3.5" />
-              소다봇으로 보내기
-            </button>
-          </div>
-
-        </div>
-
-
-        {/* Row 2: Cards 5 ~ 8 */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-
-          {/* Card 5: 동작 설정 */}
+          {/* Card 3: 단일 물리 버튼 동작 설정 */}
           <div className="bg-white border-2 border-rose-400/30 hover:border-rose-400/60 rounded-3xl p-5 shadow-sm flex flex-col justify-between transition-all">
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-rose-600 bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-100">
-                  5. 동작 설정
+                  3. 물리 버튼 동작 설정
                 </span>
                 <Sliders className="w-4 h-4 text-rose-500" />
               </div>
               <p className="text-[11px] text-[#86868B] leading-snug">
-                터치, 버튼 등 입력에 따라 소다봇이 어떻게 반응할지 설정해요.
+                하드웨어 단일 버튼 1개로 사용할 3가지 입력 동작을 지정해요.
               </p>
 
-              {/* Tabs */}
-              <div className="flex bg-[#FAF9F6] p-1 rounded-xl border border-[#EAE6DF] text-[10px] font-bold">
-                <button 
-                  onClick={() => setTouchTab('touch')}
-                  className={`flex-1 py-1 rounded-lg transition-colors ${touchTab === 'touch' ? 'bg-white text-rose-700 shadow-sm' : 'text-[#86868B]'}`}
-                >
-                  터치 패드
-                </button>
-                <button 
-                  onClick={() => setTouchTab('button')}
-                  className={`flex-1 py-1 rounded-lg transition-colors ${touchTab === 'button' ? 'bg-white text-rose-700 shadow-sm' : 'text-[#86868B]'}`}
-                >
-                  버튼
-                </button>
-              </div>
-
-              {/* Action mappings list */}
-              <div className="space-y-1.5">
-                {touchActions.map((t, idx) => (
-                  <div key={idx} className="flex items-center justify-between p-2 bg-[#FAF9F6] rounded-xl border border-[#EAE6DF] text-xs">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-sm">{t.icon}</span>
-                      <span className="text-[11px] text-[#86868B] font-medium">{t.trigger}</span>
-                    </div>
-                    <button className="text-[11px] font-bold text-rose-600 hover:underline flex items-center gap-0.5">
-                      <span>{t.target}</span>
-                      <ChevronRight className="w-3 h-3" />
+              {/* Single Button 3 Actions */}
+              <div className="space-y-2 pt-1">
+                {/* 1. Single Click */}
+                <div className="p-2 bg-[#FAF9F6] rounded-2xl border border-[#EAE6DF] space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-[#1D1D1F] flex items-center gap-1">
+                      <span>🔘</span> 한 번 누름 (클릭)
+                    </span>
+                    <button
+                      onClick={() => executeButtonAction(btnSingleClick, '한 번 누름')}
+                      className="px-1.5 py-0.5 bg-rose-100 hover:bg-rose-200 text-rose-700 text-[9px] font-bold rounded transition-colors"
+                      title="화면 및 소다봇에서 테스트"
+                    >
+                      테스트
                     </button>
                   </div>
-                ))}
+                  <select
+                    value={btnSingleClick}
+                    onChange={(e) => setBtnSingleClick(e.target.value)}
+                    aria-label="한 번 누름 동작 선택"
+                    className="w-full text-[10px] font-semibold text-[#1D1D1F] bg-white border border-[#EAE6DF] rounded-lg px-2 py-1 focus:outline-none focus:border-rose-400 cursor-pointer shadow-2xs"
+                  >
+                    {buttonActionOptions.map((opt) => (
+                      <option key={opt.id} value={opt.id}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* 2. Double Click */}
+                <div className="p-2 bg-[#FAF9F6] rounded-2xl border border-[#EAE6DF] space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-[#1D1D1F] flex items-center gap-1">
+                      <span>⚡️</span> 더블 클릭 (2회)
+                    </span>
+                    <button
+                      onClick={() => executeButtonAction(btnDoubleClick, '더블 클릭')}
+                      className="px-1.5 py-0.5 bg-rose-100 hover:bg-rose-200 text-rose-700 text-[9px] font-bold rounded transition-colors"
+                      title="화면 및 소다봇에서 테스트"
+                    >
+                      테스트
+                    </button>
+                  </div>
+                  <select
+                    value={btnDoubleClick}
+                    onChange={(e) => setBtnDoubleClick(e.target.value)}
+                    aria-label="더블 클릭 동작 선택"
+                    className="w-full text-[10px] font-semibold text-[#1D1D1F] bg-white border border-[#EAE6DF] rounded-lg px-2 py-1 focus:outline-none focus:border-rose-400 cursor-pointer shadow-2xs"
+                  >
+                    {buttonActionOptions.map((opt) => (
+                      <option key={opt.id} value={opt.id}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* 3. Long Press */}
+                <div className="p-2 bg-[#FAF9F6] rounded-2xl border border-[#EAE6DF] space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-[#1D1D1F] flex items-center gap-1">
+                      <span>⏳</span> 길게 누름 (1초)
+                    </span>
+                    <button
+                      onClick={() => executeButtonAction(btnLongPress, '길게 누름')}
+                      className="px-1.5 py-0.5 bg-rose-100 hover:bg-rose-200 text-rose-700 text-[9px] font-bold rounded transition-colors"
+                      title="화면 및 소다봇에서 테스트"
+                    >
+                      테스트
+                    </button>
+                  </div>
+                  <select
+                    value={btnLongPress}
+                    onChange={(e) => setBtnLongPress(e.target.value)}
+                    aria-label="길게 누름 동작 선택"
+                    className="w-full text-[10px] font-semibold text-[#1D1D1F] bg-white border border-[#EAE6DF] rounded-lg px-2 py-1 focus:outline-none focus:border-rose-400 cursor-pointer shadow-2xs"
+                  >
+                    {buttonActionOptions.map((opt) => (
+                      <option key={opt.id} value={opt.id}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
             </div>
 
             <button 
               onClick={() => {
-                sendWsCommand("set_reaction", "touch", "동작 반응 설정 전송");
-                showToast('동작 반응 설정이 저장 및 적용되었습니다!');
+                localStorage.setItem('sodabot_btn_single', btnSingleClick);
+                localStorage.setItem('sodabot_btn_double', btnDoubleClick);
+                localStorage.setItem('sodabot_btn_long', btnLongPress);
+                sendWsCommand("set_button_action", JSON.stringify({
+                  single: btnSingleClick,
+                  double: btnDoubleClick,
+                  long: btnLongPress
+                }), "단일 버튼 동작 설정 저장 및 전송");
+                showToast('단일 버튼 동작 설정이 저장 및 소다봇에 적용되었습니다!');
               }}
-              className="mt-6 w-full py-2.5 bg-rose-400 hover:bg-rose-500 text-white text-xs font-bold rounded-xl transition-colors shadow-sm flex items-center justify-center gap-1.5"
+              className="mt-4 w-full py-2.5 bg-rose-400 hover:bg-rose-500 text-white text-xs font-bold rounded-xl transition-colors shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <Save className="w-3.5 h-3.5" />
-              저장 후 보내기
+              저장 후 소다봇에 적용
             </button>
           </div>
 
 
-          {/* Card 6: 시작 & 대기 설정 */}
-          <div className="bg-white border-2 border-teal-400/30 hover:border-teal-400/60 rounded-3xl p-5 shadow-sm flex flex-col justify-between transition-all">
+          {/* Card 4: 시작 시퀀스 & 대기 시간 */}
+          <div className="bg-white border-2 border-teal-400/30 hover:border-teal-400/60 rounded-3xl p-5 shadow-sm flex flex-col justify-between transition-all space-y-3">
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-teal-600 bg-teal-50 px-2.5 py-1 rounded-lg border border-teal-100">
-                  6. 시작 & 대기 설정
+                  4. 시작 시퀀스 설정
                 </span>
                 <Zap className="w-4 h-4 text-teal-500" />
               </div>
               <p className="text-[11px] text-[#86868B] leading-snug">
-                전원을 켰을 때부터 대기 상태까지 소다봇의 흐름을 설정해요.
+                전원을 켰을 때 실행할 단계(인사, 표정, 소리, 시계)를 직접 구성해요.
               </p>
 
-              {/* Sequence */}
+              {/* Dynamic Interactive Sequence List */}
               <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-[#5C5B57]">시작 순서 <span className="text-[#86868B] font-normal">(전원 켤 때)</span></label>
-                {startSeq.map(seq => (
-                  <div key={seq.id} className="flex items-center justify-between p-1.5 px-2.5 bg-[#FAF9F6] rounded-xl border border-[#EAE6DF] text-xs">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono font-bold text-teal-600 text-xs">{seq.id}</span>
-                      <span className="text-xs">{seq.icon}</span>
-                      <span className="text-[11px] font-semibold text-[#1D1D1F]">{seq.text}</span>
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold text-[#5C5B57]">
+                    부팅 시퀀스 ({bootSequence.filter(s => s.enabled).length}개 활성)
+                  </label>
+                  <span className="text-[9px] text-[#86868B]">순서 이동/설정</span>
+                </div>
+
+                <div className="space-y-1.5 max-h-[170px] overflow-y-auto pr-1">
+                  {bootSequence.map((seq, index) => (
+                    <div 
+                      key={seq.id} 
+                      className={`p-2 rounded-xl border transition-all ${
+                        seq.enabled ? 'bg-[#FAF9F6] border-[#EAE6DF]' : 'bg-gray-50/70 border-gray-200 opacity-60'
+                      }`}
+                    >
+                      {/* Step Header */}
+                      <div className="flex items-center justify-between gap-1">
+                        <div className="flex items-center gap-1.5">
+                          <input 
+                            type="checkbox" 
+                            checked={seq.enabled} 
+                            onChange={() => toggleSeqEnabled(seq.id)}
+                            className="w-3 h-3 accent-teal-600 cursor-pointer rounded"
+                            title="이 단계 켜기/끄기"
+                          />
+                          <span className="font-mono font-bold text-teal-600 text-[10px]">{index + 1}</span>
+                          <span className="text-xs">{seq.icon}</span>
+                          <span className="text-[11px] font-bold text-[#1D1D1F] truncate max-w-[80px]">{seq.name}</span>
+                        </div>
+
+                        {/* Reorder controls */}
+                        <div className="flex items-center gap-0.5">
+                          <button 
+                            disabled={index === 0}
+                            onClick={() => moveSeqUp(index)}
+                            title="위로 이동"
+                            className="p-0.5 text-[#86868B] hover:text-[#1D1D1F] rounded disabled:opacity-20 cursor-pointer"
+                          >
+                            <MoveUp className="w-3 h-3" />
+                          </button>
+                          <button 
+                            disabled={index === bootSequence.length - 1}
+                            onClick={() => moveSeqDown(index)}
+                            title="아래로 이동"
+                            className="p-0.5 text-[#86868B] hover:text-[#1D1D1F] rounded disabled:opacity-20 cursor-pointer"
+                          >
+                            <MoveDown className="w-3 h-3" />
+                          </button>
+                          <button 
+                            onClick={() => removeSeqItem(seq.id)}
+                            title="삭제"
+                            className="p-0.5 text-rose-400 hover:text-rose-600 rounded cursor-pointer"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                    <Layers className="w-3.5 h-3.5 text-[#86868B] cursor-grab" />
+                  ))}
+                </div>
+
+                {/* Add Step Button Row */}
+                <div className="pt-1 border-t border-[#EAE6DF] space-y-1">
+                  <div className="grid grid-cols-4 gap-1">
+                    <button 
+                      onClick={() => addSeqItem('greeting')}
+                      className="py-1 px-1 bg-white hover:bg-teal-50 border border-[#EAE6DF] hover:border-teal-200 text-[10px] font-bold text-[#5C5B57] rounded-xl flex items-center justify-center gap-1 transition-all cursor-pointer shadow-2xs"
+                    >
+                      💬 인사
+                    </button>
+                    <button 
+                      onClick={() => addSeqItem('expression')}
+                      className="py-1 px-1 bg-white hover:bg-teal-50 border border-[#EAE6DF] hover:border-teal-200 text-[10px] font-bold text-[#5C5B57] rounded-xl flex items-center justify-center gap-1 transition-all cursor-pointer shadow-2xs"
+                    >
+                      😃 표정
+                    </button>
+                    <button 
+                      onClick={() => addSeqItem('sound')}
+                      className="py-1 px-1 bg-white hover:bg-teal-50 border border-[#EAE6DF] hover:border-teal-200 text-[10px] font-bold text-[#5C5B57] rounded-xl flex items-center justify-center gap-1 transition-all cursor-pointer shadow-2xs"
+                    >
+                      🎵 소리
+                    </button>
+                    <button 
+                      onClick={() => addSeqItem('time')}
+                      className="py-1 px-1 bg-white hover:bg-teal-50 border border-[#EAE6DF] hover:border-teal-200 text-[10px] font-bold text-[#5C5B57] rounded-xl flex items-center justify-center gap-1 transition-all cursor-pointer shadow-2xs"
+                    >
+                      ⏰ 시계
+                    </button>
                   </div>
-                ))}
+                </div>
               </div>
 
               {/* Standby Time */}
-              <div className="space-y-1">
+              <div className="space-y-1 pt-1">
                 <label className="text-[10px] font-bold text-[#5C5B57]">대기 시간</label>
                 <div className="relative">
                   <select 
                     value={standbyTime} 
-                    onChange={(e) => setStandbyTime(e.target.value)}
+                    onChange={(e) => {
+                      setStandbyTime(e.target.value);
+                      localStorage.setItem('sodabot_standby_time', e.target.value);
+                      sendWsCommand("set_standby", JSON.stringify({
+                        mode: standbyFace,
+                        timeout: e.target.value === '15초' ? 15000 : e.target.value === '1분' ? 60000 : e.target.value === '5분' ? 300000 : 30000
+                      }), "대기 시간 변경 전송");
+                    }}
                     className="w-full px-3 py-1.5 bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl text-xs font-bold text-[#1D1D1F] outline-none cursor-pointer appearance-none"
                   >
                     <option>15초</option>
@@ -1192,288 +1650,16 @@ export default function SodabotSettingsScreen() {
 
             <button 
               onClick={() => playBootSequence()}
-              className="mt-6 w-full py-2.5 bg-teal-500 hover:bg-teal-600 text-white text-xs font-bold rounded-xl transition-colors shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
+              className="mt-2 w-full py-2.5 bg-teal-500 hover:bg-teal-600 text-white text-xs font-bold rounded-xl transition-colors shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <Play className="w-3.5 h-3.5" />
-              시작 시퀀스 테스트 (2.0" LCD 재생)
+              시작 시퀀스 테스트 (2.0" LCD & 소다봇 동기화)
             </button>
           </div>
-
-
-          {/* Card 7: 데이터 & 시간 설정 */}
-          <div className="bg-white border-2 border-orange-400/30 hover:border-orange-400/60 rounded-3xl p-5 shadow-sm flex flex-col justify-between transition-all">
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-orange-600 bg-orange-50 px-2.5 py-1 rounded-lg border border-orange-100">
-                  7. 데이터 & 시간 설정
-                </span>
-                <Clock className="w-4 h-4 text-orange-500" />
-              </div>
-              <p className="text-[11px] text-[#86868B] leading-snug">
-                Wi-Fi 연결 정보와 시간, 날씨 등 필요한 정보를 설정해요.
-              </p>
-
-              {/* Wi-Fi Input Box */}
-              <div className="space-y-2 bg-[#FAF9F6] p-3 rounded-2xl border border-[#EAE6DF]">
-                <span className="text-[10px] font-bold text-[#1D1D1F] flex items-center gap-1">
-                  <Wifi className="w-3 h-3 text-orange-500" /> Wi-Fi 설정
-                </span>
-                <input 
-                  type="text" 
-                  value={wifiSsid}
-                  onChange={(e) => setWifiSsid(e.target.value)}
-                  placeholder="SSID"
-                  className="w-full px-2.5 py-1 bg-white border border-[#EAE6DF] rounded-lg text-xs font-mono"
-                />
-                <input 
-                  type="password" 
-                  value={wifiPass}
-                  onChange={(e) => setWifiPass(e.target.value)}
-                  placeholder="비밀번호"
-                  className="w-full px-2.5 py-1 bg-white border border-[#EAE6DF] rounded-lg text-xs font-mono"
-                />
-              </div>
-
-              {/* Time & Sync */}
-              <div className="space-y-2 text-xs">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold text-[#5C5B57]">시간/날짜 자동 동기화</span>
-                  <input 
-                    type="checkbox" 
-                    checked={autoSync}
-                    onChange={(e) => setAutoSync(e.target.checked)}
-                    className="accent-orange-500 w-4 h-4 cursor-pointer" 
-                  />
-                </div>
-                <select 
-                  value={timezone} 
-                  onChange={(e) => setTimezone(e.target.value)}
-                  className="w-full p-1.5 bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl text-[11px] font-medium"
-                >
-                  <option>서울, 대한민국 (GMT+9)</option>
-                  <option>도쿄, 일본 (GMT+9)</option>
-                  <option>뉴욕, 미국 (GMT-5)</option>
-                </select>
-
-                <div>
-                  <label className="text-[10px] font-bold text-[#5C5B57]">위치 (날씨용)</label>
-                  <select 
-                    value={location}
-                    onChange={(e) => setLocation(e.target.value)}
-                    className="w-full mt-1 p-1.5 bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl text-[11px] font-medium"
-                  >
-                    <option>서울특별시</option>
-                    <option>부산광역시</option>
-                    <option>인천광역시</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            <button 
-              onClick={() => showToast('Wi-Fi 및 네트워크 설정이 저장되었습니다!')}
-              className="mt-6 w-full py-2.5 bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold rounded-xl transition-colors shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
-            >
-              <Save className="w-3.5 h-3.5" />
-              저장
-            </button>
-          </div>
-
-
-          {/* Card 8: 백업 & 공유 */}
-          <div className="bg-white border-2 border-emerald-500/30 hover:border-emerald-500/60 rounded-3xl p-5 shadow-sm flex flex-col justify-between transition-all">
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-100">
-                  8. 백업 & 공유
-                </span>
-                <Share2 className="w-4 h-4 text-emerald-600" />
-              </div>
-              <p className="text-[11px] text-[#86868B] leading-snug">
-                내 소다봇 설정을 백업하거나 다른 사람과 공유할 수 있어요.
-              </p>
-
-              {/* Action links */}
-              <div className="space-y-2">
-                <button 
-                  onClick={handleExportConfig}
-                  className="w-full p-2.5 bg-[#FAF9F6] hover:bg-emerald-50/50 rounded-xl border border-[#EAE6DF] flex items-center gap-2 text-left group transition-colors cursor-pointer"
-                >
-                  <Download className="w-4 h-4 text-emerald-600 group-hover:scale-110 transition-transform" />
-                  <div>
-                    <div className="text-[11px] font-bold text-[#1D1D1F]">현재 설정 백업</div>
-                    <div className="text-[9px] text-[#86868B]">파일로 다운로드 (JSON)</div>
-                  </div>
-                </button>
-
-                <label className="w-full p-2.5 bg-[#FAF9F6] hover:bg-emerald-50/50 rounded-xl border border-[#EAE6DF] flex items-center gap-2 text-left group transition-colors cursor-pointer">
-                  <Upload className="w-4 h-4 text-emerald-600 group-hover:scale-110 transition-transform" />
-                  <div>
-                    <div className="text-[11px] font-bold text-[#1D1D1F]">설정 불러오기</div>
-                    <div className="text-[9px] text-[#86868B]">전에 저장한 설정 복원 (JSON)</div>
-                  </div>
-                  <input type="file" accept=".json" onChange={handleImportConfig} className="hidden" />
-                </label>
-
-                <button 
-                  onClick={() => showToast('공유용 소다봇 설정 데이터 패키지를 생성하는 중...')}
-                  className="w-full p-2 bg-[#FAF9F6] hover:bg-emerald-50/50 rounded-xl border border-[#EAE6DF] flex items-center gap-2 text-left transition-colors cursor-pointer"
-                >
-                  <Bot className="w-3.5 h-3.5 text-emerald-600" />
-                  <span className="text-[11px] font-semibold text-[#1D1D1F]">다른 소다봇에 보내기</span>
-                </button>
-
-                <button 
-                  onClick={() => {
-                    navigator.clipboard.writeText(window.location.href);
-                    showToast('소다봇 설정 공유 링크가 클립보드에 복사되었습니다!');
-                  }}
-                  className="w-full p-2 bg-[#FAF9F6] hover:bg-emerald-50/50 rounded-xl border border-[#EAE6DF] flex items-center gap-2 text-left transition-colors cursor-pointer"
-                >
-                  <Link className="w-3.5 h-3.5 text-emerald-600" />
-                  <span className="text-[11px] font-semibold text-[#1D1D1F]">공유 링크 만들기</span>
-                </button>
-              </div>
-            </div>
-
-            <button 
-              onClick={() => showToast('전체 소다봇 설정 백업본이 성공적으로 생성되었습니다!')}
-              className="mt-6 w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition-colors shadow-sm flex items-center justify-center gap-1.5"
-            >
-              <Download className="w-3.5 h-3.5" />
-              백업하기
-            </button>
-          </div>
-
         </div>
 
 
-        {/* Card 9: 소다봇 연결 & 상태 (Full Width Bottom Dashboard) */}
-        <div className="bg-white border-2 border-indigo-400/30 hover:border-indigo-400/60 rounded-3xl p-6 shadow-sm space-y-6">
-          
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 border-b border-[#EAE6DF] pb-4">
-            <div>
-              <h3 className="text-base font-bold text-[#1D1D1F] flex items-center gap-2">
-                <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-100">
-                  9. 소다봇 연결 & 상태
-                </span>
-                연결 상태를 확인하고, 펌웨어 업데이트와 센서 정보를 볼 수 있어요.
-              </h3>
-            </div>
-            <span className="text-[11px] text-[#86868B] font-mono">최종 동기화: {new Date().toLocaleTimeString()}</span>
-          </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-6">
-
-            {/* Col 1: Connection Status */}
-            <div className="bg-[#FAF9F6] p-4 rounded-2xl border border-[#EAE6DF] space-y-2 flex flex-col justify-between">
-              <div>
-                <span className="text-[10px] font-bold text-[#86868B]">연결 상태</span>
-                <div className="flex items-center gap-2 mt-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping"></span>
-                  <span className="text-sm font-bold text-emerald-600">{connectionType === 'none' ? '미연결' : '⚡ 연결됨'}</span>
-                </div>
-              </div>
-              <button 
-                onClick={() => { sodabotTransport.disconnect(); showToast('소다봇 연결을 해제했습니다.'); }}
-                className="w-full py-1.5 bg-white border border-[#EAE6DF] text-xs font-semibold text-[#5C5B57] hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 rounded-xl transition-colors"
-              >
-                연결 해제
-              </button>
-            </div>
-
-            {/* Col 2: Battery */}
-            <div className="bg-[#FAF9F6] p-4 rounded-2xl border border-[#EAE6DF] space-y-2 flex flex-col justify-between">
-              <div>
-                <span className="text-[10px] font-bold text-[#86868B]">배터리</span>
-                <div className="flex items-center gap-3 mt-2">
-                  <div className="w-8 h-12 border-2 border-emerald-500 rounded-lg p-0.5 flex flex-col justify-end relative">
-                    <div className="w-full bg-emerald-500 rounded-sm" style={{ height: '85%' }}></div>
-                  </div>
-                  <div>
-                    <div className="text-lg font-bold text-[#1D1D1F] font-mono">85%</div>
-                    <div className="text-[9px] text-emerald-600 font-semibold">정상 작동 중</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Col 3: Firmware & Storage */}
-            <div className="bg-[#FAF9F6] p-4 rounded-2xl border border-[#EAE6DF] space-y-3 flex flex-col justify-between">
-              <div>
-                <div className="flex justify-between items-center text-[10px] text-[#86868B] font-bold">
-                  <span>펌웨어 버전</span>
-                  <span className="font-mono text-[#1D1D1F]">v1.2.3</span>
-                </div>
-                <button className="mt-1 w-full py-1 text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-lg hover:bg-indigo-100">
-                  업데이트 확인
-                </button>
-              </div>
-
-              <div>
-                <div className="flex justify-between items-center text-[10px] text-[#86868B] font-bold">
-                  <span>저장 공간</span>
-                  <span className="font-mono text-[#1D1D1F]">72% 사용 중</span>
-                </div>
-                <div className="w-full h-1.5 bg-[#EAE6DF] rounded-full overflow-hidden mt-1">
-                  <div className="h-full bg-indigo-500" style={{ width: '72%' }}></div>
-                </div>
-              </div>
-            </div>
-
-            {/* Col 4: Sensor Info */}
-            <div className="bg-[#FAF9F6] p-4 rounded-2xl border border-[#EAE6DF] space-y-2">
-              <span className="text-[10px] font-bold text-[#86868B]">센서 정보</span>
-              <div className="space-y-1.5 pt-1 text-xs font-mono font-semibold">
-                <div className="flex items-center justify-between text-rose-600">
-                  <span className="flex items-center gap-1 text-[11px]"><Thermometer className="w-3.5 h-3.5" /> 온도</span>
-                  <span>26.5°C</span>
-                </div>
-                <div className="flex items-center justify-between text-blue-600">
-                  <span className="flex items-center gap-1 text-[11px]"><Droplets className="w-3.5 h-3.5" /> 습도</span>
-                  <span>48%</span>
-                </div>
-                <div className="flex items-center justify-between text-amber-600">
-                  <span className="flex items-center gap-1 text-[11px]"><Sun className="w-3.5 h-3.5" /> 조도</span>
-                  <span>320 lux</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Col 5: Recent Logs */}
-            <div className="bg-[#FAF9F6] p-4 rounded-2xl border border-[#EAE6DF] space-y-2">
-              <span className="text-[10px] font-bold text-[#86868B]">최근 활동</span>
-              <div className="space-y-1 text-[10px] text-[#5C5B57] font-mono">
-                <div className="flex items-center gap-1 truncate">
-                  <span className="text-emerald-500 font-bold">•</span> 14:30 표정 전송 완료
-                </div>
-                <div className="flex items-center gap-1 truncate">
-                  <span className="text-purple-500 font-bold">•</span> 14:28 소리 전송 완료
-                </div>
-                <div className="flex items-center gap-1 truncate">
-                  <span className="text-blue-500 font-bold">•</span> 14:25 WebSocket 연결
-                </div>
-              </div>
-            </div>
-
-            {/* Col 6: Help & Support */}
-            <div className="bg-[#FAF9F6] p-4 rounded-2xl border border-[#EAE6DF] space-y-2 flex flex-col justify-between">
-              <span className="text-[10px] font-bold text-[#86868B]">도움말</span>
-              <div className="space-y-1.5 text-[11px] font-semibold text-[#1D1D1F]">
-                <a href="#guide" className="flex items-center gap-1.5 hover:text-indigo-600">
-                  <FileText className="w-3.5 h-3.5 text-[#86868B]" /> 사용 가이드 보기
-                </a>
-                <a href="#faq" className="flex items-center gap-1.5 hover:text-indigo-600">
-                  <HelpCircle className="w-3.5 h-3.5 text-[#86868B]" /> 자주 묻는 질문
-                </a>
-                <a href="#support" className="flex items-center gap-1.5 hover:text-indigo-600">
-                  <MessageCircle className="w-3.5 h-3.5 text-[#86868B]" /> 문의하기
-                </a>
-              </div>
-            </div>
-
-          </div>
-        </div>
 
         {/* Footer Credit Note */}
         <div className="text-center text-xs text-[#86868B] font-mono pt-4">
@@ -2055,7 +2241,7 @@ export default function SodabotSettingsScreen() {
                       type="text"
                       value={editName}
                       onChange={(e) => setEditName(e.target.value)}
-                      placeholder="예: 초롱이, 앙칼진눈"
+                      placeholder="e.g. Sparkle Eyes, Lovely Face"
                       className="w-full p-2 bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl outline-none focus:bg-white focus:border-amber-400 font-bold"
                     />
                   </div>

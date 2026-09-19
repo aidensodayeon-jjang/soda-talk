@@ -1,4 +1,5 @@
 import { sodabotTransport } from './utils/sodabotTransport';
+import { renderTextToBitmapPayload } from './utils/textBitmapRenderer';
 import React, { useState, useEffect, useRef } from "react";
 import AuthScreen from "./components/AuthScreen";
 import SodabotConnectScreen from "./components/SodabotConnectScreen";
@@ -37,6 +38,7 @@ import {
   Activity,
   Bluetooth,
   Smile,
+  CheckCircle2,
   Lock,
   Unlock,
   ShieldCheck,
@@ -1744,52 +1746,183 @@ export default function App() {
                   </div>
                 </button>
 
-                {/* Categories */}
-                <div className="space-y-1 pb-1 pt-0.5">
+                {/* 6~11주차 실습 & AI 연동 메뉴 (소다봇 미연결 시 잠금 처리) */}
+                <div className="space-y-1 pb-1 pt-1 border-t border-[#EAE6DF]/70">
+                  <div className="flex items-center justify-between px-2 py-1 text-[10px] font-bold text-[#86868B] uppercase tracking-wider font-mono">
+                    <span className="flex items-center gap-1.5">
+                      <FolderCode className="w-3 h-3 text-indigo-600" />
+                      6~11주차 실습 & 연동
+                    </span>
+                    {!isSodabotConnected ? (
+                      <span className="text-[9px] text-amber-600 font-extrabold flex items-center gap-0.5 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                        <Lock className="w-2.5 h-2.5" /> 연결 필요
+                      </span>
+                    ) : (
+                      <span className="text-[9px] text-emerald-600 font-extrabold flex items-center gap-0.5 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                        <Unlock className="w-2.5 h-2.5" /> 연동됨
+                      </span>
+                    )}
+                  </div>
+
+                  {/* 6주차: 소다봇 설정하기 */}
                   <button
-                    onClick={() => setCurrentView('chat')}
-                    className={`w-full text-left px-3 py-2 rounded-xl text-xs font-semibold flex items-center justify-between transition-colors ${
-                      currentView === 'chat'
+                    onClick={() => {
+                      if (!isSodabotConnected) {
+                        alert("소다봇이 연결되지 않았습니다. 상단 '소다봇 상태' 카드를 눌러 먼저 기기를 연결해 주세요.");
+                        setCurrentView('sodabot');
+                        return;
+                      }
+                      setCurrentView('settings');
+                    }}
+                    className={`w-full text-left px-2.5 py-2 rounded-xl text-xs font-semibold flex items-center justify-between transition-all cursor-pointer ${
+                      !isSodabotConnected
+                        ? 'text-[#A1A1A6] hover:bg-amber-50/50 hover:text-amber-800'
+                        : currentView === 'settings'
                         ? 'bg-indigo-50 text-indigo-700 font-bold border border-indigo-200 shadow-2xs'
-                        : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20'
+                        : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20 hover:text-[#1D1D1F]'
                     }`}
                   >
-                    <div className="flex items-center gap-2">
-                      <MessageSquare className="w-3.5 h-3.5 text-indigo-600" />
-                      <span>소다와 대화하기</span>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Settings className={`w-3.5 h-3.5 shrink-0 ${isSodabotConnected ? 'text-blue-600' : 'text-slate-400'}`} />
+                      <span className="truncate">6주차: 소다봇 설정하기</span>
                     </div>
-                    <span className="text-[10px] text-indigo-600 font-bold">AI 대화</span>
+                    {!isSodabotConnected ? (
+                      <Lock className="w-3 h-3 text-amber-500 shrink-0" />
+                    ) : (
+                      <span className="text-[9px] text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded font-mono font-bold shrink-0">
+                        설정
+                      </span>
+                    )}
                   </button>
 
+                  {/* 7주차: 소다봇 빌더 */}
                   <button
-                    onClick={() => setCurrentView('settings')}
-                    className={`w-full text-left px-3 py-2 rounded-xl text-xs font-medium flex items-center gap-2 transition-colors ${
-                      currentView === 'settings'
-                        ? 'bg-indigo-50 text-indigo-700 font-semibold border border-indigo-200 shadow-2xs'
-                        : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20'
+                    onClick={() => {
+                      if (!isSodabotConnected) {
+                        alert("소다봇이 연결되지 않았습니다. 상단 '소다봇 상태' 카드를 눌러 먼저 기기를 연결해 주세요.");
+                        setCurrentView('sodabot');
+                        return;
+                      }
+                      setCurrentView('sodabot_builder');
+                    }}
+                    className={`w-full text-left px-2.5 py-2 rounded-xl text-xs font-semibold flex items-center justify-between transition-all cursor-pointer ${
+                      !isSodabotConnected
+                        ? 'text-[#A1A1A6] hover:bg-amber-50/50 hover:text-amber-800'
+                        : currentView === 'sodabot_builder'
+                        ? 'bg-indigo-50 text-indigo-700 font-bold border border-indigo-200 shadow-2xs'
+                        : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20 hover:text-[#1D1D1F]'
                     }`}
                   >
-                    <Settings className="w-3.5 h-3.5 text-[#5C5B57]" />
-                    <span>상태 & 설정</span>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Sparkles className={`w-3.5 h-3.5 shrink-0 ${isSodabotConnected ? 'text-amber-500' : 'text-slate-400'}`} />
+                      <span className="truncate">7주차: 소다봇 빌더</span>
+                    </div>
+                    {!isSodabotConnected ? (
+                      <Lock className="w-3 h-3 text-amber-500 shrink-0" />
+                    ) : (
+                      <span className="text-[9px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded font-mono font-bold shrink-0">
+                        빌더
+                      </span>
+                    )}
                   </button>
 
+                  {/* 8주차: 소다와 대화하기 */}
                   <button
-                    onClick={() => setCurrentView('sodabot_builder')}
-                    className={`w-full text-left px-3 py-2 rounded-xl text-xs font-medium flex items-center justify-between transition-colors ${
-                      currentView === 'sodabot_builder'
-                        ? 'bg-indigo-50 text-indigo-700 font-semibold border border-indigo-200 shadow-2xs'
-                        : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20'
+                    onClick={() => {
+                      if (!isSodabotConnected) {
+                        alert("소다봇이 연결되지 않았습니다. 상단 '소다봇 상태' 카드를 눌러 먼저 기기를 연결해 주세요.");
+                        setCurrentView('sodabot');
+                        return;
+                      }
+                      setCurrentView('chat');
+                    }}
+                    className={`w-full text-left px-2.5 py-2 rounded-xl text-xs font-semibold flex items-center justify-between transition-all cursor-pointer ${
+                      !isSodabotConnected
+                        ? 'text-[#A1A1A6] hover:bg-amber-50/50 hover:text-amber-800'
+                        : currentView === 'chat'
+                        ? 'bg-indigo-50 text-indigo-700 font-bold border border-indigo-200 shadow-2xs'
+                        : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20 hover:text-[#1D1D1F]'
                     }`}
                   >
-                    <div className="flex items-center gap-2">
-                      <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                      <span>소다봇빌더 (6주차)</span>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <MessageSquare className={`w-3.5 h-3.5 shrink-0 ${isSodabotConnected ? 'text-indigo-600' : 'text-slate-400'}`} />
+                      <span className="truncate">8주차: 소다와 대화하기</span>
                     </div>
+                    {!isSodabotConnected ? (
+                      <Lock className="w-3 h-3 text-amber-500 shrink-0" />
+                    ) : (
+                      <span className="text-[9px] text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded font-mono font-bold shrink-0">
+                        AI 대화
+                      </span>
+                    )}
+                  </button>
+
+                  {/* 9주차: 소다봇 시나리오 & 센서 */}
+                  <button
+                    onClick={() => {
+                      if (!isSodabotConnected) {
+                        alert("소다봇이 연결되지 않았습니다. 상단 '소다봇 상태' 카드를 눌러 먼저 기기를 연결해 주세요.");
+                        setCurrentView('sodabot');
+                        return;
+                      }
+                      alert("9주차: 소다봇 인터랙션 & 센서 제어 기능은 수업 진행에 맞춰 순차 오픈됩니다.");
+                    }}
+                    className="w-full text-left px-2.5 py-2 rounded-xl text-xs font-medium flex items-center justify-between text-[#86868B] hover:bg-[#EAE6DF]/20 transition-all cursor-pointer opacity-80"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Cpu className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span className="truncate">9주차: 시나리오 & 센서</span>
+                    </div>
+                    <span className="text-[9px] text-[#86868B] bg-[#FAF9F6] border border-[#EAE6DF] px-1.5 py-0.5 rounded font-mono shrink-0">
+                      준비중
+                    </span>
+                  </button>
+
+                  {/* 10주차: 웹 API & 클라우드 연동 */}
+                  <button
+                    onClick={() => {
+                      if (!isSodabotConnected) {
+                        alert("소다봇이 연결되지 않았습니다. 상단 '소다봇 상태' 카드를 눌러 먼저 기기를 연결해 주세요.");
+                        setCurrentView('sodabot');
+                        return;
+                      }
+                      alert("10주차: 웹 API & 클라우드 연동 실습은 수업 진행에 맞춰 순차 오픈됩니다.");
+                    }}
+                    className="w-full text-left px-2.5 py-2 rounded-xl text-xs font-medium flex items-center justify-between text-[#86868B] hover:bg-[#EAE6DF]/20 transition-all cursor-pointer opacity-80"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Wifi className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span className="truncate">10주차: 웹 API & 클라우드</span>
+                    </div>
+                    <span className="text-[9px] text-[#86868B] bg-[#FAF9F6] border border-[#EAE6DF] px-1.5 py-0.5 rounded font-mono shrink-0">
+                      준비중
+                    </span>
+                  </button>
+
+                  {/* 11주차: 캡스톤 최종 프로젝트 */}
+                  <button
+                    onClick={() => {
+                      if (!isSodabotConnected) {
+                        alert("소다봇이 연결되지 않았습니다. 상단 '소다봇 상태' 카드를 눌러 먼저 기기를 연결해 주세요.");
+                        setCurrentView('sodabot');
+                        return;
+                      }
+                      alert("11주차: 나만의 소다봇 캡스톤 프로젝트 발표 실습은 수업 진행에 맞춰 순차 오픈됩니다.");
+                    }}
+                    className="w-full text-left px-2.5 py-2 rounded-xl text-xs font-medium flex items-center justify-between text-[#86868B] hover:bg-[#EAE6DF]/20 transition-all cursor-pointer opacity-80"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span className="truncate">11주차: 캡스톤 프로젝트</span>
+                    </div>
+                    <span className="text-[9px] text-[#86868B] bg-[#FAF9F6] border border-[#EAE6DF] px-1.5 py-0.5 rounded font-mono shrink-0">
+                      준비중
+                    </span>
                   </button>
                 </div>
 
-                {/* Chat Rooms List when in Chat View */}
-                {currentView === 'chat' && (
+                {/* Chat Rooms List when in Chat View & Connected */}
+                {currentView === 'chat' && isSodabotConnected && (
                   <div className="pt-2 border-t border-[#EAE6DF] space-y-1.5">
                     <div className="flex items-center justify-between px-1 text-[10px] font-semibold text-[#86868B] uppercase tracking-wider font-mono">
                       <span>대화 기록</span>
@@ -1976,7 +2109,7 @@ export default function App() {
       ) : (
         /* Normal Chat / Sodabot Connect / Builder View */
         <main className="flex-1 flex flex-col h-screen overflow-hidden bg-white relative">
-          {(!isSodabotConnected && currentView !== 'sodabot' && currentView !== 'settings') ? (
+          {(!isSodabotConnected && currentView !== 'sodabot') ? (
             /* Connection Required Gate View */
             <div className="flex-1 flex flex-col items-center justify-center h-full bg-[#FAF9F6] p-6 text-center select-none relative overflow-hidden">
               <div className="absolute inset-0 bg-[linear-gradient(to_right,#EAE6DF_1px,transparent_1px),linear-gradient(to_bottom,#EAE6DF_1px,transparent_1px)] bg-[size:5rem_5rem] opacity-30 pointer-events-none" />

@@ -24,9 +24,12 @@ class SodabotTransport {
     window.dispatchEvent(new Event('sodabot-status-changed'));
   }
   private receive = (raw: string) => {
-    let reply: Reply;
+    let reply: any;
     try { reply = JSON.parse(raw); } catch { return; }
     if (reply.ip) localStorage.setItem('sodabot_robot_ip', reply.ip);
+    if (reply.event === 'button_pressed' || reply.event === 'button') {
+      window.dispatchEvent(new CustomEvent('sodabot-button-event', { detail: reply }));
+    }
     if (!reply.id) return;
     const entry = this.pending.get(reply.id);
     if (!entry) return;
