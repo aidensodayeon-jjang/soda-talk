@@ -206,6 +206,43 @@ export function validateCustomCode(parts: CustomCodeParts): ValidationResult {
 }
 
 /**
+ * 마커 사이의 기존 내용을 제거하고 새 코드로 안전하게 교체
+ * - "없음", "NONE", 빈값인 경우 마커만 유지하고 내용 비움
+ * - 마커 누락 시 명확한 에러 예외 발생
+ * - 단순 append가 아닌 마커 구간 1:1 교체
+ */
+export function replaceCustomSection(
+  source: string,
+  startMarker: string,
+  endMarker: string,
+  newCode?: string | null,
+  sectionName = 'SECTION'
+): string {
+  const startIndex = source.indexOf(startMarker);
+  const endIndex = source.indexOf(endMarker);
+
+  if (startIndex === -1 || endIndex === -1 || startIndex >= endIndex) {
+    throw new Error(`[MERGE ERROR] ${startMarker} 또는 ${endMarker} 마커를 템플릿에서 찾을 수 없습니다.`);
+  }
+
+  const trimmed = (newCode || '').trim();
+  const isEmpty = !trimmed || trimmed === '없음' || trimmed.toUpperCase() === 'NONE';
+
+  let formattedCode = '';
+  if (!isEmpty) {
+    formattedCode = `\n${trimmed}\n`;
+    console.log(`[MERGE] ${sectionName} inserted`);
+  } else {
+    console.log(`[MERGE] ${sectionName} empty - skipped`);
+  }
+
+  const before = source.substring(0, startIndex + startMarker.length);
+  const after = source.substring(endIndex);
+
+  return before + formattedCode + after;
+}
+
+/**
  * 기본 펌웨어와 4개 파트 커스텀 코드를 안전하게 자동 병합
  */
 export function generateCustomFirmware(
@@ -221,28 +258,10 @@ export function generateCustomFirmware(
   const extractedFunctions = extractFunctionNames(parts.functionCode || '');
   const mainFunctionName = findMainExecutableFunction(parts.functionCode || '') || extractedFunctions[0] || '';
 
-  // 1. 헤더 정리 (중복 include 제거 및 들여쓰기)
-  let cleanHeaders = (parts.headers || '').trim();
-  if (cleanHeaders) {
-    // 중복 제거
-    const lines = cleanHeaders.split('\n').map(l => l.trim()).filter(Boolean);
-    const uniqueLines = Array.from(new Set(lines));
-    cleanHeaders = uniqueLines.join('\n');
-  }
-
-  // 2. 전역 변수 정리
-  const cleanGlobals = (parts.globals || '').trim();
-
-  // 3. 초기화 코드 정리
-  const cleanSetup = (parts.setup || '').trim();
-
-  // 4. 실행 함수 코드 정리
-  let cleanFunctions = (parts.functionCode || '').trim();
-
-  // 기본 템플릿 치환
+  // 1. 기본 템플릿 로드
   let merged = template;
 
-  // Wi-Fi / BLE 설정 치환
+  // 2. Wi-Fi / BLE 설정 치환
   const substitutions: Record<string, string> = {
     __SODA_WIFI_SSID__: JSON.stringify(wifiSsid),
     __SODA_WIFI_PASSWORD__: JSON.stringify(wifiPass),
@@ -250,38 +269,46 @@ export function generateCustomFirmware(
   };
   merged = merged.replace(/__SODA_WIFI_SSID__|__SODA_WIFI_PASSWORD__|__SODA_BLE_NAME__/g, key => substitutions[key]);
 
-  // 마커 위치에 안전하게 삽입
-  // ① HEADERS
-  const headersBlock = cleanHeaders ? `\n// [CUSTOM HEADERS: ${parts.name}]\n${cleanHeaders}\n` : '';
-  merged = merged.replace(
-    /\/\/\s*===\s*CUSTOM_HEADERS_START\s*===[\s\S]*?\/\/\s*===\s*CUSTOM_HEADERS_END\s*===/,
-    `// === CUSTOM_HEADERS_START ===${headersBlock}// === CUSTOM_HEADERS_END ===`
+  // 3. HEADERS 영역 교체
+  merged = replaceCustomSection(
+    merged,
+    '// === CUSTOM_HEADERS_START ===',
+    '// === CUSTOM_HEADERS_END ===',
+    parts.headers,
+    'HEADERS'
   );
 
-  // ② GLOBALS
-  const globalsBlock = cleanGlobals ? `\n// [CUSTOM GLOBALS: ${parts.name}]\n${cleanGlobals}\n` : '';
-  merged = merged.replace(
-    /\/\/\s*===\s*CUSTOM_GLOBALS_START\s*===[\s\S]*?\/\/\s*===\s*CUSTOM_GLOBALS_END\s*===/,
-    `// === CUSTOM_GLOBALS_START ===${globalsBlock}// === CUSTOM_GLOBALS_END ===`
+  // 4. GLOBALS 영역 교체 (전역 범위 유지)
+  merged = replaceCustomSection(
+    merged,
+    '// === CUSTOM_GLOBALS_START ===',
+    '// === CUSTOM_GLOBALS_END ===',
+    parts.globals,
+    'GLOBALS'
   );
 
-  // ③ SETUP
-  const setupBlock = cleanSetup ? `\n  // [CUSTOM SETUP: ${parts.name}]\n  ${cleanSetup.split('\n').join('\n  ')}\n` : '';
-  merged = merged.replace(
-    /\/\/\s*===\s*CUSTOM_SETUP_START\s*===[\s\S]*?\/\/\s*===\s*CUSTOM_SETUP_END\s*===/,
-    `// === CUSTOM_SETUP_START ===${setupBlock}  // === CUSTOM_SETUP_END ===`
+  // 5. SETUP 영역 교체
+  merged = replaceCustomSection(
+    merged,
+    '// === CUSTOM_SETUP_START ===',
+    '// === CUSTOM_SETUP_END ===',
+    parts.setup,
+    'SETUP'
   );
 
-  // ④ FUNCTION 및 슬롯 자동 연결
-  const functionsBlock = cleanFunctions ? `\n// ==============================================================================\n// [CUSTOM FUNCTION: ${parts.name}]\n// ==============================================================================\n${cleanFunctions}\n` : '';
-  merged = merged.replace(
-    /\/\/\s*===\s*CUSTOM_FUNCTIONS_START\s*===[\s\S]*?\/\/\s*===\s*CUSTOM_FUNCTIONS_END\s*===/,
-    `// === CUSTOM_FUNCTIONS_START ===${functionsBlock}// === CUSTOM_FUNCTIONS_END ===`
+  // 6. FUNCTIONS 영역 교체
+  merged = replaceCustomSection(
+    merged,
+    '// === CUSTOM_FUNCTIONS_START ===',
+    '// === CUSTOM_FUNCTIONS_END ===',
+    parts.functionCode,
+    'FUNCTIONS'
   );
 
+  // 7. 슬롯 자동 연결 및 중복 함수 정의 방지
+  const cleanFunctions = (parts.functionCode || '').trim();
   const targetSlot = parts.targetSlot || 'CUSTOM_1';
 
-  // customFunction1 중복 정의 방지 및 연결
   if (/\bvoid\s+customFunction1\s*\(\s*\)/.test(cleanFunctions)) {
     merged = merged.replace(/void customFunction1\(\)\s*\{[\s\S]*?\n\}/, '// (customFunction1은 상단 커스텀 영역에서 정의됨)');
   } else if (targetSlot === 'CUSTOM_1' && mainFunctionName && mainFunctionName !== 'customFunction1') {
@@ -291,7 +318,6 @@ export function generateCustomFirmware(
     );
   }
 
-  // customFunction2 중복 정의 방지 및 연결
   if (/\bvoid\s+customFunction2\s*\(\s*\)/.test(cleanFunctions)) {
     merged = merged.replace(/void customFunction2\(\)\s*\{[\s\S]*?\n\}/, '// (customFunction2는 상단 커스텀 영역에서 정의됨)');
   } else if (targetSlot === 'CUSTOM_2' && mainFunctionName && mainFunctionName !== 'customFunction2') {
@@ -301,7 +327,6 @@ export function generateCustomFirmware(
     );
   }
 
-  // customFunction3 중복 정의 방지 및 연결
   if (/\bvoid\s+customFunction3\s*\(\s*\)/.test(cleanFunctions)) {
     merged = merged.replace(/void customFunction3\(\)\s*\{[\s\S]*?\n\}/, '// (customFunction3는 상단 커스텀 영역에서 정의됨)');
   } else if (targetSlot === 'CUSTOM_3' && mainFunctionName && mainFunctionName !== 'customFunction3') {
@@ -311,15 +336,33 @@ export function generateCustomFirmware(
     );
   }
 
+  // 8. 병합 후 검증 단계
+  const cleanGlobals = (parts.globals || '').trim();
+  if (cleanGlobals && cleanGlobals !== '없음' && cleanGlobals.toUpperCase() !== 'NONE') {
+    const firstCodeLine = cleanGlobals.split('\n').map(l => l.trim()).find(l => l && !l.startsWith('//'));
+    if (firstCodeLine && !merged.includes(firstCodeLine)) {
+      throw new Error('GLOBALS 병합 실패: 입력한 전역변수가 최종 펌웨어에 반영되지 않았습니다.');
+    }
+  }
+
+  if (cleanFunctions && cleanFunctions !== '없음' && cleanFunctions.toUpperCase() !== 'NONE') {
+    const firstCodeLine = cleanFunctions.split('\n').map(l => l.trim()).find(l => l && !l.startsWith('//'));
+    if (firstCodeLine && !merged.includes(firstCodeLine)) {
+      throw new Error('FUNCTION 병합 실패: 입력한 함수 코드가 최종 펌웨어에 반영되지 않았습니다.');
+    }
+  }
+
+  console.log('[MERGE] validation passed');
+
   return {
     mergedCode: merged,
     fileName,
     mainFunctionName,
     includedParts: {
-      headers: Boolean(cleanHeaders),
-      globals: Boolean(cleanGlobals),
-      setup: Boolean(cleanSetup),
-      function: Boolean(cleanFunctions),
+      headers: Boolean(parts.headers && parts.headers.trim() && parts.headers.trim() !== '없음' && parts.headers.trim().toUpperCase() !== 'NONE'),
+      globals: Boolean(cleanGlobals && cleanGlobals !== '없음' && cleanGlobals.toUpperCase() !== 'NONE'),
+      setup: Boolean(parts.setup && parts.setup.trim() && parts.setup.trim() !== '없음' && parts.setup.trim().toUpperCase() !== 'NONE'),
+      function: Boolean(cleanFunctions && cleanFunctions !== '없음' && cleanFunctions.toUpperCase() !== 'NONE'),
     }
   };
 }
