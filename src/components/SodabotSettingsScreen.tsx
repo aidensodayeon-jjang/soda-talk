@@ -689,7 +689,7 @@ export default function SodabotSettingsScreen() {
   const [isCopiedGptPrompt, setIsCopiedGptPrompt] = useState(false);
 
   const handleCopyGptPrompt = () => {
-    const effectiveFeature = gptFeatureInput.trim() || (funcNameInput.trim() ? `${funcNameInput.trim()}${funcDescInput.trim() ? ` - ${funcDescInput.trim()}` : ''}` : '');
+    const effectiveFeature = gptFeatureInput.trim() || funcNameInput.trim() || '';
     const prompt = buildGptCustomPrompt(effectiveFeature);
     navigator.clipboard.writeText(prompt);
     setIsCopiedGptPrompt(true);
@@ -2405,21 +2405,7 @@ export default function SodabotSettingsScreen() {
                     />
                   </div>
 
-                  {/* 2. 기능 설명 (선택) */}
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-[#191919]">
-                      기능 설명 (선택)
-                    </label>
-                    <input
-                      type="text"
-                      value={funcDescInput}
-                      onChange={(e) => setFuncDescInput(e.target.value)}
-                      placeholder="예: 인터넷에서 현재 시간을 가져와 화면에 표시"
-                      className="w-full px-3 py-2 bg-white border border-[#E5E5E3] focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 rounded-xl text-xs font-medium text-[#191919] outline-none transition-all placeholder:text-[#A1A1A0]"
-                    />
-                  </div>
-
-                  {/* 3. 커스텀 코드 4개 영역 */}
+                  {/* 2. 커스텀 코드 4개 영역 */}
                   <div className="space-y-3 pt-1 border-t border-[#E5E5E3]">
                     <div className="flex items-center justify-between flex-wrap gap-1.5">
                       <div className="flex items-center gap-2">
@@ -2465,7 +2451,7 @@ export default function SodabotSettingsScreen() {
                           type="text"
                           value={gptFeatureInput}
                           onChange={(e) => setGptFeatureInput(e.target.value)}
-                          placeholder={funcNameInput.trim() ? `${funcNameInput}${funcDescInput.trim() ? ` (${funcDescInput})` : ''}` : "예: 인터넷에서 서울 현재 시간을 가져와서 LCD에 표시하기"}
+                          placeholder={funcNameInput.trim() ? funcNameInput.trim() : "예: 인터넷에서 서울 현재 시간을 가져와서 LCD에 표시하기"}
                           className="w-full px-3.5 py-2.5 bg-white border border-[#E5E5E3] focus:border-blue-600 focus:ring-2 focus:ring-blue-600/10 rounded-xl text-xs sm:text-sm font-medium text-[#191919] outline-none transition-all placeholder:text-[#A1A1A0] shadow-2xs"
                         />
 
@@ -2784,20 +2770,6 @@ export default function SodabotSettingsScreen() {
                     {editingFunc.arduinoFunction}()
                   </span>
                 </div>
-              </div>
-
-              {/* 3. 기능 설명 (선택) */}
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-[#191919]">
-                  기능 설명 (선택)
-                </label>
-                <input
-                  type="text"
-                  value={funcDescInput}
-                  onChange={(e) => setFuncDescInput(e.target.value)}
-                  placeholder="예: 현재 시간을 화면에 표시"
-                  className="w-full px-3 py-2 bg-white border border-[#E5E5E3] focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 rounded-xl text-xs font-medium text-[#191919] outline-none transition-all placeholder:text-[#A1A1A0]"
-                />
               </div>
 
               {/* 전체 펌웨어 코드 복사 버튼 */}
