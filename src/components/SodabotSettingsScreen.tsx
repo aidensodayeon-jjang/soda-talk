@@ -854,6 +854,31 @@ export default function SodabotSettingsScreen() {
     setTimeout(() => setIsCopiedCode(false), 2000);
   };
 
+  // 등록된 커스텀 기능의 전체 펌웨어 코드를 언제든지 다시 복사
+  const [copiedFuncId, setCopiedFuncId] = useState<string | null>(null);
+  const handleCopyCustomFunctionCode = (fn: any) => {
+    try {
+      const wifiSsid = localStorage.getItem('sodabot_wifi_ssid') || '';
+      const wifiPass = localStorage.getItem('sodabot_wifi_pass') || '';
+      const parts: CustomCodeParts = {
+        name: fn.name,
+        description: fn.description,
+        headers: fn.headers || '',
+        globals: fn.globals || '',
+        setup: fn.setupCode || '',
+        functionCode: fn.functionCode || `void ${fn.arduinoFunction || 'customFunction'}() {\n  // 기능 코드\n}`,
+        targetSlot: fn.slot
+      };
+      const result = generateCustomFirmware(parts, profileName || 'LUMI', wifiSsid, wifiPass);
+      navigator.clipboard.writeText(result.mergedCode);
+      setCopiedFuncId(fn.id);
+      showToast(`📋 '${fn.name}' 전체 펌웨어 코드가 클립보드에 복사되었습니다!`);
+      setTimeout(() => setCopiedFuncId(null), 2000);
+    } catch (err: any) {
+      showToast(`코드 복사 중 오류: ${err.message || '알 수 없는 오류'}`);
+    }
+  };
+
   // 2. 기능 수정 모달 열기
   const handleOpenEditFuncModal = (fn: { id: string; name: string; slot: string; arduinoFunction: string; description: string; createdAt?: number }) => {
     setEditingFunc(fn);
@@ -2095,23 +2120,31 @@ export default function SodabotSettingsScreen() {
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-1 pt-1 border-t border-neutral-200/50">
+                          <div className="flex items-center gap-1.5 pt-1.5 border-t border-neutral-200/50 flex-wrap">
+                            <button
+                              onClick={() => handleCopyCustomFunctionCode(fn)}
+                              className="flex-1 py-1.5 px-2 bg-blue-50/70 hover:bg-blue-100 text-blue-700 border border-blue-200 text-[10px] font-semibold rounded-lg flex items-center justify-center gap-1 transition-all cursor-pointer active:scale-95 shadow-2xs"
+                              title="이 기능이 합쳐진 전체 Arduino 펌웨어 코드를 복사합니다"
+                            >
+                              {copiedFuncId === fn.id ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3 text-blue-600" />}
+                              <span>{copiedFuncId === fn.id ? '복사 완료!' : '전체 코드 복사'}</span>
+                            </button>
                             <button
                               onClick={() => setConnectTargetFunc(fn)}
-                              className="flex-1 py-1 px-2 bg-white hover:bg-neutral-100 text-blue-600 border border-[#E5E5E3] text-[10px] font-semibold rounded-lg flex items-center justify-center gap-1 transition-all cursor-pointer"
+                              className="py-1.5 px-2 bg-white hover:bg-neutral-50 text-neutral-700 border border-[#E5E5E3] text-[10px] font-medium rounded-lg flex items-center justify-center gap-1 transition-all cursor-pointer"
                             >
-                              <Link className="w-3 h-3" />
-                              버튼에 연결
+                              <Link className="w-3 h-3 text-neutral-400" />
+                              버튼 연결
                             </button>
                             <button
                               onClick={() => handleOpenEditFuncModal(fn)}
-                              className="py-1 px-2 bg-white hover:bg-neutral-100 text-neutral-700 border border-[#E5E5E3] text-[10px] font-medium rounded-lg transition-all cursor-pointer"
+                              className="py-1.5 px-2 bg-white hover:bg-neutral-50 text-neutral-700 border border-[#E5E5E3] text-[10px] font-medium rounded-lg transition-all cursor-pointer"
                             >
                               수정
                             </button>
                             <button
                               onClick={() => handleRequestDeleteFunction(fn)}
-                              className="py-1 px-2 bg-white hover:bg-rose-50 text-neutral-500 hover:text-rose-600 border border-[#E5E5E3] text-[10px] font-medium rounded-lg transition-all cursor-pointer"
+                              className="py-1.5 px-2 bg-white hover:bg-rose-50 text-neutral-500 hover:text-rose-600 border border-[#E5E5E3] text-[10px] font-medium rounded-lg transition-all cursor-pointer"
                             >
                               삭제
                             </button>
@@ -2773,8 +2806,18 @@ export default function SodabotSettingsScreen() {
                 />
               </div>
 
+              {/* 전체 펌웨어 코드 복사 버튼 */}
+              <button
+                type="button"
+                onClick={() => handleCopyCustomFunctionCode(editingFunc)}
+                className="w-full py-2 bg-blue-50/70 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-95 shadow-2xs"
+              >
+                {copiedFuncId === editingFunc.id ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5 text-blue-600" />}
+                <span>{copiedFuncId === editingFunc.id ? '전체 코드 복사 완료!' : '전체 펌웨어 코드 복사하기'}</span>
+              </button>
+
               {/* Action Buttons */}
-              <div className="pt-2 flex items-center gap-2">
+              <div className="pt-1 flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setEditingFunc(null)}
