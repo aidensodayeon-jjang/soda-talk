@@ -2051,26 +2051,6 @@ export default function SodabotSettingsScreen() {
             </button>
           </div>
 
-          {/* Educational Workflow Banner */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-[#FBFBFA] p-3 rounded-xl border border-[#EBEBEA] text-center">
-            <div className="flex items-center justify-center gap-2 p-1.5 text-xs font-medium text-[#191919]">
-              <span className="w-4 h-4 rounded-full bg-white border border-[#E5E5E3] text-[9px] font-bold flex items-center justify-center text-neutral-700 shadow-2xs shrink-0">1</span>
-              <span className="truncate">Arduino 기능 개발</span>
-            </div>
-            <div className="flex items-center justify-center gap-2 p-1.5 text-xs font-medium text-[#191919]">
-              <span className="w-4 h-4 rounded-full bg-white border border-[#E5E5E3] text-[9px] font-bold flex items-center justify-center text-neutral-700 shadow-2xs shrink-0">2</span>
-              <span className="truncate">SODA TALK 기능 등록</span>
-            </div>
-            <div className="flex items-center justify-center gap-2 p-1.5 text-xs font-medium text-[#191919]">
-              <span className="w-4 h-4 rounded-full bg-white border border-[#E5E5E3] text-[9px] font-bold flex items-center justify-center text-neutral-700 shadow-2xs shrink-0">3</span>
-              <span className="truncate">물리 버튼에 연결</span>
-            </div>
-            <div className="flex items-center justify-center gap-2 p-1.5 text-xs font-medium text-[#191919]">
-              <span className="w-4 h-4 rounded-full bg-white border border-[#E5E5E3] text-[9px] font-bold flex items-center justify-center text-neutral-700 shadow-2xs shrink-0">4</span>
-              <span className="truncate">소다봇에서 실행</span>
-            </div>
-          </div>
-
           {/* Custom Functions Cards Grid */}
           {customFunctions.length === 0 ? (
             <div className="text-center py-10 px-4 bg-[#FBFBFA] rounded-xl border border-dashed border-[#E5E5E3] space-y-2.5">
