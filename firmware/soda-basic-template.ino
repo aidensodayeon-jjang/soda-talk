@@ -1356,23 +1356,51 @@ void triggerExpressionByName(const String& name) {
 }
 
 // ==============================================================================
-// 🎓 학생 실습용 사용자 정의 함수 (Arduino Custom Functions)
-// 학생이 개발한 새로운 기능을 여기에 함수로 작성하고 SODA TALK에 등록하여 연결하세요!
+// 🎓 학생 실습용 사용자 정의 함수 슬롯 (Arduino Custom Function Slots)
+// 학생이 개발한 새로운 기능을 아래 함수(customFunction1, 2, 3) 내부에 직접 작성하세요!
 // ==============================================================================
-void handleUserCustomFunction(const String& funcName) {
-  Serial.println("[MY FUNCTION] 사용자 정의 함수 실행: " + funcName);
-  
-  // 예시: 학생이 등록한 함수명에 따라 원하는 동작을 수행
-  if (funcName == "showClock" || funcName == "clock") {
-    // 실습 예: 학생이 구현할 시계 동작
-    drawMessage("MY FUNCTION\n" + funcName + "()", 0);
-    sleeping = false; customExpression = true; expressionUntil = millis() + 3000;
-    if (speakerReady) playToneI2S(1000, 100);
+
+// 사용자 함수 슬롯 1 (SODA TALK: CUSTOM_1)
+void customFunction1() {
+  Serial.println("[MY FUNCTION] customFunction1() 실행");
+  // [학생 실습 코딩 영역]: 예: 인터넷 시계, 스톱워치 등
+  drawMessage("MY FUNCTION 1\ncustomFunction1()", 0);
+  sleeping = false; customExpression = true; expressionUntil = millis() + 3000;
+  if (speakerReady) playToneI2S(1000, 100);
+}
+
+// 사용자 함수 슬롯 2 (SODA TALK: CUSTOM_2)
+void customFunction2() {
+  Serial.println("[MY FUNCTION] customFunction2() 실행");
+  // [학생 실습 코딩 영역]: 예: 날씨 알리미, 카운트다운 등
+  drawMessage("MY FUNCTION 2\ncustomFunction2()", 0);
+  sleeping = false; customExpression = true; expressionUntil = millis() + 3000;
+  if (speakerReady) playToneI2S(1200, 100);
+}
+
+// 사용자 함수 슬롯 3 (SODA TALK: CUSTOM_3)
+void customFunction3() {
+  Serial.println("[MY FUNCTION] customFunction3() 실행");
+  // [학생 실습 코딩 영역]: 예: AI 질문, 반응 효과 등
+  drawMessage("MY FUNCTION 3\ncustomFunction3()", 0);
+  sleeping = false; customExpression = true; expressionUntil = millis() + 3000;
+  if (speakerReady) playToneI2S(1400, 100);
+}
+
+// 사용자 슬롯 명령(CUSTOM_1, CUSTOM_2, CUSTOM_3) 분기 핸들러
+void handleUserCustomFunction(const String& cmd) {
+  String upperCmd = cmd;
+  upperCmd.toUpperCase();
+  upperCmd.trim();
+
+  if (upperCmd == "CUSTOM_1" || upperCmd == "CUSTOMFUNCTION1" || upperCmd == "1") {
+    customFunction1();
+  } else if (upperCmd == "CUSTOM_2" || upperCmd == "CUSTOMFUNCTION2" || upperCmd == "2") {
+    customFunction2();
+  } else if (upperCmd == "CUSTOM_3" || upperCmd == "CUSTOMFUNCTION3" || upperCmd == "3") {
+    customFunction3();
   } else {
-    // 기본 사용자 함수 피드백
-    drawMessage("MY FUNCTION\n" + funcName + "()", 0);
-    sleeping = false; customExpression = true; expressionUntil = millis() + 3000;
-    if (speakerReady) playToneI2S(1200, 80);
+    customFunction1();
   }
 }
 

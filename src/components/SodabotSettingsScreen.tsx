@@ -557,22 +557,45 @@ export default function SodabotSettingsScreen() {
   const [soundTab, setSoundTab] = useState<'basic' | 'custom'>('basic');
   const [playingSound, setPlayingSound] = useState<string | null>(null);
 
+  // 미리 준비된 아두이노 사용자 함수 슬롯 정의 (확장 가능)
+  const USER_FUNCTION_SLOTS = [
+    { slot: 'CUSTOM_1', arduinoFunction: 'customFunction1', label: 'customFunction1()' },
+    { slot: 'CUSTOM_2', arduinoFunction: 'customFunction2', label: 'customFunction2()' },
+    { slot: 'CUSTOM_3', arduinoFunction: 'customFunction3', label: 'customFunction3()' },
+  ];
+
   // 사용자 정의 아두이노 기능 (MY FUNCTIONS) 상태 관리
   const [customFunctions, setCustomFunctions] = useState<Array<{
     id: string;
     name: string;
-    functionName: string;
+    slot: string;
+    arduinoFunction: string;
     description: string;
     createdAt?: number;
   }>>(() => {
     try {
       const saved = localStorage.getItem('sodabot_custom_functions');
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return parsed.map((item: any, idx: number) => {
+          const slotObj = USER_FUNCTION_SLOTS.find(s => s.slot === item.slot || s.arduinoFunction === item.functionName || s.arduinoFunction === item.arduinoFunction)
+            || USER_FUNCTION_SLOTS[idx % USER_FUNCTION_SLOTS.length];
+          return {
+            id: item.id || `func_${Date.now()}_${idx}`,
+            name: item.name || '인터넷 시계',
+            slot: slotObj.slot,
+            arduinoFunction: slotObj.arduinoFunction,
+            description: item.description || '',
+            createdAt: item.createdAt || Date.now()
+          };
+        });
+      }
       return [
         {
           id: 'func_clock_demo',
           name: '인터넷 시계',
-          functionName: 'showClock',
+          slot: 'CUSTOM_1',
+          arduinoFunction: 'customFunction1',
           description: '인터넷에서 현재 시간을 가져와 화면에 표시합니다.',
           createdAt: Date.now()
         }
@@ -584,11 +607,11 @@ export default function SodabotSettingsScreen() {
 
   // 새 기능 등록 / 수정 모달 상태
   const [showFuncModal, setShowFuncModal] = useState(false);
-  const [editingFunc, setEditingFunc] = useState<{ id: string; name: string; functionName: string; description: string; createdAt?: number } | null>(null);
+  const [editingFunc, setEditingFunc] = useState<{ id: string; name: string; slot: string; arduinoFunction: string; description: string; createdAt?: number } | null>(null);
   const [funcNameInput, setFuncNameInput] = useState('');
-  const [funcIdentifierInput, setFuncIdentifierInput] = useState('');
+  const [selectedSlot, setSelectedSlot] = useState('CUSTOM_1');
   const [funcDescInput, setFuncDescInput] = useState('');
-  const [connectTargetFunc, setConnectTargetFunc] = useState<{ id: string; name: string; functionName: string; description: string } | null>(null);
+  const [connectTargetFunc, setConnectTargetFunc] = useState<{ id: string; name: string; slot: string; arduinoFunction: string; description: string } | null>(null);
 
   const [btnSingleClick, setBtnSingleClick] = useState(() => {
     const saved = localStorage.getItem('sodabot_btn_single');
@@ -639,15 +662,17 @@ export default function SodabotSettingsScreen() {
   const handleOpenNewFuncModal = () => {
     setEditingFunc(null);
     setFuncNameInput('');
-    setFuncIdentifierInput('');
+    const usedSlots = customFunctions.map(f => f.slot);
+    const availableSlot = USER_FUNCTION_SLOTS.find(s => !usedSlots.includes(s.slot)) || USER_FUNCTION_SLOTS[0];
+    setSelectedSlot(availableSlot.slot);
     setFuncDescInput('');
     setShowFuncModal(true);
   };
 
-  const handleOpenEditFuncModal = (fn: { id: string; name: string; functionName: string; description: string; createdAt?: number }) => {
+  const handleOpenEditFuncModal = (fn: { id: string; name: string; slot: string; arduinoFunction: string; description: string; createdAt?: number }) => {
     setEditingFunc(fn);
     setFuncNameInput(fn.name);
-    setFuncIdentifierInput(fn.functionName);
+    setSelectedSlot(fn.slot);
     setFuncDescInput(fn.description);
     setShowFuncModal(true);
   };
@@ -655,24 +680,22 @@ export default function SodabotSettingsScreen() {
   const handleSaveCustomFunction = (e: React.FormEvent) => {
     e.preventDefault();
     const trimmedName = funcNameInput.trim();
-    const trimmedIdent = funcIdentifierInput.trim().replace(/\(\)$/, '');
     const trimmedDesc = funcDescInput.trim();
 
     if (!trimmedName) {
       alert('기능 이름을 입력해주세요.');
       return;
     }
-    if (!trimmedIdent) {
-      alert('함수 이름을 입력해주세요 (예: showClock).');
-      return;
-    }
 
-    let updatedList: Array<{ id: string; name: string; functionName: string; description: string; createdAt?: number }>;
+    const slotObj = USER_FUNCTION_SLOTS.find(s => s.slot === selectedSlot) || USER_FUNCTION_SLOTS[0];
+
+    let updatedList: Array<{ id: string; name: string; slot: string; arduinoFunction: string; description: string; createdAt?: number }>;
     if (editingFunc) {
       updatedList = customFunctions.map(item => item.id === editingFunc.id ? {
         ...item,
         name: trimmedName,
-        functionName: trimmedIdent,
+        slot: slotObj.slot,
+        arduinoFunction: slotObj.arduinoFunction,
         description: trimmedDesc
       } : item);
       showToast(`'${trimmedName}' 기능 정보가 수정되었습니다.`);
@@ -680,7 +703,8 @@ export default function SodabotSettingsScreen() {
       const newItem = {
         id: `func_${Date.now()}`,
         name: trimmedName,
-        functionName: trimmedIdent,
+        slot: slotObj.slot,
+        arduinoFunction: slotObj.arduinoFunction,
         description: trimmedDesc,
         createdAt: Date.now()
       };
@@ -702,8 +726,8 @@ export default function SodabotSettingsScreen() {
     }
   };
 
-  const handleConnectToButton = (fn: { id: string; name: string; functionName: string }, targetButton: 'single' | 'double' | 'long') => {
-    const customValue = `custom:${fn.functionName}`;
+  const handleConnectToButton = (fn: { id: string; name: string; slot: string; arduinoFunction: string }, targetButton: 'single' | 'double' | 'long') => {
+    const customValue = `custom:${fn.slot}`;
     let singleVal = btnSingleClick;
     let doubleVal = btnDoubleClick;
     let longVal = btnLongPress;
@@ -741,21 +765,23 @@ export default function SodabotSettingsScreen() {
   const executeButtonAction = (targetAction: string, triggerName: string) => {
     showToast(`🔘 [${triggerName}] 동작을 테스트합니다!`);
 
-    // 1. 커스텀 사용자 정의 함수 실행
-    if (targetAction.startsWith('custom:')) {
-      const funcName = targetAction.replace('custom:', '');
-      const matchedFunc = customFunctions.find(f => f.functionName === funcName);
-      const funcTitle = matchedFunc ? matchedFunc.name : funcName;
+    // 1. 커스텀 사용자 정의 함수 슬롯(CUSTOM_1, CUSTOM_2, CUSTOM_3) 실행
+    if (targetAction.startsWith('custom:') || targetAction.startsWith('CUSTOM_')) {
+      const slotKey = targetAction.replace('custom:', '');
+      const matchedFunc = customFunctions.find(f => f.slot === slotKey || f.arduinoFunction === slotKey);
+      const slotObj = USER_FUNCTION_SLOTS.find(s => s.slot === slotKey || s.arduinoFunction === slotKey);
+      const funcTitle = matchedFunc ? matchedFunc.name : slotKey;
+      const arduinoFnLabel = slotObj ? slotObj.label : matchedFunc ? `${matchedFunc.arduinoFunction}()` : `${slotKey}()`;
 
-      // 소다봇에 사용자 정의 함수 실행 명령 전송
-      sendWsCommand("call_function", funcName, `사용자 함수 '${funcTitle}(${funcName}())' 실행`);
+      // 소다봇에 슬롯 명령 전송 (예: CUSTOM_1)
+      sendWsCommand("call_function", slotObj ? slotObj.slot : slotKey, `사용자 슬롯 '${funcTitle}(${slotKey})' 실행`);
 
       // LCD 화면 시뮬레이터에 표시
       setBootingState('greeting');
-      setBootingMessage(`[MY FUNCTION]\n${funcTitle}\n${funcName}()`);
+      setBootingMessage(`[MY FUNCTION]\n${funcTitle}\n${arduinoFnLabel}`);
       playWebSound('touch_react');
       setTimeout(() => { setBootingState(null); setSelectedExpr(defaultIdleExpr); }, 3000);
-      showToast(`⚡ [${triggerName}] 내가 만든 기능 '${funcTitle}(${funcName}())' 실행!`);
+      showToast(`⚡ [${triggerName}] 내가 만든 기능 '${funcTitle} (${arduinoFnLabel})' 실행!`);
       return;
     }
 
@@ -1712,8 +1738,8 @@ export default function SodabotSettingsScreen() {
                         <option disabled value="">아직 등록된 기능이 없습니다</option>
                       ) : (
                         customFunctions.map((fn) => (
-                          <option key={fn.id} value={`custom:${fn.functionName}`}>
-                            ✨ {fn.name} ({fn.functionName}())
+                          <option key={fn.id} value={`custom:${fn.slot}`}>
+                            ✨ {fn.name} ({fn.arduinoFunction}())
                           </option>
                         ))
                       )}
@@ -1751,8 +1777,8 @@ export default function SodabotSettingsScreen() {
                         <option disabled value="">아직 등록된 기능이 없습니다</option>
                       ) : (
                         customFunctions.map((fn) => (
-                          <option key={fn.id} value={`custom:${fn.functionName}`}>
-                            ✨ {fn.name} ({fn.functionName}())
+                          <option key={fn.id} value={`custom:${fn.slot}`}>
+                            ✨ {fn.name} ({fn.arduinoFunction}())
                           </option>
                         ))
                       )}
@@ -1790,8 +1816,8 @@ export default function SodabotSettingsScreen() {
                         <option disabled value="">아직 등록된 기능이 없습니다</option>
                       ) : (
                         customFunctions.map((fn) => (
-                          <option key={fn.id} value={`custom:${fn.functionName}`}>
-                            ✨ {fn.name} ({fn.functionName}())
+                          <option key={fn.id} value={`custom:${fn.slot}`}>
+                            ✨ {fn.name} ({fn.arduinoFunction}())
                           </option>
                         ))
                       )}
@@ -2049,9 +2075,9 @@ export default function SodabotSettingsScreen() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {customFunctions.map((fn) => {
-                const isConnectedSingle = btnSingleClick === `custom:${fn.functionName}`;
-                const isConnectedDouble = btnDoubleClick === `custom:${fn.functionName}`;
-                const isConnectedLong = btnLongPress === `custom:${fn.functionName}`;
+                const isConnectedSingle = btnSingleClick === `custom:${fn.slot}`;
+                const isConnectedDouble = btnDoubleClick === `custom:${fn.slot}`;
+                const isConnectedLong = btnLongPress === `custom:${fn.slot}`;
                 const connectedButtons = [
                   isConnectedSingle && '한 번 누름',
                   isConnectedDouble && '더블 클릭',
@@ -2077,9 +2103,9 @@ export default function SodabotSettingsScreen() {
                       </div>
 
                       <div className="bg-white px-3 py-2 rounded-xl border border-[#EAE6DF] font-mono text-[11px] text-indigo-600 flex items-center justify-between shadow-2xs">
-                        <span className="text-[#86868B] font-sans text-[10px] font-medium">함수명:</span>
-                        <span className="font-bold bg-indigo-50/70 px-1.5 py-0.5 rounded border border-indigo-100">
-                          {fn.functionName}()
+                        <span className="text-[#86868B] font-sans text-[10px] font-medium">연결 함수:</span>
+                        <span className="font-bold bg-indigo-50/70 px-2 py-0.5 rounded-lg border border-indigo-100">
+                          {fn.arduinoFunction}()
                         </span>
                       </div>
 
@@ -2146,7 +2172,7 @@ export default function SodabotSettingsScreen() {
                     {editingFunc ? '기능 정보 수정' : '새 기능 등록'}
                   </h3>
                   <p className="text-[11px] text-[#86868B]">
-                    Arduino에서 만든 함수를 SODA TALK에 등록해요.
+                    Arduino에서 만든 기능을 SODA TALK에 등록해요.
                   </p>
                 </div>
               </div>
@@ -2176,30 +2202,44 @@ export default function SodabotSettingsScreen() {
                   className="w-full px-3.5 py-2.5 bg-[#FAF9F6] border border-[#EAE6DF] focus:border-indigo-500 focus:bg-white rounded-xl text-xs font-medium text-[#1D1D1F] outline-none transition-all"
                   required
                 />
-                <p className="text-[10px] text-[#86868B]">버튼 동작 목록과 소다톡 화면에 표시될 직관적인 한글 이름입니다.</p>
               </div>
 
-              {/* 2. 함수 이름 */}
+              {/* 2. 연결할 사용자 함수 (슬롯 드롭다운) */}
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-[#1D1D1F] flex items-center justify-between">
-                  <span>함수 이름 (Arduino Function)</span>
+                  <span>연결할 사용자 함수</span>
                   <span className="text-[10px] text-rose-500 font-normal">* 필수</span>
                 </label>
-                <input
-                  type="text"
-                  value={funcIdentifierInput}
-                  onChange={(e) => setFuncIdentifierInput(e.target.value)}
-                  placeholder="예: showClock, getWeather, startTimer"
-                  className="w-full px-3.5 py-2.5 bg-[#FAF9F6] border border-[#EAE6DF] focus:border-indigo-500 focus:bg-white rounded-xl text-xs font-mono text-indigo-700 outline-none transition-all"
-                  required
-                />
-                <div className="p-2 bg-indigo-50/60 rounded-xl border border-indigo-100 text-[10px] text-indigo-900 leading-snug">
-                  💡 <strong>Arduino 코드</strong>에서 작성한 함수명과 동일하게 입력하세요.<br />
-                  <span className="font-mono text-indigo-600">예: void <strong>showClock</strong>() {'{ ... }'}</span>
+                <div className="relative">
+                  <select
+                    value={selectedSlot}
+                    onChange={(e) => setSelectedSlot(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-[#FAF9F6] border border-[#EAE6DF] focus:border-indigo-500 focus:bg-white rounded-xl text-xs font-mono font-bold text-indigo-700 outline-none transition-all appearance-none cursor-pointer"
+                  >
+                    {USER_FUNCTION_SLOTS.map((slot) => (
+                      <option key={slot.slot} value={slot.slot}>
+                        {slot.label}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="w-4 h-4 text-[#86868B] absolute right-3 top-3 pointer-events-none" />
+                </div>
+
+                {/* 도움말 박스 */}
+                <div className="p-3 bg-indigo-50/70 rounded-2xl border border-indigo-100 text-[11px] text-indigo-950 space-y-1.5 leading-relaxed">
+                  <p className="font-semibold text-indigo-900">
+                    도움말: Arduino에서 코드를 작성한 사용자 함수 슬롯을 선택하세요.
+                  </p>
+                  <p className="text-[10px] text-indigo-700">
+                    예: <span className="font-mono font-bold">{USER_FUNCTION_SLOTS.find(s => s.slot === selectedSlot)?.label || 'customFunction1()'}</span> 안에 인터넷 시계 코드를 작성했다면 해당 함수를 선택합니다.
+                  </p>
+                  <div className="bg-white/90 p-2 rounded-lg border border-indigo-100 font-mono text-[10px] text-indigo-800 leading-snug">
+                    void <strong className="text-indigo-600">{USER_FUNCTION_SLOTS.find(s => s.slot === selectedSlot)?.arduinoFunction || 'customFunction1'}</strong>() {'{\n   ...\n}'}
+                  </div>
                 </div>
               </div>
 
-              {/* 3. 설명 */}
+              {/* 3. 기능 설명 (선택) */}
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-[#1D1D1F]">
                   기능 설명 (선택)
@@ -2248,7 +2288,7 @@ export default function SodabotSettingsScreen() {
                 <span className="text-base">🔗</span>
                 <div>
                   <h3 className="text-sm font-bold text-[#1D1D1F]">물리 버튼 동작에 연결</h3>
-                  <p className="text-[10px] text-[#86868B]">{connectTargetFunc.name} ({connectTargetFunc.functionName}())</p>
+                  <p className="text-[10px] text-[#86868B]">{connectTargetFunc.name} ({connectTargetFunc.arduinoFunction}())</p>
                 </div>
               </div>
               <button 
