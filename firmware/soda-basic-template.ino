@@ -1105,12 +1105,24 @@ inline int getGlyphWidth(uint32_t code, uint8_t size) {
   return 8 * size;                                        // 영문/숫자/기호: 8px * size
 }
 
-void drawMessage(const String& message, uint8_t reqSize = 0) {
-  tft.fillScreen(LCD_BG_COLOR);
+uint16_t parseHexColor565(const String& hex, uint16_t defaultColor = 0x269D) {
+  if (hex.length() < 6) return defaultColor;
+  String clean = hex;
+  if (clean.startsWith("#")) clean = clean.substring(1);
+  if (clean.length() < 6) return defaultColor;
+  long rgb = strtol(clean.c_str(), NULL, 16);
+  uint8_t r = (rgb >> 16) & 0xFF;
+  uint8_t g = (rgb >> 8) & 0xFF;
+  uint8_t b = rgb & 0xFF;
+  return tft.color565(r, g, b);
+}
+
+void drawMessageWithStyle(const String& message, uint8_t reqSize = 0, uint16_t textColor = ST77XX_WHITE, uint16_t bgColor = ST77XX_BLACK, int offsetY = 0) {
+  if (offsetY == 0) tft.fillScreen(bgColor);
   tft.setTextWrap(false);
   if (message.length() == 0) return;
 
-  // 1. 전체 글자 수 및 개행 여부 분석
+  // 1. 전체 글자 수 및 개행 분석
   int totalGlyphs = 0;
   bool hasNewline = false;
   int maxLineLength = 0;
@@ -1133,18 +1145,15 @@ void drawMessage(const String& message, uint8_t reqSize = 0) {
   }
   if (currentLineLen > maxLineLength) maxLineLength = currentLineLen;
 
-  // 2. 글자 크기(size) 결정 (요청 크기 reqSize가 0이면 스마트 자동 조절)
-  // - 1~6자 한 줄: size 3 (48px 초대형)
-  // - 한 줄당 최대 20자 이하 & 4줄 이하(환영 인사, 알림 등): size 2 (32px 큼직한 폰트)
-  // - 아주 긴 장문(5줄 이상 또는 21자 초과): size 1 (16px)
+  // 2. 글자 크기(size) 결정
   uint8_t size = reqSize;
   if (size == 0) {
-    if (totalGlyphs <= 6 && !hasNewline) {
-      size = 3;
-    } else if (maxLineLength <= 20 && newlineCount <= 4 && totalGlyphs <= 70) {
-      size = 2; // 인사 문구가 시원하고 큼직하게 렌더링되도록 기본 크기 확대
+    if (offsetY > 0) {
+      size = (maxLineLength <= 20 && newlineCount <= 3) ? 2 : 1;
     } else {
-      size = 1;
+      if (totalGlyphs <= 6 && !hasNewline) size = 3;
+      else if (maxLineLength <= 20 && newlineCount <= 4 && totalGlyphs <= 70) size = 2;
+      else size = 1;
     }
   }
   if (size < 1) size = 1;
@@ -1153,7 +1162,6 @@ void drawMessage(const String& message, uint8_t reqSize = 0) {
   int lineH = (16 * size) + (size == 1 ? 4 : (size == 2 ? 8 : 10));
   int maxW = 310;
 
-  // 3. 줄 분할 정보 구조체
   struct LineInfo {
     size_t startByte;
     size_t endByte;
@@ -1182,7 +1190,6 @@ void drawMessage(const String& message, uint8_t reqSize = 0) {
     if (code == 0) break;
     int gw = getGlyphWidth(code, size);
 
-    // 가로 폭 초과 시 다음 줄로 넘김
     if (currentLineW + gw > maxW && currentLineW > 0) {
       lines[lineCount++] = { currentLineStart, charStart, currentLineW };
       currentLineStart = charStart;
@@ -1196,12 +1203,12 @@ void drawMessage(const String& message, uint8_t reqSize = 0) {
   }
   if (lineCount == 0) return;
 
-  // 4. 수직 중앙 정렬 (startY) 계산
+  // 수직 정렬
   int totalH = lineCount * lineH - (size == 1 ? 4 : (size == 2 ? 8 : 10));
-  int startY = (240 - totalH) / 2;
+  int startY = offsetY > 0 ? offsetY : ((240 - totalH) / 2);
   if (startY < 8) startY = 8;
 
-  // 5. 각 줄 렌더링 (수평 중앙 정렬)
+  // 렌더링
   for (int l = 0; l < lineCount; l++) {
     int startX = (320 - lines[l].width) / 2;
     if (startX < 6) startX = 6;
@@ -1217,18 +1224,80 @@ void drawMessage(const String& message, uint8_t reqSize = 0) {
       int gw = getGlyphWidth(code, size);
 
       if (code >= 0xAC00 && code <= 0xD7A3) {
-        drawHangulChar(curX, curY, code, ST77XX_WHITE, LCD_BG_COLOR, size);
+        drawHangulChar(curX, curY, code, textColor, bgColor, size);
       } else if (code >= 32 && code <= 126) {
-        drawAsciiChar(curX, curY, (char)code, ST77XX_WHITE, LCD_BG_COLOR, size);
+        drawAsciiChar(curX, curY, (char)code, textColor, bgColor, size);
       }
       curX += gw;
     }
   }
 }
 
+void drawMessage(const String& message, uint8_t reqSize = 0) {
+  drawMessageWithStyle(message, reqSize, ST77XX_WHITE, LCD_BG_COLOR, 0);
+}
+
+// ── 나만의 환영화면 (테마 배경 + 마스코트 + 커스텀 글자 색상) 렌더링 엔진 ───
+void drawWelcomeScreenCustom(const String& text, const String& theme, const String& colorHex, const String& mascot) {
+  // 1. 테마별 배경색 결정
+  uint16_t bgColor = ST77XX_BLACK;
+  if (theme == "starry") bgColor = 0x0845;       // 딥 네이비 우주
+  else if (theme == "neon") bgColor = 0x0113;     // 사이버 다크 블루
+  else if (theme == "sunset") bgColor = 0x384B;   // 핑크 석양 퍼플
+  else if (theme == "emerald") bgColor = 0x0224;  // 에메랄드 그린
+  
+  tft.fillScreen(bgColor);
+
+  // 별빛 효과 (starry 테마)
+  if (theme == "starry") {
+    for (int i = 0; i < 24; i++) {
+      int sx = (i * 37 + 13) % 318 + 1;
+      int sy = (i * 29 + 7) % 238 + 1;
+      tft.drawPixel(sx, sy, ST77XX_WHITE);
+      if (i % 3 == 0) tft.drawPixel(sx + 1, sy, 0xCE79);
+    }
+  }
+
+  // 2. 글자 색상 파싱
+  uint16_t textColor = parseHexColor565(colorHex, 0x269D);
+
+  // 3. 상단 마스코트 눈 렌더링 (Y=35 중심)
+  if (mascot == "heart") {
+    // 하트 이모지 스타일 눈
+    tft.fillCircle(110, 42, 14, 0xF9B8); // 핑크
+    tft.fillCircle(130, 42, 14, 0xF9B8);
+    tft.fillTriangle(98, 48, 142, 48, 120, 68, 0xF9B8);
+    tft.fillCircle(190, 42, 14, 0xF9B8);
+    tft.fillCircle(210, 42, 14, 0xF9B8);
+    tft.fillTriangle(178, 48, 222, 48, 200, 68, 0xF9B8);
+  } else if (mascot == "happy") {
+    // 반원형 행복 눈
+    tft.fillRoundRect(100, 36, 44, 28, 12, textColor);
+    tft.fillRoundRect(104, 46, 36, 20, 8, bgColor);
+    tft.fillRoundRect(176, 36, 44, 28, 12, textColor);
+    tft.fillRoundRect(180, 46, 36, 20, 8, bgColor);
+  } else if (mascot == "sunglasses" || mascot == "cat") {
+    // 캣/선글라스 눈
+    tft.fillRoundRect(95, 34, 48, 30, 8, textColor);
+    tft.fillRoundRect(177, 34, 48, 30, 8, textColor);
+    tft.fillRect(140, 44, 40, 6, textColor);
+  } else {
+    // 기본 로봇 눈
+    tft.fillRoundRect(100, 35, 42, 34, 10, textColor);
+    tft.fillRoundRect(178, 35, 42, 34, 10, textColor);
+  }
+
+  // 4. 하단 환영 문구 렌더링 (Y=105부터 시작)
+  drawMessageWithStyle(text, 0, textColor, bgColor, 105);
+}
+
 // ── 영구 플래시 저장소 (NVS Preferences) ────────────────────────────────────
 Preferences prefs;
 String welcomeMsg = "HELLO!\nI AM LUMI :)\nNICE TO SEE YOU TODAY!";
+String welcomeTheme = "starry";
+String welcomeColor = "#22D3EE";
+String welcomeMascot = "happy";
+
 String defaultIdleExpr = "default"; // 기본 펌웨어 기본 표정: "default"
 String standbyMode = "default";    // "default", "clock", "weather", "off", etc.
 unsigned long standbyTimeoutMs = 30000; // 30초 (기본값)
@@ -1243,6 +1312,10 @@ String btnLongAction = "greeting";
 void loadSettingsFromNVS() {
   if (prefs.begin("sodabot", true)) { // 읽기 모드로 오픈
     welcomeMsg = prefs.getString("welcome", "HELLO!\nI AM LUMI :)\nNICE TO SEE YOU TODAY!");
+    welcomeTheme = prefs.getString("wel_theme", "starry");
+    welcomeColor = prefs.getString("wel_color", "#22D3EE");
+    welcomeMascot = prefs.getString("wel_mascot", "happy");
+
     defaultIdleExpr = prefs.getString("idle_expr", "default");
     standbyMode = prefs.getString("standby", "default");
     btnSingleAction = prefs.getString("btn_single", "random_face");
@@ -1252,9 +1325,12 @@ void loadSettingsFromNVS() {
   }
 }
 
-void saveWelcomeMsgToNVS(const String& msg) {
+void saveWelcomeMsgToNVS(const String& msg, const String& theme = "starry", const String& color = "#22D3EE", const String& mascot = "happy") {
   if (prefs.begin("sodabot", false)) {
     prefs.putString("welcome", msg);
+    prefs.putString("wel_theme", theme);
+    prefs.putString("wel_color", color);
+    prefs.putString("wel_mascot", mascot);
     prefs.end();
   }
 }
@@ -1530,12 +1606,20 @@ void processMessage(const IncomingMessage& message) {
     uint8_t reqSize = doc["size"] | 0;
     drawMessage(value, reqSize);
     sleeping = false; customExpression = true; expressionUntil = millis() + 10000;
-  } else if (action == "set_welcome") {
-    if (value.length() == 0 || value.length() > 360) { sendReply("error", "text_length_1_to_360_bytes"); return; }
-    welcomeMsg = value;
-    saveWelcomeMsgToNVS(welcomeMsg);
-    uint8_t reqSize = doc["size"] | 0;
-    drawMessage(welcomeMsg, reqSize);
+  } else if (action == "set_welcome" || action == "set_welcome_screen") {
+    if (value.startsWith("{")) {
+      DynamicJsonDocument welDoc(1024);
+      if (!deserializeJson(welDoc, value)) {
+        if (welDoc.containsKey("text")) welcomeMsg = welDoc["text"].as<String>();
+        if (welDoc.containsKey("theme")) welcomeTheme = welDoc["theme"].as<String>();
+        if (welDoc.containsKey("color")) welcomeColor = welDoc["color"].as<String>();
+        if (welDoc.containsKey("mascot")) welcomeMascot = welDoc["mascot"].as<String>();
+      }
+    } else {
+      if (value.length() > 0 && value.length() <= 360) welcomeMsg = value;
+    }
+    saveWelcomeMsgToNVS(welcomeMsg, welcomeTheme, welcomeColor, welcomeMascot);
+    drawWelcomeScreenCustom(welcomeMsg, welcomeTheme, welcomeColor, welcomeMascot);
     sleeping = false; customExpression = true; expressionUntil = millis() + 5000;
   } else if (action == "set_button_action") {
     if (value.startsWith("{")) {
@@ -1610,8 +1694,8 @@ void setup() {
   Serial0.end(); // USB CDC Serial 유지, GPIO44는 스피커
   setupSpeaker();
 
-  // 4. 부팅 시 환영인사 화면 표시 + 부팅 멜로디 출력
-  drawMessage(welcomeMsg, 0);
+  // 4. 부팅 시 환영인사 화면(테마, 마스코트, 색상) 표시 + 부팅 멜로디 출력
+  drawWelcomeScreenCustom(welcomeMsg, welcomeTheme, welcomeColor, welcomeMascot);
   if (speakerReady) {
     playToneI2S(523, 100); // C5
     playToneI2S(659, 100); // E5

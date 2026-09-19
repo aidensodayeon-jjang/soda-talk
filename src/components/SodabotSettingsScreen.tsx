@@ -729,13 +729,29 @@ export default function SodabotSettingsScreen() {
     showToast(`'${newItem.name}' 단계를 새로 추가했습니다.`);
   };
 
-  // Welcome Screen Studio Modal State
+  // Welcome Screen Studio Modal State (테마, 글자색상, 마스코트, 사운드 영구 연동)
   const [showWelcomeStudio, setShowWelcomeStudio] = useState(false);
-  const [studioText, setStudioText] = useState('HELLO!\nI AM LUMI :)\nNICE TO MEET YOU!');
-  const [studioTheme, setStudioTheme] = useState<'starry' | 'neon' | 'sunset' | 'emerald'>('starry');
-  const [studioColor, setStudioColor] = useState('#22D3EE');
-  const [studioMascot, setStudioMascot] = useState('happy');
-  const [studioSound, setStudioSound] = useState('greeting');
+  
+  const getInitialWelcomeConfig = () => {
+    try {
+      const saved = localStorage.getItem('sodabot_welcome_config');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return {
+      text: localStorage.getItem('sodabot_welcome_msg') || 'HELLO!\nI AM LUMI :)\nNICE TO SEE YOU TODAY!',
+      theme: 'starry',
+      color: '#22D3EE',
+      mascot: 'happy',
+      sound: 'greeting'
+    };
+  };
+
+  const initialWelCfg = getInitialWelcomeConfig();
+  const [studioText, setStudioText] = useState(initialWelCfg.text || 'HELLO!\nI AM LUMI :)\nNICE TO SEE YOU TODAY!');
+  const [studioTheme, setStudioTheme] = useState<'starry' | 'neon' | 'sunset' | 'emerald'>(initialWelCfg.theme || 'starry');
+  const [studioColor, setStudioColor] = useState(initialWelCfg.color || '#22D3EE');
+  const [studioMascot, setStudioMascot] = useState(initialWelCfg.mascot || 'happy');
+  const [studioSound, setStudioSound] = useState(initialWelCfg.sound || 'greeting');
 
   const showToast = (msg: string) => {
     setSaveToast(msg);
@@ -953,9 +969,51 @@ export default function SodabotSettingsScreen() {
               {/* Eye Graphics & Boot Simulator synced 1:1 with hardware drawing logic */}
               <div className="flex-1 w-full flex items-center justify-center relative z-10">
                 {bootingState === 'greeting' ? (
-                  <div className="text-center px-2 animate-fade-in space-y-1">
-                    <div className="text-[10px] text-amber-300 font-bold flex items-center justify-center gap-1">💬 GREETING</div>
-                    <div className="text-[13px] text-white font-bold leading-snug tracking-wide whitespace-pre-line bg-black/60 px-3 py-2 rounded-xl border border-white/10 shadow-inner font-mono">
+                  <div 
+                    className="w-full h-full flex flex-col justify-between items-center p-2 rounded-2xl animate-fade-in relative overflow-hidden"
+                    style={{
+                      background: studioTheme === 'starry' 
+                        ? 'radial-gradient(circle at center, #1e1b4b 0%, #09090b 100%)' 
+                        : studioTheme === 'neon'
+                        ? 'linear-gradient(135deg, #0284c7 0%, #0f172a 100%)'
+                        : studioTheme === 'sunset'
+                        ? 'linear-gradient(135deg, #be185d 0%, #312e81 100%)'
+                        : 'linear-gradient(135deg, #047857 0%, #064e3b 100%)'
+                    }}
+                  >
+                    {/* Background Particle Effects */}
+                    <div className="absolute inset-0 opacity-30 bg-[radial-gradient(#fff_1px,transparent_1px)] [background-size:12px_12px] pointer-events-none"></div>
+
+                    {/* Mascot Eyes */}
+                    <div className="flex items-center gap-4 z-10 pt-1">
+                      {studioMascot === 'happy' && (
+                        <>
+                          <div className="w-8 h-6 border-t-[5px] border-cyan-300 rounded-t-full transform -rotate-12"></div>
+                          <div className="w-8 h-6 border-t-[5px] border-cyan-300 rounded-t-full transform rotate-12"></div>
+                        </>
+                      )}
+                      {studioMascot === 'heart' && (
+                        <div className="text-2xl animate-bounce">😍</div>
+                      )}
+                      {studioMascot === 'sunglasses' && (
+                        <div className="text-2xl">😎</div>
+                      )}
+                      {studioMascot === 'cat' && (
+                        <div className="text-2xl">🐱</div>
+                      )}
+                      {studioMascot === 'default' && (
+                        <>
+                          <div className="w-7 h-7 bg-cyan-300 rounded-xl shadow-[0_0_10px_rgba(103,232,249,0.8)]"></div>
+                          <div className="w-7 h-7 bg-cyan-300 rounded-xl shadow-[0_0_10px_rgba(103,232,249,0.8)]"></div>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Styled Welcome Text */}
+                    <div 
+                      className="text-[12px] font-black leading-snug tracking-wide whitespace-pre-line text-center z-10 px-2 pb-1 drop-shadow-md font-sans"
+                      style={{ color: studioColor }}
+                    >
                       {bootingMessage || welcomeMsg || 'HELLO!\nI AM LUMI :)\nNICE TO SEE YOU TODAY!'}
                     </div>
                   </div>
@@ -1503,13 +1561,21 @@ export default function SodabotSettingsScreen() {
 
             <button 
               onClick={() => {
+                const cfg = {
+                  text: welcomeMsg,
+                  theme: studioTheme,
+                  color: studioColor,
+                  mascot: studioMascot,
+                  sound: studioSound
+                };
                 localStorage.setItem('sodabot_welcome_msg', welcomeMsg);
+                localStorage.setItem('sodabot_welcome_config', JSON.stringify(cfg));
                 localStorage.setItem('sodabot_standby_face', standbyFace);
                 localStorage.setItem('sodabot_standby_time', standbyTime);
                 localStorage.setItem('sodabot_default_idle_expr', defaultIdleExpr);
-                sendWsCommand("set_welcome", welcomeMsg, "환영 인사 설정 전송");
+                sendWsCommand("set_welcome", JSON.stringify(cfg), "환영 화면 설정 전송");
                 sendWsCommand("set_expression", mapToSafeHardwareExpr(defaultIdleExpr), "대기 기본 표정 전송");
-                showToast('환영 인사 및 대기 표정 설정이 저장 및 적용되었습니다!');
+                showToast('환영 인사 및 대기 표정 설정이 소다봇에 영구 저장 및 적용되었습니다!');
               }}
               className="mt-4 w-full py-2.5 bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold rounded-xl transition-colors shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
             >
@@ -1968,11 +2034,19 @@ export default function SodabotSettingsScreen() {
                     showToast('환영 인사 문구를 입력해 주세요.');
                     return;
                   }
+                  const cfg = {
+                    text: cleanedText,
+                    theme: studioTheme,
+                    color: studioColor,
+                    mascot: studioMascot,
+                    sound: studioSound
+                  };
                   setWelcomeMsg(cleanedText);
                   localStorage.setItem('sodabot_welcome_msg', cleanedText);
-                  sendWsCommand("set_welcome", cleanedText, "환영 인사 설정 전송");
+                  localStorage.setItem('sodabot_welcome_config', JSON.stringify(cfg));
+                  sendWsCommand("set_welcome", JSON.stringify(cfg), "환영 화면 설정 전송");
                   
-                  // 실시간 LCD 미리보기 & 사운드 재생
+                  // 실시간 LCD 미리보기 (테마, 마스코트, 텍스트 색상) & 사운드 재생
                   setBootingState('greeting');
                   setBootingMessage(cleanedText);
                   playWebSound(studioSound || 'greeting');
@@ -1980,7 +2054,7 @@ export default function SodabotSettingsScreen() {
                   setTimeout(() => { setBootingState(null); }, 3500);
 
                   setShowWelcomeStudio(false);
-                  showToast('✨ 나만의 환영 인사가 소다봇에 영구 저장 및 전송되었습니다!');
+                  showToast('✨ 나만의 테마 & 환영화면이 소다봇에 영구 저장 및 전송되었습니다!');
                 }}
                 className="flex-1 py-2.5 bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold rounded-xl transition-colors shadow-sm flex items-center justify-center gap-1.5 cursor-pointer active:scale-98"
               >
