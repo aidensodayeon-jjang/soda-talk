@@ -33,45 +33,37 @@ const expressionsList = [
 function buildGptCustomPrompt(featureDescription: string): string {
   const targetDesc = featureDescription.trim() || '인터넷에서 현재 시간을 가져와 SODABOT LCD 화면에 HH:MM 형식으로 표시하고 싶습니다.';
 
-  return `나는 ESP32-S3 기반의 SODABOT에 새로운 기능을 추가하려고 합니다.
+  return `나는 ESP32-S3 기반의 스마트 로봇 SODABOT에 새로운 기능을 추가하려고 합니다.
 
-원하는 기능:
+[원하는 기능]
 ${targetDesc}
 
-기존 SODABOT 펌웨어에 코드를 자동으로 합칠 예정이므로
-반드시 아래 4개 파트로 나누어 코드를 작성해주세요.
+[SODABOT 하드웨어 제원 (Hardware Specifications)]
+1. MCU: ESP32-S3 SuperMini (2.4GHz Wi-Fi + BLE 5.0 탑재, Arduino ESP32 환경)
+2. 디스플레이 (LCD): 1.14" / 1.69" / 2.0" ST7789 IPS LCD (240x240 해상도)
+   - SPI 핀맵: CS = GPIO 13, RST = GPIO 6, DC = GPIO 7, MOSI = GPIO 11, CLK = GPIO 12
+   - 이미 'Adafruit_ST7789 tft' 객체가 전역에 초기화되어 있으므로 직접 제어 가능합니다.
+   - 내장 출력 함수: 'drawMessage("LINE1\\nLINE2", 0)' 또는 'tft' 직접 사용 가능
+3. 물리 버튼: GPIO 4 (내부 풀업 INPUT_PULLUP, 누를 때 LOW)
+4. 스피커 / 오디오: MAX98357A I2S DAC 앰프 (BCLK = GPIO 1, LRC = GPIO 2, DIN = GPIO 3)
+   - 내장 효과음 함수: 'playToneI2S(int freqHz, int durationMs);' (예: playToneI2S(1200, 100);)
+5. 네트워크: Wi-Fi가 이미 연결되어 있는 상태로 동작합니다. (#include <HTTPClient.h>, #include <WiFiClientSecure.h>, #include <ArduinoJson.h> 사용 가능)
 
-1. HEADERS
-필요한 #include 코드만 작성해주세요.
+[중요 디스플레이 / 폰트 출력 규칙]
+- 화면 텍스트 언어: LCD 화면에 출력하는 모든 텍스트는 아두이노 기본 폰트 호환성과 깨짐 방지를 위해 반드시 '영문(English)' 또는 숫자/기호로만 작성해주세요. (예: "WEATHER: SUNNY", "TEMP: 23.5 C", "TIME: 14:30", "HELLO SODABOT")
+- 폰트 크기 설정: 'tft.setTextSize(2)' 또는 'tft.setTextSize(3)' 처럼 기본 1보다 큰 폰트 크기로 설정하여 1.14~2.0인치 작은 LCD에서도 시인성이 좋고 또렷하게 보이도록 해주세요.
+- 가독성: 텍스트 출력 전 'tft.fillScreen(ST77XX_BLACK)'으로 배경을 지우거나 적절한 여백/커서 위치('tft.setCursor(x, y)')를 지정해주세요.
 
-2. GLOBALS
-전역 변수, 상수, 서버 주소, 설정값 등
-함수 밖에 필요한 코드만 작성해주세요.
+[4개 파트 작성 규칙]
+기존 SODABOT 펌웨어에 코드를 자동으로 1:1 병합할 예정이므로 반드시 아래 4개 파트로 나누어 코드를 작성해주세요.
 
-3. SETUP
-기존 setup() 함수 안에 추가할 초기화 코드만 작성해주세요.
-setup() 함수 전체를 새로 작성하지 마세요.
+1. HEADERS: 필요한 #include 코드만 작성 (없으면 "없음")
+2. GLOBALS: 전역 변수, 상수, API URL, 상태 변수 등 함수 밖에 필요한 코드만 작성 (함수 내부에서 참조하는 모든 상수는 누락 없이 GLOBALS에 선언)
+3. SETUP: 기존 setup() 함수 안에 추가할 초기화 코드만 작성 (setup() 전체 생성 금지, 없으면 "없음")
+4. FUNCTION: 실제 기능을 수행하는 void 함수를 최소 1개 이상 작성 (loop() 전체 생성 금지)
 
-4. FUNCTION
-실제 기능을 수행하는 함수 전체를 작성해주세요.
-
-중요 규칙:
-- ESP32-S3 Arduino 환경 기준으로 작성해주세요.
-- setup() 전체를 만들지 마세요.
-- loop() 전체를 만들지 마세요.
-- 기존 SODABOT 펌웨어에 합쳐진다고 가정해주세요.
-- 각 파트는 독립적으로 복사할 수 있게 구분해주세요.
-- 필요하지 않은 파트는 "없음"이라고 표시해주세요.
-- FUNCTION에는 실행 가능한 대표 함수가 최소 1개 있어야 합니다.
-- 함수 내에서 참조하는 모든 전역 변수나 상수(위도, 경도, URL, API키, 핀번호 등)는 누락 없이 반드시 2. GLOBALS에 선언해주세요.
-- HTTP 통신이나 JSON 파싱이 필요하면 1. HEADERS에 필요한 라이브러리(#include <WiFiClientSecure.h>, #include <HTTPClient.h>, #include <ArduinoJson.h> 등)를 반드시 명시해주세요.
-- Wi-Fi가 이미 연결되어 있다고 가정해도 됩니다.
-- LCD 출력, 표정 출력, 소리 출력 등 SODABOT 전용 함수가 필요하다면
-  임의로 함수명을 만들지 말고
-  "SODABOT의 기존 출력 함수에 연결 필요"라고 주석으로 표시해주세요.
-- 코드 뒤에는 각 파트가 어떤 역할을 하는지 한 줄씩 간단히 설명해주세요.
-
-출력 형식은 반드시 다음과 같이 해주세요.
+[출력 형식]
+반드시 다음 형식으로 답변해주세요:
 
 === HEADERS ===
 \`\`\`cpp
@@ -85,13 +77,15 @@ setup() 함수 전체를 새로 작성하지 마세요.
 
 === SETUP ===
 \`\`\`cpp
-// setup() 내부에 들어갈 초기화 코드
+// setup() 내부에 들어갈 초기화 코드 (없으면 "없음")
 \`\`\`
 
 === FUNCTION ===
 \`\`\`cpp
 // 실행 함수 정의
-\`\`\``;
+\`\`\`
+
+코드 뒤에는 각 파트의 동작 설명을 간단히 덧붙여주세요.`;
 }
 
 export default function SodabotSettingsScreen() {
