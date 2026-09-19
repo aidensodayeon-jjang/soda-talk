@@ -795,7 +795,7 @@ export default function SodabotSettingsScreen() {
 
     try {
       const wifiSsid = localStorage.getItem('sodabot_wifi_ssid') || '';
-      const wifiPass = localStorage.getItem('sodabot_wifi_pass') || '';
+      const wifiPass = localStorage.getItem('sodabot_wifi_password') || localStorage.getItem('sodabot_wifi_pass') || '';
       const result = generateCustomFirmware(parts, profileName || 'LUMI', wifiSsid, wifiPass);
       setGenerationResult(result);
 
@@ -859,7 +859,7 @@ export default function SodabotSettingsScreen() {
   const handleCopyCustomFunctionCode = (fn: any) => {
     try {
       const wifiSsid = localStorage.getItem('sodabot_wifi_ssid') || '';
-      const wifiPass = localStorage.getItem('sodabot_wifi_pass') || '';
+      const wifiPass = localStorage.getItem('sodabot_wifi_password') || localStorage.getItem('sodabot_wifi_pass') || '';
       const parts: CustomCodeParts = {
         name: fn.name,
         description: fn.description,
