@@ -2038,14 +2038,14 @@ export default function SodabotSettingsScreen() {
                   </div>
                 )}
 
-                {/* 새 기능 등록 버튼 */}
+                {/* 커스텀 기능 추가 버튼 */}
                 {customFunctions.length < 3 ? (
                   <button
                     onClick={handleOpenNewFuncModal}
                     className="w-full py-2 bg-white hover:bg-neutral-50 border border-[#E5E5E3] rounded-xl text-[11px] font-semibold text-blue-600 flex items-center justify-center gap-1 transition-all cursor-pointer shadow-2xs mt-1"
                   >
                     <Plus className="w-3.5 h-3.5 text-blue-600" />
-                    새 기능 등록
+                    커스텀 기능 추가
                   </button>
                 ) : (
                   <div className="py-1.5 px-2 bg-neutral-100/70 border border-neutral-200 rounded-xl text-center text-[10px] text-neutral-500">
@@ -2237,7 +2237,7 @@ export default function SodabotSettingsScreen() {
                 </div>
                 <div>
                   <h3 className="text-sm sm:text-base font-bold text-[#191919]">
-                    {generationResult ? '펌웨어 준비 완료' : '새 기능 등록'}
+                    {generationResult ? '펌웨어 준비 완료' : '커스텀 기능 추가'}
                   </h3>
                   <p className="text-[11px] text-[#787774]">
                     {generationResult 
