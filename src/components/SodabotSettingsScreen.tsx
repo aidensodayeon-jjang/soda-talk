@@ -6,7 +6,7 @@ import {
   Check, Power, Battery, Cpu, HardDrive, Thermometer, Droplets, Sun, 
   ChevronRight, HelpCircle, MessageCircle, FileText, MoveUp, MoveDown,
   ChevronDown, Layers, ShieldCheck, Zap, Bluetooth, Usb, Trash2,
-  Copy, Code
+  Copy, Code, ExternalLink
 } from 'lucide-react';
 import { 
   generateCustomFirmware, 
@@ -2444,22 +2444,33 @@ export default function SodabotSettingsScreen() {
                               {gptFeatureInput.trim() ? '입력한 기능 반영됨' : funcNameInput.trim() ? `'${funcNameInput}' 자동 반영됨` : '자유롭게 입력'}
                             </span>
                           </label>
-                          <div className="flex gap-1.5">
+                          <div className="flex flex-wrap sm:flex-nowrap gap-1.5">
                             <input
                               type="text"
                               value={gptFeatureInput}
                               onChange={(e) => setGptFeatureInput(e.target.value)}
                               placeholder={funcNameInput.trim() ? `${funcNameInput}${funcDescInput.trim() ? ` (${funcDescInput})` : ''}` : "예: 인터넷에서 서울 현재 시간을 가져와서 LCD에 표시하기"}
-                              className="flex-1 px-3 py-2 bg-white border border-[#E5E5E3] focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 rounded-xl text-xs font-medium text-[#191919] outline-none transition-all placeholder:text-[#A1A1A0]"
+                              className="flex-1 min-w-[200px] px-3 py-2 bg-white border border-[#E5E5E3] focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 rounded-xl text-xs font-medium text-[#191919] outline-none transition-all placeholder:text-[#A1A1A0]"
                             />
-                            <button
-                              type="button"
-                              onClick={handleCopyGptPrompt}
-                              className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer shrink-0 active:scale-95"
-                            >
-                              {isCopiedGptPrompt ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                              <span>{isCopiedGptPrompt ? '복사 완료!' : '프롬프트 복사'}</span>
-                            </button>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                onClick={handleCopyGptPrompt}
+                                className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer active:scale-95"
+                              >
+                                {isCopiedGptPrompt ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                                <span>{isCopiedGptPrompt ? '복사 완료!' : '프롬프트 복사'}</span>
+                              </button>
+                              <a
+                                href="https://chatgpt.com"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-3 py-2 bg-white hover:bg-neutral-50 text-[#191919] hover:text-blue-600 border border-[#E5E5E3] hover:border-blue-300 text-xs font-semibold rounded-xl flex items-center gap-1.5 shadow-2xs transition-all cursor-pointer active:scale-95 text-decoration-none"
+                              >
+                                <span>ChatGPT 열기</span>
+                                <ExternalLink className="w-3.5 h-3.5 text-neutral-400" />
+                              </a>
+                            </div>
                           </div>
                         </div>
                       </div>
