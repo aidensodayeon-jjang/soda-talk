@@ -1771,11 +1771,6 @@ export default function SodabotSettingsScreen() {
 
 
 
-        {/* Footer Credit Note */}
-        <div className="text-center text-xs text-[#86868B] font-mono pt-4">
-          🚀 소다톡은 계속 업데이트됩니다. 더 많은 기능으로 소다봇을 나답게 만들어 보세요!
-        </div>
-
       </div>
 
 
