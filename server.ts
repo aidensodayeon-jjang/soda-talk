@@ -450,6 +450,15 @@ function readDB(): DBStructure {
   if (!db.courseContents || !Array.isArray(db.courseContents)) {
     db.courseContents = DEFAULT_COURSE_CONTENTS;
     changed = true;
+  } else {
+    // Ensure all default week contents exist (e.g. newly added week 6-7 items)
+    const existingIds = new Set(db.courseContents.map(c => c.id));
+    for (const defaultItem of DEFAULT_COURSE_CONTENTS) {
+      if (!existingIds.has(defaultItem.id)) {
+        db.courseContents.push(defaultItem);
+        changed = true;
+      }
+    }
   }
   if (db.users && Array.isArray(db.users)) {
     db.users.forEach(u => {

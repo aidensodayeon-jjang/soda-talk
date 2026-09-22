@@ -1645,9 +1645,9 @@ export default function App() {
                     {isExpanded && (
                       <div className="pl-4 space-y-0.5 border-l-2 border-indigo-100 ml-3.5 my-1">
                         {weekCodes.map(codeItem => {
-                          const isSelected = selectedDevCodeId === codeItem.id && currentView === 'chat';
-                          const isCircuit = codeItem.category === 'circuit' || codeItem.title.includes('회로');
-                          const isEditor = codeItem.category === 'editor';
+                          const isSelected = selectedDevCodeId === codeItem.id && mainNavTab === 'dev';
+                          const isCircuit = codeItem.contentType === 'circuit' || codeItem.title.includes('회로') || codeItem.title.includes('배선도');
+                          const isEditor = codeItem.contentType === 'editor';
                           const ext = codeItem.filename ? (codeItem.filename.split('.').pop() || 'ino') : 'ino';
 
                           return (
@@ -1655,7 +1655,7 @@ export default function App() {
                               key={codeItem.id}
                               onClick={() => {
                                 setSelectedDevCodeId(codeItem.id);
-                                setCurrentView('chat');
+                                setMainNavTab('dev');
                               }}
                               className={`w-full text-left px-2.5 py-1.5 rounded-xl text-xs flex items-center justify-between transition-all cursor-pointer ${
                                 isSelected
@@ -1821,20 +1821,21 @@ export default function App() {
                         <button
                           onClick={() => {
                             setSelectedDevCodeId('content-week-6-mic-circuit');
-                            setCurrentView('chat');
+                            setMainNavTab('dev');
+                            setExpandedWeeks(prev => prev.includes(6) ? prev : [...prev, 6]);
                           }}
                           className={`w-full text-left px-2.5 py-1.5 rounded-xl text-xs font-medium flex items-center justify-between transition-all cursor-pointer ${
-                            selectedDevCodeId === 'content-week-6-mic-circuit' && currentView === 'chat'
+                            selectedDevCodeId === 'content-week-6-mic-circuit' && mainNavTab === 'dev'
                               ? 'bg-emerald-600 text-white font-bold shadow-xs'
                               : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20 hover:text-[#1D1D1F]'
                           }`}
                         >
                           <div className="flex items-center gap-1.5 min-w-0">
-                            <FileCode className={`w-3.5 h-3.5 shrink-0 ${selectedDevCodeId === 'content-week-6-mic-circuit' && currentView === 'chat' ? 'text-white' : 'text-emerald-500'}`} />
+                            <FileCode className={`w-3.5 h-3.5 shrink-0 ${selectedDevCodeId === 'content-week-6-mic-circuit' && mainNavTab === 'dev' ? 'text-white' : 'text-emerald-500'}`} />
                             <span className="truncate text-xs">2. 마이크 추가 배선도</span>
                           </div>
                           <span className={`text-[8px] px-1.5 py-0.5 rounded font-mono shrink-0 ${
-                            selectedDevCodeId === 'content-week-6-mic-circuit' && currentView === 'chat'
+                            selectedDevCodeId === 'content-week-6-mic-circuit' && mainNavTab === 'dev'
                               ? 'bg-emerald-100 text-emerald-800 font-extrabold'
                               : 'bg-emerald-50 text-emerald-700 border border-emerald-200/60'
                           }`}>
