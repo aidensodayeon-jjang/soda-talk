@@ -7,6 +7,7 @@ import SodabotSettingsScreen from "./components/SodabotSettingsScreen";
 import SodaAiLabScreen from "./components/SodaAiLabScreen";
 import DevCodeHubScreen from "./components/DevCodeHubScreen";
 import AdminCourseManagerModal from "./components/AdminCourseManagerModal";
+import soda63Code from "../firmware/soda-6-3.ino?raw";
 import {
   Sparkles,
   Plus,
@@ -50,6 +51,9 @@ import {
   FolderOpen,
   FolderCode,
   FileCode,
+  Code2,
+  Copy,
+  Download,
   Palette,
   ExternalLink
 } from "lucide-react";
@@ -87,7 +91,7 @@ export default function App() {
   // Core Data States
   const [chats, setChats] = useState<ChatRoom[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
-  const [currentView, setCurrentView] = useState<'chat' | 'sodabot' | 'settings' | 'sodabot_builder' | 'mic_circuit'>('sodabot');
+  const [currentView, setCurrentView] = useState<'chat' | 'sodabot' | 'settings' | 'sodabot_builder' | 'mic_circuit' | 'firmware_v4'>('sodabot');
   const [inputText, setInputText] = useState("");
   const [sending, setSending] = useState(false);
 
@@ -99,6 +103,7 @@ export default function App() {
   const [serialPort, setSerialPort] = useState<any>(null);
   const [manualIpInput, setManualIpInput] = useState("");
   const [quickExprToast, setQuickExprToast] = useState<string | null>(null);
+  const [copiedFirmware, setCopiedFirmware] = useState(false);
 
   const isSodabotConnected = connType !== 'none';
 
@@ -1836,6 +1841,26 @@ export default function App() {
                             배선도
                           </span>
                         </button>
+
+                        {/* 3. 소다봇 기본 펌웨어 (마이크 통합 v4) */}
+                        <button
+                          onClick={() => {
+                            setCurrentView('firmware_v4');
+                          }}
+                          className={`w-full text-left px-2.5 py-1.5 rounded-xl text-xs font-medium flex items-center justify-between transition-all cursor-pointer ${
+                            currentView === 'firmware_v4'
+                              ? 'bg-blue-50/70 text-blue-900 font-bold border border-blue-200/70 shadow-2xs'
+                              : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20 hover:text-[#1D1D1F]'
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <Code2 className={`w-3.5 h-3.5 shrink-0 ${currentView === 'firmware_v4' ? 'text-blue-600' : 'text-indigo-500'}`} />
+                            <span className="truncate text-xs">3. 소다봇 기본 펌웨어</span>
+                          </div>
+                          <span className="text-[8px] text-indigo-700 bg-indigo-50 border border-indigo-200/60 px-1.5 py-0.5 rounded font-mono font-semibold shrink-0">
+                            코드
+                          </span>
+                        </button>
                       </div>
                     )}
                   </div>
@@ -2550,6 +2575,135 @@ export default function App() {
 
                   <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-900">
                     💡 <strong>배선 완료 후</strong>: 상단의 <strong>[1. 소다봇 설정하기]</strong> 버튼을 눌러 Wi-Fi 및 펌웨어를 빌드하세요!
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : currentView === 'firmware_v4' ? (
+          <div className="flex-1 flex flex-col h-screen overflow-y-auto bg-[#FAF9F6] p-4 sm:p-8 scrollbar-thin">
+            <div className="max-w-4xl w-full mx-auto space-y-6 animate-fade-in pb-16">
+              {/* Header */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-white p-5 rounded-2xl border border-[#EAE6DF] shadow-xs gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-200 flex items-center justify-center text-xl shrink-0">
+                    💻
+                  </div>
+                  <div>
+                    <h2 className="text-base sm:text-lg font-black text-[#1D1D1F] flex items-center gap-2 flex-wrap">
+                      <span>6-7주차: 소다봇 기본 펌웨어</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 font-mono font-bold">
+                        마이크 통합 v4
+                      </span>
+                    </h2>
+                    <p className="text-xs text-[#86868B]">
+                      ESP32-S3 기반 BLE, Wi-Fi, 2.0" LCD, I2S 스피커/마이크 및 물리 버튼 통합 표준 아두이노 코드입니다.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(soda63Code);
+                      setCopiedFirmware(true);
+                      setTimeout(() => setCopiedFirmware(false), 2000);
+                    }}
+                    className={`px-3.5 py-2 text-xs font-bold rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shadow-xs ${
+                      copiedFirmware
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-blue-600 hover:bg-blue-700 text-white'
+                    }`}
+                  >
+                    {copiedFirmware ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{copiedFirmware ? "전체 복사 완료!" : "코드 전체 복사"}</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      const blob = new Blob([soda63Code], { type: 'text/plain;charset=utf-8' });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = 'soda-6-3.ino';
+                      a.click();
+                      URL.revokeObjectURL(url);
+                    }}
+                    className="px-3.5 py-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 text-xs font-bold rounded-xl flex items-center gap-1.5 transition-all cursor-pointer border border-[#EAE6DF]"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>.ino 다운로드</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Upload Checklist Alert */}
+              <div className="p-4 bg-amber-50/70 border border-amber-200/80 rounded-2xl flex items-start gap-3 text-amber-900 text-xs shadow-2xs">
+                <span className="text-base shrink-0">⚠️</span>
+                <div className="space-y-1">
+                  <p className="font-bold text-amber-950">
+                    아두이노 IDE 업로드 전 필수 확인 사항 (ESP32-S3)
+                  </p>
+                  <p className="text-amber-800/90 leading-relaxed">
+                    1. <strong>Tools &gt; USB CDC On Boot</strong> 설정을 반드시 <strong>"Enabled"</strong>로 변경해야 시리얼 및 정상 동작합니다.<br />
+                    2. 보드: <strong>ESP32S3 Dev Module</strong> / Flash Mode: <strong>QIO 80MHz</strong> / Upload Speed: <strong>921600</strong><br />
+                    3. 배선: LCD, I2S 스피커, I2S 마이크의 전원(3.3V) 및 GND가 올바르게 연결되어 있는지 확인하세요.
+                  </p>
+                </div>
+              </div>
+
+              {/* Code Viewer Box */}
+              <div className="bg-[#1E1E1E] rounded-3xl border border-neutral-800 shadow-md overflow-hidden flex flex-col">
+                {/* Code Window Header */}
+                <div className="flex items-center justify-between px-4 py-3 bg-[#181818] border-b border-neutral-800 text-xs text-neutral-400">
+                  <div className="flex items-center gap-2">
+                    <span className="w-3 h-3 rounded-full bg-rose-500/80 inline-block" />
+                    <span className="w-3 h-3 rounded-full bg-amber-500/80 inline-block" />
+                    <span className="w-3 h-3 rounded-full bg-emerald-500/80 inline-block" />
+                    <span className="font-mono text-neutral-300 ml-2 font-bold flex items-center gap-1.5">
+                      <Code2 className="w-3.5 h-3.5 text-indigo-400" />
+                      soda-6-3.ino
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-3 font-mono text-[11px]">
+                    <span className="px-2 py-0.5 rounded bg-neutral-800 text-neutral-300">
+                      Arduino C++
+                    </span>
+                    <span>{soda63Code.split('\n').length} lines</span>
+                  </div>
+                </div>
+
+                {/* Code Content */}
+                <div className="p-4 overflow-x-auto max-h-[580px] scrollbar-thin text-neutral-200 font-mono text-xs leading-relaxed">
+                  <pre className="m-0 select-text">
+                    <code>{soda63Code}</code>
+                  </pre>
+                </div>
+              </div>
+
+              {/* Quick Pin Guide Footer */}
+              <div className="bg-white p-5 rounded-2xl border border-[#EAE6DF] shadow-xs space-y-3">
+                <div className="flex items-center gap-2 text-xs font-bold text-[#1D1D1F]">
+                  <Cpu className="w-4 h-4 text-indigo-600" />
+                  <span>소다봇 v4 통합 하드웨어 핀맵 요약</span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                  <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200/60">
+                    <div className="font-bold text-neutral-800 mb-1">🎙️ I2S 마이크</div>
+                    <div className="text-[11px] font-mono text-neutral-600">SCK:9, WS:10, SD:8 (VDD 3.3V)</div>
+                  </div>
+                  <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200/60">
+                    <div className="font-bold text-neutral-800 mb-1">🔊 I2S 스피커</div>
+                    <div className="text-[11px] font-mono text-neutral-600">BCLK:5, LRC:3, DIN:44 (MAX98357A)</div>
+                  </div>
+                  <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200/60">
+                    <div className="font-bold text-neutral-800 mb-1">🖥️ 2.0" ST7789 LCD</div>
+                    <div className="text-[11px] font-mono text-neutral-600">MOSI:11, CLK:12, CS:13, DC:7, RST:6</div>
+                  </div>
+                  <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200/60">
+                    <div className="font-bold text-neutral-800 mb-1">🔘 물리 버튼</div>
+                    <div className="text-[11px] font-mono text-neutral-600">GPIO 4 (내부 풀업)</div>
                   </div>
                 </div>
               </div>

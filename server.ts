@@ -378,6 +378,19 @@ const DEFAULT_COURSE_CONTENTS: CourseContent[] = [
 // 1. VDD는 반드시 3.3V에 연결합니다. (5V에 연결하지 않습니다!)
 // 2. 마이크 전원은 브레드보드 반대편 3.3V 전원 레일에서 가져옵니다.
 // 3. 모든 부품의 GND는 공통(Common GND)으로 연결합니다.`
+  },
+  {
+    id: "content-week-6-firmware-v4",
+    week: 6,
+    title: "3. 소다봇 기본 펌웨어 (마이크 통합 v4)",
+    description: "ESP32-S3 기반 소다봇 표준 펌웨어 v4입니다. BLE, Wi-Fi, WebSocket, 2.0인치 ST7789 LCD, MAX98357A I2S 스피커, INMP441 I2S 마이크, 물리 버튼 및 NVS 설정 저장이 모두 통합되어 있습니다.",
+    filename: "soda-6-3.ino",
+    language: "arduino",
+    contentType: "code",
+    tags: ["6-7주차", "기본펌웨어", "마이크통합v4", "ESP32-S3", "ST7789", "MAX98357A", "INMP441", "BLE", "WebSocket"],
+    pinMap: "LCD(MOSI:11, CLK:12, CS:13, DC:7, RST:6), 버튼:4, I2S스피커(5,3,44), I2S마이크(9,10,8)",
+    updatedAt: new Date().toISOString(),
+    code: getFirmwareCode("soda-6-3.ino")
   }
 ];
 
