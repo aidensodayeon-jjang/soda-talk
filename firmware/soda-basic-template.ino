@@ -1,5 +1,10 @@
 // SODABOT BASIC: ESP32-S3, BLE/Wi-Fi/USB 명령 및 기본 표정
 #include <Arduino.h>
+#include <atomic>
+#include <math.h>
+#if !ARDUINO_USB_CDC_ON_BOOT
+#error "Enable Tools > USB CDC On Boot before uploading this sketch."
+#endif
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
@@ -51,6 +56,218 @@ bool deviceConnected = false;
 // 실물 헤더: 좌=TX(43) RX(44) 1 2 3 4 5 6 7,  우=5V G 3V3 13 12 11 10 9 8
 // 물리 버튼 (GPIO 4, 내부 풀업 사용)
 #define BUTTON_PIN 4
+
+#define MIC_I2S_PORT I2S_NUM_1
+
+#define MIC_SCK  9
+#define MIC_WS   10
+#define MIC_SD   8
+
+#define MIC_SAMPLE_RATE 16000
+
+// 주변 소음과 마이크 거리에 따라 조정하는 임시 소리 감지 기준 (dB 아님).
+const double SOUND_THRESHOLD = 500.0;
+
+bool micReady = false;
+std::atomic<bool> micTestRequested{false};
+
+
+// =========================
+// 마이크 초기화
+// =========================
+void setupMicrophone() {
+
+  i2s_config_t config = {
+    .mode = (i2s_mode_t)(
+      I2S_MODE_MASTER |
+      I2S_MODE_RX
+    ),
+
+    .sample_rate = MIC_SAMPLE_RATE,
+
+    .bits_per_sample =
+      I2S_BITS_PER_SAMPLE_32BIT,
+
+    .channel_format =
+      I2S_CHANNEL_FMT_ONLY_LEFT,
+
+    .communication_format =
+      I2S_COMM_FORMAT_STAND_I2S,
+
+    .intr_alloc_flags =
+      ESP_INTR_FLAG_LEVEL1,
+
+    .dma_buf_count = 8,
+    .dma_buf_len = 256,
+
+    .use_apll = false
+  };
+
+
+  i2s_pin_config_t pins = {
+
+    .mck_io_num = I2S_PIN_NO_CHANGE,
+
+    .bck_io_num = MIC_SCK,
+
+    .ws_io_num = MIC_WS,
+
+    .data_out_num =
+      I2S_PIN_NO_CHANGE,
+
+    .data_in_num =
+      MIC_SD
+  };
+
+
+  esp_err_t err = i2s_driver_install(
+    MIC_I2S_PORT,
+    &config,
+    0,
+    NULL
+  );
+
+  if (err != ESP_OK) {
+    Serial.printf("[오류] 마이크를 시작하지 못했습니다. 오류 코드: %s\n", esp_err_to_name(err));
+    return;
+  }
+
+
+  err = i2s_set_pin(
+    MIC_I2S_PORT,
+    &pins
+  );
+
+  if (err != ESP_OK) {
+    Serial.printf("[오류] 마이크 핀 설정에 실패했습니다. 배선을 확인해주세요. 오류 코드: %s\n", esp_err_to_name(err));
+    i2s_driver_uninstall(MIC_I2S_PORT);
+    return;
+  }
+
+
+  micReady = true;
+  Serial.println("[준비] 마이크 초기화가 완료되었습니다.");
+}
+
+
+// =========================
+// 소리 크기 측정
+// =========================
+void readMicrophone(bool report) {
+
+  int32_t samples[256];
+
+  size_t bytesRead = 0;
+
+
+  esp_err_t err = i2s_read(
+    MIC_I2S_PORT,
+    samples,
+    sizeof(samples),
+    &bytesRead,
+    pdMS_TO_TICKS(50)
+  );
+
+  static uint32_t lastError = 0;
+  if (err != ESP_OK || bytesRead == 0) {
+    if (millis() - lastError >= 1000) {
+      Serial.printf("[오류] 마이크 데이터를 읽지 못했습니다. 연결을 확인해주세요. (코드: %s, 수신: %u바이트)\n", esp_err_to_name(err), (unsigned)bytesRead);
+      lastError = millis();
+    }
+    return;
+  }
+
+  // 버튼을 놓아도 DMA를 비워 다음 누름에서 오래된 음성이 나오지 않게 한다.
+  if (!report) return;
+  static uint32_t lastReport = 0;
+  if (millis() - lastReport < 500) return;
+  lastReport = millis();
+
+
+  int sampleCount =
+    bytesRead / sizeof(int32_t);
+
+
+  if (sampleCount == 0)
+    return;
+
+
+  double sum = 0;
+
+
+  for (int i = 0; i < sampleCount; i++) {
+
+    int32_t sample =
+      samples[i] >> 14;
+
+    sum +=
+      (double)sample *
+      (double)sample;
+  }
+
+
+  double rms =
+    sqrt(sum / sampleCount);
+
+
+  if (sum == 0) {
+    Serial.println("[확인 필요] 마이크 신호가 없습니다. 전원, SD 배선과 L/R의 GND 연결을 확인해주세요.");
+  } else if (rms >= SOUND_THRESHOLD) {
+    Serial.printf("[소리 감지] 소리가 정상적으로 감지되고 있습니다. (소리 크기: %.0f)\n", rms);
+  } else {
+    Serial.printf("[조용함] 소리가 작습니다. 마이크 가까이에서 말해보세요. (소리 크기: %.0f)\n", rms);
+  }
+}
+
+
+
+void microphoneTask(void*) {
+  bool lastRaw = false;
+  bool pressed = false;
+  bool testing = false;
+  uint32_t changedAt = millis();
+  uint32_t testStarted = 0;
+  uint32_t lastStatus = millis();
+  for (;;) {
+    uint32_t now = millis();
+    bool raw = digitalRead(BUTTON_PIN) == LOW;
+    if (raw != lastRaw) { lastRaw = raw; changedAt = now; }
+    if (raw != pressed && now - changedAt >= 30) {
+      pressed = raw;
+      Serial.println(pressed ? "[버튼] 버튼 눌림을 감지했습니다."
+                             : "[버튼] 버튼을 놓았습니다.");
+    }
+    if (micTestRequested.exchange(false)) {
+      testing = true;
+      testStarted = now;
+      Serial.println("[테스트] 버튼 없이 5초 동안 소리를 확인합니다. 말해보세요.");
+    }
+    if (testing && now - testStarted >= 5000) {
+      testing = false;
+      Serial.println("[테스트] 5초 테스트가 끝났습니다.");
+    }
+    if (!pressed && !testing && now - lastStatus >= 5000) {
+      lastStatus = now;
+      Serial.println(micReady
+        ? "[대기] 버튼을 누르면 소리 감지를 시작합니다. (BASIC + 마이크 v4)"
+        : "[오류] 마이크가 준비되지 않았습니다. 연결과 오류 메시지를 확인해주세요.");
+    }
+    if (micReady) readMicrophone(pressed || testing);
+    // I2S 오류 시에도 다른 작업이 실행될 수 있도록 양보한다.
+    vTaskDelay(pdMS_TO_TICKS(5));
+  }
+}
+
+void startMicrophoneMonitor() {
+  setupMicrophone();
+  if (xTaskCreate(microphoneTask, "mic-monitor", 4096, nullptr, 1, nullptr) != pdPASS) {
+    if (micReady) i2s_driver_uninstall(MIC_I2S_PORT);
+    micReady = false;
+    Serial.println("[오류] 마이크 감시 작업을 시작하지 못했습니다. 메모리가 부족합니다.");
+  }
+}
+
+
 
 // LCD (하드웨어 SPI). 점퍼선 배선 시 CS = GPIO13, RST = GPIO6, DC = GPIO7
 #define TFT_CS   13
@@ -651,6 +868,7 @@ void setupSpeaker() {
     .tx_desc_auto_clear = true
   };
   i2s_pin_config_t pins = {
+    .mck_io_num = I2S_PIN_NO_CHANGE,
     .bck_io_num = I2S_SPK_BCLK,
     .ws_io_num  = I2S_SPK_LRC,
     .data_out_num = I2S_SPK_DOUT,
@@ -778,7 +996,7 @@ const uint8_t ASCII_FONT_8x16[95][16] PROGMEM = {
   {0,0x06,0x06,0x3E,0x66,0x66,0x66,0x66,0x3E,0,0,0,0,0,0,0}, // 100: d
   {0,0,0,0x3C,0x66,0x7E,0x60,0x66,0x3C,0,0,0,0,0,0,0}, // 101: e
   {0,0x1C,0x30,0x78,0x30,0x30,0x30,0x30,0x30,0,0,0,0,0,0,0}, // 102: f
-  {0,0,0,0x3E,0x66,0x66,0x3E,0x06,0x66,0x3C,0,0,0,0,0,0}, // 103: g
+  {0,0,0,0x3E,0x66,0x66,0x3E,0x06,0x66,0x3C,0,0,0,0,0,0,0}, // 103: g
   {0,0x60,0x60,0x7C,0x66,0x66,0x66,0x66,0x66,0,0,0,0,0,0,0}, // 104: h
   {0,0x18,0,0x38,0x18,0x18,0x18,0x18,0x3C,0,0,0,0,0,0,0}, // 105: i
   {0,0x06,0,0x0E,0x06,0x06,0x06,0x66,0x3C,0,0,0,0,0,0,0}, // 106: j
@@ -796,7 +1014,7 @@ const uint8_t ASCII_FONT_8x16[95][16] PROGMEM = {
   {0,0,0,0x66,0x66,0x66,0x66,0x3C,0x18,0,0,0,0,0,0,0}, // 118: v
   {0,0,0,0xC3,0xC3,0xDB,0xFF,0xE7,0x42,0,0,0,0,0,0,0}, // 119: w
   {0,0,0,0x66,0x3C,0x18,0x3C,0x66,0x66,0,0,0,0,0,0,0}, // 120: x
-  {0,0,0,0x66,0x66,0x66,0x3E,0x06,0x66,0x3C,0,0,0,0,0,0}, // 121: y
+  {0,0,0,0x66,0x66,0x66,0x3E,0x06,0x66,0x3C,0,0,0,0,0,0,0}, // 121: y
   {0,0,0,0x7E,0x0C,0x18,0x30,0x60,0x7E,0,0,0,0,0,0,0}, // 122: z
   {0,0x0E,0x18,0x18,0x30,0x18,0x18,0x18,0x0E,0,0,0,0,0,0,0}, // 123: {
   {0,0x18,0x18,0x18,0x18,0x18,0x18,0x18,0x18,0,0,0,0,0,0,0}, // 124: |
@@ -1547,8 +1765,14 @@ void checkHardwareButton() {
   static int clickCount = 0;
   static bool longPressTriggered = false;
 
-  bool currentBtnState = digitalRead(BUTTON_PIN);
+  static bool rawBtnState = HIGH;
+  static bool stableBtnState = HIGH;
+  static unsigned long rawChangedAt = 0;
   unsigned long now = millis();
+  bool raw = digitalRead(BUTTON_PIN);
+  if (raw != rawBtnState) { rawBtnState = raw; rawChangedAt = now; }
+  if (now - rawChangedAt >= 30) stableBtnState = raw;
+  bool currentBtnState = stableBtnState;
 
   // 버튼 눌림 시작 (Falling Edge: HIGH -> LOW)
   if (lastBtnState == HIGH && currentBtnState == LOW) {
@@ -1599,6 +1823,13 @@ void processMessage(const IncomingMessage& message) {
   replySource = message.source; replyClient = message.clientId; replyId = "";
   DynamicJsonDocument doc(2560);
   String raw(message.json); raw.trim();
+  // 기존 USB 줄바꿈 기반 명령 파서를 유지한다. JSON의 글자를 가로채지 않는다.
+  if (raw == "t") {
+    if (!micReady) { sendReply("error", "microphone_not_ready"); return; }
+    micTestRequested.store(true);
+    sendReply("success");
+    return;
+  }
   String action, value;
   if (raw.startsWith("{")) {
     if (deserializeJson(doc, raw)) { sendReply("error", "invalid_json"); return; }
@@ -1614,6 +1845,12 @@ void processMessage(const IncomingMessage& message) {
     else if (prefix == "BEEP" || prefix == "GREETING" || prefix == "POWER_ON" || prefix == "BUTTON_CLICK" || prefix == "TOUCH_REACT") {
       action = "play_sound"; value = prefix;
     } else { action = "set_expression"; value = raw; }
+  }
+  if (action == "mic_test") {
+    if (!micReady) { sendReply("error", "microphone_not_ready"); return; }
+    micTestRequested.store(true);
+    sendReply("success");
+    return;
   }
   if (action == "get_status") { sendReply("success", "", true); return; }
   if (action == "configure_wifi" || doc["ssid"].is<const char*>()) {
@@ -1758,6 +1995,9 @@ void onWsEvent(AsyncWebSocket*, AsyncWebSocketClient* client, AwsEventType type,
 
 void setup() {
   Serial.begin(115200);
+  uint32_t serialStarted = millis();
+  while (!Serial && millis() - serialStarted < 2000) delay(10);
+  Serial.println("소다봇 BASIC + 버튼·마이크 통합 v4");
   pinMode(BUTTON_PIN, INPUT_PULLUP);
   incomingQueue = xQueueCreate(6, sizeof(IncomingMessage));
   if (!incomingQueue) { Serial.println("큐 생성 실패"); while (true) delay(1000); }
@@ -1792,7 +2032,10 @@ void setup() {
   setupBLE();
   ws.onEvent(onWsEvent); server.addHandler(&ws);
   if (ssid && ssid[0]) WiFi.begin(ssid, password);
+  startMicrophoneMonitor();
   Serial.println("SODABOT BASIC protocol=1 준비 완료");
+  Serial.println("[안내] 버튼을 누른 채 말해보세요. 기존 짧게/두 번/길게 누르기 기능도 동작합니다.");
+  Serial.println("[안내] 버튼 없이 테스트하려면 t + 줄바꿈 또는 {\"action\":\"mic_test\"} + 줄바꿈을 전송하세요.");
 
   // === CUSTOM_SETUP_START ===
   // === CUSTOM_SETUP_END ===
