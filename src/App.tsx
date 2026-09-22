@@ -50,7 +50,8 @@ import {
   FolderOpen,
   FolderCode,
   FileCode,
-  Palette
+  Palette,
+  ExternalLink
 } from "lucide-react";
 import { ChatRoom, Message, LMStudioConfig, CourseContent } from "./types";
 
@@ -86,7 +87,7 @@ export default function App() {
   // Core Data States
   const [chats, setChats] = useState<ChatRoom[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
-  const [currentView, setCurrentView] = useState<'chat' | 'sodabot' | 'settings' | 'sodabot_builder'>('sodabot');
+  const [currentView, setCurrentView] = useState<'chat' | 'sodabot' | 'settings' | 'sodabot_builder' | 'mic_circuit'>('sodabot');
   const [inputText, setInputText] = useState("");
   const [sending, setSending] = useState(false);
 
@@ -1538,7 +1539,7 @@ export default function App() {
             </div>
           </div>
 
-          {/* Primary Top Tab Switcher (수업/펌웨어 개발실 vs 소다봇 제어 & AI 코딩) */}
+          {/* Primary Top Tab Switcher (1단계: 펌웨어 개발실 vs 2단계: 소다봇 제어 & AI 코딩) */}
           <div className="bg-[#EAE6DF]/70 p-1 rounded-2xl flex flex-col gap-1 shadow-inner mt-0.5">
             <button
               id="tab-btn-dev-code"
@@ -1551,17 +1552,17 @@ export default function App() {
             >
               <div className="flex items-center gap-2">
                 <FolderCode className="w-4 h-4 text-indigo-600" />
-                <span>수업 & 펌웨어 개발실</span>
+                <span>1단계: 펌웨어 개발실</span>
               </div>
-              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600 font-extrabold">
-                자료실
+              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600 font-extrabold font-mono">
+                1~5주차
               </span>
             </button>
 
             <button
               id="tab-btn-chat-connect"
               onClick={() => setMainNavTab("chat")}
-              className={`w-full py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-between transition-all cursor-pointer ${
+              className={`w-full py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-between transition-all cursor-pointer ${
                 mainNavTab === "chat"
                   ? "bg-white text-[#1D1D1F] shadow-sm ring-1 ring-black/5"
                   : "text-[#5C5B57] hover:text-[#1D1D1F] hover:bg-white/50"
@@ -1569,12 +1570,11 @@ export default function App() {
             >
               <div className="flex items-center gap-2">
                 <Smile className="w-4 h-4 text-emerald-600" />
-                <span>소다봇 제어 & AI 코딩</span>
+                <span>2단계: 소다봇 제어 & AI 코딩</span>
               </div>
               {user.canAccessChat ? (
-                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 font-extrabold flex items-center gap-0.5">
-                  <Unlock className="w-2.5 h-2.5" />
-                  연동 활성
+                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 font-extrabold flex items-center gap-0.5 font-mono">
+                  6주차~
                 </span>
               ) : (
                 <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 font-extrabold flex items-center gap-0.5 border border-amber-200">
@@ -1593,15 +1593,15 @@ export default function App() {
             <div className="flex items-center justify-between px-2 py-1.5 text-[10px] font-bold text-[#86868B] uppercase tracking-wider font-mono border-b border-[#EAE6DF] mb-1">
               <span className="flex items-center gap-1.5">
                 <FolderCode className="w-3.5 h-3.5 text-indigo-600" />
-                주차별 실습 코드 목록
+                1~5주차 펌웨어 실습 코드
               </span>
               <button
                 onClick={() => {
-                  const allWeeks = Array.from(new Set(courseContents.map(c => c.week)));
-                  if (expandedWeeks.length === allWeeks.length) {
+                  const devWeeks = Array.from(new Set(courseContents.filter(c => Number(c.week) <= 5).map(c => c.week)));
+                  if (expandedWeeks.length === devWeeks.length) {
                     setExpandedWeeks([]);
                   } else {
-                    setExpandedWeeks(allWeeks);
+                    setExpandedWeeks(devWeeks);
                   }
                 }}
                 className="text-[9px] text-[#86868B] hover:text-indigo-600 transition-colors cursor-pointer"
@@ -1610,8 +1610,8 @@ export default function App() {
               </button>
             </div>
 
-            {/* Tree View Grouped by Week */}
-            {Array.from(new Set(courseContents.map(c => Number(c.week))))
+            {/* Tree View Grouped by Week (1~5주차 전용) */}
+            {Array.from(new Set(courseContents.filter(c => Number(c.week) <= 5).map(c => Number(c.week))))
               .sort((a, b) => Number(a) - Number(b))
               .map(weekNum => {
                 const weekCodes = courseContents.filter(c => c.week === weekNum);
@@ -1634,7 +1634,7 @@ export default function App() {
                         ) : (
                           <ChevronRight className="w-3.5 h-3.5 text-[#86868B] shrink-0" />
                         )}
-                        <span className="truncate">{weekNum === 6 ? "6-7주차 실습" : `${weekNum}주차 실습`}</span>
+                        <span className="truncate">{weekNum}주차 실습</span>
                       </div>
                       <span className="text-[9px] text-[#86868B] font-mono bg-[#FAF9F6] px-1.5 py-0.5 rounded border border-[#EAE6DF]">
                         {weekCodes.length}개
@@ -1820,25 +1820,19 @@ export default function App() {
                         {/* 2. 마이크 추가 배선도 */}
                         <button
                           onClick={() => {
-                            setSelectedDevCodeId('content-week-6-mic-circuit');
-                            setMainNavTab('dev');
-                            setExpandedWeeks(prev => prev.includes(6) ? prev : [...prev, 6]);
+                            setCurrentView('mic_circuit');
                           }}
                           className={`w-full text-left px-2.5 py-1.5 rounded-xl text-xs font-medium flex items-center justify-between transition-all cursor-pointer ${
-                            selectedDevCodeId === 'content-week-6-mic-circuit' && mainNavTab === 'dev'
-                              ? 'bg-emerald-600 text-white font-bold shadow-xs'
+                            currentView === 'mic_circuit'
+                              ? 'bg-blue-50/70 text-blue-900 font-bold border border-blue-200/70 shadow-2xs'
                               : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20 hover:text-[#1D1D1F]'
                           }`}
                         >
                           <div className="flex items-center gap-1.5 min-w-0">
-                            <FileCode className={`w-3.5 h-3.5 shrink-0 ${selectedDevCodeId === 'content-week-6-mic-circuit' && mainNavTab === 'dev' ? 'text-white' : 'text-emerald-500'}`} />
+                            <FileCode className={`w-3.5 h-3.5 shrink-0 ${currentView === 'mic_circuit' ? 'text-blue-600' : 'text-emerald-500'}`} />
                             <span className="truncate text-xs">2. 마이크 추가 배선도</span>
                           </div>
-                          <span className={`text-[8px] px-1.5 py-0.5 rounded font-mono shrink-0 ${
-                            selectedDevCodeId === 'content-week-6-mic-circuit' && mainNavTab === 'dev'
-                              ? 'bg-emerald-100 text-emerald-800 font-extrabold'
-                              : 'bg-emerald-50 text-emerald-700 border border-emerald-200/60'
-                          }`}>
+                          <span className="text-[8px] text-blue-700 bg-blue-50 border border-blue-200/60 px-1.5 py-0.5 rounded font-mono font-semibold shrink-0">
                             배선도
                           </span>
                         </button>
@@ -2405,6 +2399,162 @@ export default function App() {
           <SodabotConnectScreen currentUser={user} />
         ) : currentView === 'sodabot_builder' ? (
           <SodaAiLabScreen />
+        ) : currentView === 'mic_circuit' ? (
+          <div className="flex-1 flex flex-col h-screen overflow-y-auto bg-[#FAF9F6] p-4 sm:p-8 scrollbar-thin">
+            <div className="max-w-4xl w-full mx-auto space-y-6 animate-fade-in">
+              {/* Header */}
+              <div className="flex items-center justify-between bg-white p-5 rounded-2xl border border-[#EAE6DF] shadow-xs">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-xl shrink-0">
+                    🎙️
+                  </div>
+                  <div>
+                    <h2 className="text-base sm:text-lg font-black text-[#1D1D1F] flex items-center gap-2">
+                      <span>6-7주차: 마이크 추가 배선도</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-mono font-bold">
+                        WEEK 06-07
+                      </span>
+                    </h2>
+                    <p className="text-xs text-[#86868B]">
+                      ESP32 Super Mini 보드와 I2S 원형 마이크 모듈의 안전한 3.3V 전원 및 핀 배선 가이드입니다.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <a
+                    href="/images/circuit_mic_i2s.jpg"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold rounded-xl flex items-center gap-1.5 transition-all cursor-pointer text-decoration-none shadow-2xs"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>원본 크게보기</span>
+                  </a>
+                  <button
+                    onClick={() => setCurrentView('settings')}
+                    className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
+                  >
+                    <Settings className="w-3.5 h-3.5" />
+                    <span>1. 소다봇 설정하기</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Main Image Container */}
+              <div className="bg-white rounded-3xl p-4 sm:p-6 border border-[#EAE6DF] shadow-sm space-y-4">
+                <div className="flex items-center justify-between border-b border-[#FAF9F6] pb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
+                    <h3 className="text-sm font-bold text-[#1D1D1F]">
+                      ESP32 Super Mini ↔ Mic 연결 핀맵 & 브레드보드 실물 배치
+                    </h3>
+                  </div>
+                  <span className="text-[11px] font-mono text-[#86868B]">
+                    circuit_mic_i2s.jpg
+                  </span>
+                </div>
+
+                {/* High Resolution Image */}
+                <div className="rounded-2xl overflow-hidden bg-neutral-50 border border-[#EAE6DF] flex items-center justify-center p-2">
+                  <img
+                    src="/images/circuit_mic_i2s.jpg"
+                    alt="ESP32 Super Mini와 마이크 연결 핀맵 배선도"
+                    className="w-full max-h-[640px] object-contain rounded-xl shadow-xs"
+                  />
+                </div>
+              </div>
+
+              {/* Pin Connection Table & Important Notes Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-12">
+                {/* Table Card */}
+                <div className="bg-white p-5 rounded-2xl border border-[#EAE6DF] shadow-xs space-y-3">
+                  <div className="flex items-center gap-2 text-xs font-bold text-[#1D1D1F] uppercase tracking-wider font-mono">
+                    <Cpu className="w-4 h-4 text-indigo-600" />
+                    <span>ESP32 Super Mini ↔ 마이크 핀맵</span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead>
+                        <tr className="border-b border-[#EAE6DF] text-[#86868B] font-semibold text-[11px]">
+                          <th className="pb-2">ESP32 핀</th>
+                          <th className="pb-2">기능</th>
+                          <th className="pb-2">마이크 모듈</th>
+                          <th className="pb-2">배선 색상</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[#FAF9F6] text-[#1D1D1F] font-mono text-[11px]">
+                        <tr>
+                          <td className="py-2 text-rose-600 font-bold">3V3 (전원)</td>
+                          <td className="py-2 text-neutral-600">VDD</td>
+                          <td className="py-2 text-rose-600 font-bold">VDD (3.3V)</td>
+                          <td className="py-2 text-rose-600">빨강</td>
+                        </tr>
+                        <tr>
+                          <td className="py-2 text-neutral-800 font-bold">GND</td>
+                          <td className="py-2 text-neutral-600">GND</td>
+                          <td className="py-2 text-neutral-800 font-bold">GND</td>
+                          <td className="py-2 text-neutral-800">검정</td>
+                        </tr>
+                        <tr>
+                          <td className="py-2 text-emerald-600 font-bold">GPIO9</td>
+                          <td className="py-2 text-neutral-600">SCK (BCLK)</td>
+                          <td className="py-2 text-emerald-600 font-bold">SCK</td>
+                          <td className="py-2 text-emerald-600">초록</td>
+                        </tr>
+                        <tr>
+                          <td className="py-2 text-blue-600 font-bold">GPIO10</td>
+                          <td className="py-2 text-neutral-600">WS (LRCL)</td>
+                          <td className="py-2 text-blue-600 font-bold">WS</td>
+                          <td className="py-2 text-blue-600">파랑</td>
+                        </tr>
+                        <tr>
+                          <td className="py-2 text-amber-600 font-bold">GPIO8</td>
+                          <td className="py-2 text-neutral-600">SD (DATA)</td>
+                          <td className="py-2 text-amber-600 font-bold">SD</td>
+                          <td className="py-2 text-amber-600">주황</td>
+                        </tr>
+                        <tr>
+                          <td className="py-2 text-purple-600 font-bold">GND</td>
+                          <td className="py-2 text-neutral-600">L/R 선택</td>
+                          <td className="py-2 text-purple-600 font-bold">L/R (선택)</td>
+                          <td className="py-2 text-purple-600">보라</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Notes Card */}
+                <div className="bg-white p-5 rounded-2xl border border-[#EAE6DF] shadow-xs space-y-3 flex flex-col justify-between">
+                  <div className="space-y-2.5">
+                    <div className="flex items-center gap-2 text-xs font-bold text-[#1D1D1F]">
+                      <span className="w-4 h-4 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center text-[10px] font-bold">!</span>
+                      <span>핵심 주의사항 & 배선 팁</span>
+                    </div>
+                    <ul className="text-xs text-[#5C5B57] space-y-2 leading-relaxed">
+                      <li className="flex items-start gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-rose-500 mt-1.5 shrink-0" />
+                        <span><strong className="text-rose-600">VDD는 반드시 3.3V에 연결합니다</strong>: 5V에 연결하지 마세요 (마이크 고장 방지).</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500 mt-1.5 shrink-0" />
+                        <span><strong>브레드보드 반대편 3.3V 레일 활용</strong>: 전원선과 신호선을 구분하여 배선이 깔끔해지고 실수가 줄어듭니다.</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mt-1.5 shrink-0" />
+                        <span><strong>모든 GND는 공통(Common GND)으로 연결</strong>하여 안정적인 신호를 보장합니다.</span>
+                      </li>
+                    </ul>
+                  </div>
+
+                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-900">
+                    💡 <strong>배선 완료 후</strong>: 상단의 <strong>[1. 소다봇 설정하기]</strong> 버튼을 눌러 Wi-Fi 및 펌웨어를 빌드하세요!
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         ) : (
           <SodabotSettingsScreen />
         )}
