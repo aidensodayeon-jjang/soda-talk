@@ -337,6 +337,47 @@ const DEFAULT_COURSE_CONTENTS: CourseContent[] = [
     pinMap: "LCD(MOSI:11, CLK:12, CS:13, DC:7, RST:6), 버튼:4, I2S스피커(BCLK:5, LRC:3, DOUT:44), LED:2",
     updatedAt: new Date().toISOString(),
     code: getFirmwareCode("soda-5-4.ino")
+  },
+  {
+    id: "content-week-6-settings",
+    week: 6,
+    title: "1. 소다봇 설정하기",
+    description: "소다봇의 Wi-Fi, BLE 장치 이름, 기본 표정, 물리 버튼 동작을 설정하고 4개 파트(HEADERS, GLOBALS, SETUP, FUNCTION) 커스텀 아두이노 기능을 자동 병합하여 다운로드합니다.",
+    filename: "soda-basic-template.ino",
+    language: "arduino",
+    contentType: "code",
+    tags: ["6-7주차", "소다봇설정", "커스텀기능", "Wi-Fi", "BLE", "펌웨어"],
+    pinMap: "LCD(11,12,13,7,6), 버튼:4, I2S스피커(5,3,44), I2S마이크(9,10,8)",
+    updatedAt: new Date().toISOString(),
+    code: getFirmwareCode("soda-basic-template.ino")
+  },
+  {
+    id: "content-week-6-mic-circuit",
+    week: 6,
+    title: "2. [배선도] 마이크 추가 회로 연결도",
+    description: "ESP32-S3 SuperMini 보드와 I2S 원형 마이크 모듈의 3.3V 전원 및 핀 연결 배선도(GPIO9/SCK, GPIO10/WS, GPIO8/SD) 가이드입니다.",
+    filename: "circuit_mic_i2s.jpg",
+    language: "json",
+    contentType: "circuit",
+    imageUrl: "/images/circuit_mic_i2s.jpg",
+    tags: ["6-7주차", "배선도", "회로도", "마이크", "I2S", "ESP32-S3", "3.3V"],
+    pinMap: "마이크 VDD: 3.3V, GND: 공통GND, SCK: GPIO9, WS: GPIO10, SD: GPIO8, L/R: GND",
+    updatedAt: new Date().toISOString(),
+    code: `// [6-7주차] ESP32 Super Mini ↔ I2S 마이크 연결 핀맵 요약
+// =========================================================================
+// 부품 핀 (Mic) | ESP32-S3 핀  | 기능                 | 배선 색상
+// -------------+-------------+----------------------+---------------------
+// VDD (3.3V)   | 3V3 (전원)  | 전원 (반드시 3.3V 레일)| 빨강 (Red)
+// GND          | GND         | 접지 (공통 GND)      | 검정 (Black)
+// SCK          | GPIO9       | SCK (I2S 비트 클럭)   | 초록 (Green)
+// WS           | GPIO10      | WS (I2S 워드 클럭)    | 파랑 (Blue)
+// SD           | GPIO8       | SD (I2S 오디오 데이터) | 주황 (Orange)
+// L/R          | GND         | L/R 채널 선택 (기본)  | 보라 (Purple)
+// =========================================================================
+// ⚠️ 중요 주의사항:
+// 1. VDD는 반드시 3.3V에 연결합니다. (5V에 연결하지 않습니다!)
+// 2. 마이크 전원은 브레드보드 반대편 3.3V 전원 레일에서 가져옵니다.
+// 3. 모든 부품의 GND는 공통(Common GND)으로 연결합니다.`
   }
 ];
 

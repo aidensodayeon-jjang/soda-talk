@@ -800,6 +800,63 @@ void loop() {
     pinMap: "LCD(MOSI:11, CLK:12, CS:13, DC:7, RST:6), 버튼:4, LED:2, I2S:5/3/44",
     updatedAt: new Date().toISOString(),
     code: `// 소다봇 2.0" LCD 화면편집기 / 표정 스튜디오에서 코드를 직접 디자인하고 다운로드하세요!`
+  },
+  {
+    id: "content-week-6-settings",
+    week: 6,
+    title: "1. 소다봇 설정하기",
+    description: "소다봇의 Wi-Fi, BLE 장치 이름, 기본 표정, 물리 버튼 동작을 설정하고 4개 파트(HEADERS, GLOBALS, SETUP, FUNCTION) 커스텀 아두이노 기능을 자동 병합하여 다운로드합니다.",
+    filename: "soda-basic-template.ino",
+    language: "arduino",
+    contentType: "code",
+    tags: ["6-7주차", "소다봇설정", "커스텀기능", "Wi-Fi", "BLE", "펌웨어"],
+    pinMap: "LCD(11,12,13,7,6), 버튼:4, I2S스피커(5,3,44), I2S마이크(9,10,8)",
+    updatedAt: new Date().toISOString(),
+    code: `// [6-7주차] 소다봇 설정하기 & 커스텀 기능 펌웨어 가이드
+// =========================================================================
+// 소다봇 설정 화면(Settings)에서 다음을 손쉽게 설정하고 빌드할 수 있습니다:
+//
+// 1. 소다봇 기본 정보 설정
+//    - 로봇 이름 (BLE 이름: SODABOT_이름)
+//    - Wi-Fi SSID / 비밀번호 자동 연동
+//    - 대기 화면 및 기본 표정 / 물리 버튼 동작 매핑
+//
+// 2. 나만의 커스텀 기능 (4개 파트 1:1 자동 병합)
+//    - HEADERS   : 필요한 #include 라이브러리 (예: #include <time.h>)
+//    - GLOBALS   : 전역 변수 / 상수 / API 주소 등
+//    - SETUP     : setup() 내부에 추가할 초기화 코드
+//    - FUNCTION  : 실행할 커스텀 함수 정의 (예: void showClock() { ... })
+//
+// 💡 상단 메뉴의 [소다봇 제어] -> [6-7주차 실습: 1. 소다봇 설정하기]를 눌러 
+//    실시간으로 펌웨어를 생성하고 아두이노에 업로드해보세요!`
+  },
+  {
+    id: "content-week-6-mic-circuit",
+    week: 6,
+    title: "2. [배선도] 마이크 추가 회로 연결도",
+    description: "ESP32-S3 SuperMini 보드와 I2S 원형 마이크 모듈의 3.3V 전원 및 핀 연결 배선도(GPIO9/SCK, GPIO10/WS, GPIO8/SD) 가이드입니다.",
+    filename: "circuit_mic_i2s.jpg",
+    language: "json",
+    contentType: "circuit",
+    imageUrl: "/images/circuit_mic_i2s.jpg",
+    tags: ["6-7주차", "배선도", "회로도", "마이크", "I2S", "ESP32-S3", "3.3V"],
+    pinMap: "마이크 VDD: 3.3V, GND: 공통GND, SCK: GPIO9, WS: GPIO10, SD: GPIO8, L/R: GND",
+    updatedAt: new Date().toISOString(),
+    code: `// [6-7주차] ESP32 Super Mini ↔ I2S 마이크 연결 핀맵 요약
+// =========================================================================
+// 부품 핀 (Mic) | ESP32-S3 핀  | 기능                 | 배선 색상
+// -------------+-------------+----------------------+---------------------
+// VDD (3.3V)   | 3V3 (전원)  | 전원 (반드시 3.3V 레일)| 빨강 (Red)
+// GND          | GND         | 접지 (공통 GND)      | 검정 (Black)
+// SCK          | GPIO9       | SCK (I2S 비트 클럭)   | 초록 (Green)
+// WS           | GPIO10      | WS (I2S 워드 클럭)    | 파랑 (Blue)
+// SD           | GPIO8       | SD (I2S 오디오 데이터) | 주황 (Orange)
+// L/R          | GND         | L/R 채널 선택 (기본)  | 보라 (Purple)
+// =========================================================================
+// ⚠️ 중요 주의사항:
+// 1. VDD는 반드시 3.3V에 연결합니다. (5V에 연결하지 않습니다!)
+// 2. 마이크 전원은 브레드보드 반대편 3.3V 전원 레일에서 가져옵니다.
+// 3. 모든 부품의 GND는 공통(Common GND)으로 연결합니다.`
   }
 ];
 
@@ -1076,7 +1133,40 @@ export default function DevCodeHubScreen({ className, selectedCodeId, onSelectCo
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[#313244]/60 text-[#cdd6f4]">
-                        {activeItem.id === "content-week-3-circuit-diagram" ? (
+                        {activeItem.id === "content-week-6-mic-circuit" ? (
+                          <>
+                            <tr>
+                              <td className="py-2 text-rose-400 font-bold">마이크 VDD (3.3V)</td>
+                              <td className="py-2 text-rose-300 font-bold">3V3 (전원)</td>
+                              <td className="py-2 text-[#a6adc8]">반대편 3.3V 레일 (⚠️ 5V 절대 금지!)</td>
+                            </tr>
+                            <tr>
+                              <td className="py-2 text-[#6c7086] font-bold">마이크 GND (접지)</td>
+                              <td className="py-2 text-amber-300 font-bold">GND</td>
+                              <td className="py-2 text-[#a6adc8]">공통 접지 (Common GND)</td>
+                            </tr>
+                            <tr>
+                              <td className="py-2 text-emerald-400 font-bold">SCK (I2S BCLK)</td>
+                              <td className="py-2 text-emerald-300 font-bold">GPIO9</td>
+                              <td className="py-2 text-[#a6adc8]">마이크 SCK (비트 클럭)</td>
+                            </tr>
+                            <tr>
+                              <td className="py-2 text-blue-400 font-bold">WS (I2S LRCL)</td>
+                              <td className="py-2 text-blue-300 font-bold">GPIO10</td>
+                              <td className="py-2 text-[#a6adc8]">마이크 WS (워드 셀렉트 클럭)</td>
+                            </tr>
+                            <tr>
+                              <td className="py-2 text-amber-400 font-bold">SD (I2S DATA)</td>
+                              <td className="py-2 text-amber-300 font-bold">GPIO8</td>
+                              <td className="py-2 text-[#a6adc8]">마이크 SD (디지털 오디오 입력)</td>
+                            </tr>
+                            <tr>
+                              <td className="py-2 text-purple-400 font-bold">L/R (채널 선택)</td>
+                              <td className="py-2 text-purple-300 font-bold">GND</td>
+                              <td className="py-2 text-[#a6adc8]">L/R 채널 접지 (보드 기본값)</td>
+                            </tr>
+                          </>
+                        ) : activeItem.id === "content-week-3-circuit-diagram" ? (
                           <>
                             <tr>
                               <td className="py-1.5 text-cyan-400 font-bold">LCD DIN (MOSI)</td>
@@ -1163,26 +1253,45 @@ export default function DevCodeHubScreen({ className, selectedCodeId, onSelectCo
                   <div className="space-y-3">
                     <div className="flex items-center gap-2 text-amber-300 font-bold text-xs uppercase tracking-wider font-mono">
                       <Sparkles className="w-4 h-4 text-amber-400" />
-                      <span>회로 동작 원리 설명</span>
+                      <span>{activeItem.id === "content-week-6-mic-circuit" ? "마이크 배선 주의사항 & 팁" : "회로 동작 원리 설명"}</span>
                     </div>
-                    <ul className="text-xs text-[#cdd6f4] space-y-2 leading-relaxed">
-                      <li className="flex items-start gap-2">
-                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 mt-1.5 shrink-0" />
-                        <span><strong>버튼 누름 (GPIO4 = LOW)</strong>: 회로가 접지(GND)와 연결되며 인터랙션이 발생합니다.</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 mt-1.5 shrink-0" />
-                        <span><strong>LED 켜짐 (GPIO2 = HIGH)</strong>: 220Ω 저항을 거쳐 LED가 안전한 전류로 점등됩니다.</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 mt-1.5 shrink-0" />
-                        <span><strong>도-미-솔 소리 출력</strong>: I2S 디지털 신호로 MAX98357A 앰프를 통해 스피커로 화음이 재생됩니다.</span>
-                      </li>
-                    </ul>
+                    {activeItem.id === "content-week-6-mic-circuit" ? (
+                      <ul className="text-xs text-[#cdd6f4] space-y-2 leading-relaxed">
+                        <li className="flex items-start gap-2">
+                          <span className="w-1.5 h-1.5 rounded-full bg-rose-400 mt-1.5 shrink-0" />
+                          <span><strong className="text-rose-300">마이크 전원은 3.3V (VDD)</strong>: 마이크 센서는 3.3V 전용이므로 5V에 연결하지 마세요!</span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <span className="w-1.5 h-1.5 rounded-full bg-blue-400 mt-1.5 shrink-0" />
+                          <span><strong className="text-blue-300">반대편 3.3V 전원 레일 활용</strong>: 브레드보드 반대편 전원 레일에 연결하여 전원선과 신호선을 깔끔하게 분리합니다.</span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-1.5 shrink-0" />
+                          <span><strong className="text-emerald-300">I2S 3선 디지털 통신</strong>: SCK(GPIO9), WS(GPIO10), SD(GPIO8)로 고음질 음성 신호를 전송합니다.</span>
+                        </li>
+                      </ul>
+                    ) : (
+                      <ul className="text-xs text-[#cdd6f4] space-y-2 leading-relaxed">
+                        <li className="flex items-start gap-2">
+                          <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 mt-1.5 shrink-0" />
+                          <span><strong>버튼 누름 (GPIO4 = LOW)</strong>: 회로가 접지(GND)와 연결되며 인터랙션이 발생합니다.</span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 mt-1.5 shrink-0" />
+                          <span><strong>LED 켜짐 (GPIO2 = HIGH)</strong>: 220Ω 저항을 거쳐 LED가 안전한 전류로 점등됩니다.</span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 mt-1.5 shrink-0" />
+                          <span><strong>도-미-솔 소리 출력</strong>: I2S 디지털 신호로 MAX98357A 앰프를 통해 스피커로 화음이 재생됩니다.</span>
+                        </li>
+                      </ul>
+                    )}
                   </div>
 
                   <div className="p-3 bg-indigo-950/40 border border-indigo-500/30 rounded-xl text-xs text-indigo-200">
-                    💡 <strong>실습 팁</strong>: 배선이 완료된 후 다음 실습 코드인 <strong>&apos;soda-2-2.ino&apos;</strong>를 업로드하여 동작을 테스트하세요!
+                    💡 <strong>실습 팁</strong>: {activeItem.id === "content-week-6-mic-circuit" 
+                      ? "배선 완료 후 상단 메뉴 [소다봇 제어] ➔ [6-7주차 실습: 1. 소다봇 설정하기]에서 마이크 음성 인식을 활성화하세요!" 
+                      : "배선이 완료된 후 다음 실습 코드를 업로드하여 동작을 테스트하세요!"}
                   </div>
                 </div>
               </div>

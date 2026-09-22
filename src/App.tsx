@@ -64,6 +64,7 @@ export default function App() {
   // Dev Code Hub Tree States
   const [courseContents, setCourseContents] = useState<CourseContent[]>([]);
   const [expandedWeeks, setExpandedWeeks] = useState<number[]>([1]);
+  const [isWeek67Expanded, setIsWeek67Expanded] = useState<boolean>(true);
   const [selectedDevCodeId, setSelectedDevCodeId] = useState<string>("content-week-1-sound");
 
   // Load course contents on mount
@@ -1633,7 +1634,7 @@ export default function App() {
                         ) : (
                           <ChevronRight className="w-3.5 h-3.5 text-[#86868B] shrink-0" />
                         )}
-                        <span className="truncate">{weekNum}주차 실습</span>
+                        <span className="truncate">{weekNum === 6 ? "6-7주차 실습" : `${weekNum}주차 실습`}</span>
                       </div>
                       <span className="text-[9px] text-[#86868B] font-mono bg-[#FAF9F6] px-1.5 py-0.5 rounded border border-[#EAE6DF]">
                         {weekCodes.length}개
@@ -1764,36 +1765,85 @@ export default function App() {
                     )}
                   </div>
 
-                  {/* 6주차: 소다봇 설정하기 */}
-                  <button
-                    onClick={() => {
-                      if (!isSodabotConnected) {
-                        alert("소다봇이 연결되지 않았습니다. 상단 '소다봇 상태' 카드를 눌러 먼저 기기를 연결해 주세요.");
-                        setCurrentView('sodabot');
-                        return;
-                      }
-                      setCurrentView('settings');
-                    }}
-                    className={`w-full text-left px-2.5 py-2 rounded-xl text-xs font-medium flex items-center justify-between transition-all cursor-pointer ${
-                      !isSodabotConnected
-                        ? 'text-[#A1A1A6] hover:bg-neutral-100/50 hover:text-neutral-700'
-                        : currentView === 'settings'
-                        ? 'bg-blue-50/70 text-blue-900 font-bold border border-blue-200/70 shadow-2xs'
-                        : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20 hover:text-[#1D1D1F]'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <Settings className={`w-3.5 h-3.5 shrink-0 ${isSodabotConnected ? (currentView === 'settings' ? 'text-blue-600' : 'text-neutral-600') : 'text-slate-400'}`} />
-                      <span className="truncate">6주차: 소다봇 설정하기</span>
-                    </div>
-                    {!isSodabotConnected ? (
-                      <Lock className="w-3 h-3 text-neutral-400 shrink-0" />
-                    ) : (
-                      <span className="text-[9px] text-blue-700 bg-blue-50 border border-blue-200/60 px-1.5 py-0.5 rounded font-mono font-semibold shrink-0">
-                        설정
+                  {/* 6-7주차 실습 폴더 */}
+                  <div className="space-y-0.5">
+                    <button
+                      onClick={() => setIsWeek67Expanded(!isWeek67Expanded)}
+                      className="w-full text-left px-2 py-1.5 rounded-xl text-xs font-bold flex items-center justify-between text-[#1D1D1F] hover:bg-[#EAE6DF]/40 transition-colors cursor-pointer group"
+                    >
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        {isWeek67Expanded ? (
+                          <ChevronDown className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                        ) : (
+                          <ChevronRight className="w-3.5 h-3.5 text-[#86868B] shrink-0" />
+                        )}
+                        <span className="truncate">6-7주차 실습</span>
+                      </div>
+                      <span className="text-[9px] text-indigo-700 font-mono bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200/60 font-bold">
+                        2개
                       </span>
+                    </button>
+
+                    {isWeek67Expanded && (
+                      <div className="pl-3.5 space-y-0.5 border-l-2 border-indigo-100 ml-3.5 my-1">
+                        {/* 1. 소다봇 설정하기 */}
+                        <button
+                          onClick={() => {
+                            if (!isSodabotConnected) {
+                              alert("소다봇이 연결되지 않았습니다. 상단 '소다봇 상태' 카드를 눌러 먼저 기기를 연결해 주세요.");
+                              setCurrentView('sodabot');
+                              return;
+                            }
+                            setCurrentView('settings');
+                          }}
+                          className={`w-full text-left px-2.5 py-1.5 rounded-xl text-xs font-medium flex items-center justify-between transition-all cursor-pointer ${
+                            !isSodabotConnected
+                              ? 'text-[#A1A1A6] hover:bg-neutral-100/50 hover:text-neutral-700'
+                              : currentView === 'settings'
+                              ? 'bg-blue-50/70 text-blue-900 font-bold border border-blue-200/70 shadow-2xs'
+                              : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20 hover:text-[#1D1D1F]'
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <Settings className={`w-3.5 h-3.5 shrink-0 ${isSodabotConnected ? (currentView === 'settings' ? 'text-blue-600' : 'text-neutral-600') : 'text-slate-400'}`} />
+                            <span className="truncate text-xs">1. 소다봇 설정하기</span>
+                          </div>
+                          {!isSodabotConnected ? (
+                            <Lock className="w-3 h-3 text-neutral-400 shrink-0" />
+                          ) : (
+                            <span className="text-[8px] text-blue-700 bg-blue-50 border border-blue-200/60 px-1.5 py-0.5 rounded font-mono font-semibold shrink-0">
+                              설정
+                            </span>
+                          )}
+                        </button>
+
+                        {/* 2. 마이크 추가 배선도 */}
+                        <button
+                          onClick={() => {
+                            setSelectedDevCodeId('content-week-6-mic-circuit');
+                            setCurrentView('chat');
+                          }}
+                          className={`w-full text-left px-2.5 py-1.5 rounded-xl text-xs font-medium flex items-center justify-between transition-all cursor-pointer ${
+                            selectedDevCodeId === 'content-week-6-mic-circuit' && currentView === 'chat'
+                              ? 'bg-emerald-600 text-white font-bold shadow-xs'
+                              : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20 hover:text-[#1D1D1F]'
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <FileCode className={`w-3.5 h-3.5 shrink-0 ${selectedDevCodeId === 'content-week-6-mic-circuit' && currentView === 'chat' ? 'text-white' : 'text-emerald-500'}`} />
+                            <span className="truncate text-xs">2. 마이크 추가 배선도</span>
+                          </div>
+                          <span className={`text-[8px] px-1.5 py-0.5 rounded font-mono shrink-0 ${
+                            selectedDevCodeId === 'content-week-6-mic-circuit' && currentView === 'chat'
+                              ? 'bg-emerald-100 text-emerald-800 font-extrabold'
+                              : 'bg-emerald-50 text-emerald-700 border border-emerald-200/60'
+                          }`}>
+                            배선도
+                          </span>
+                        </button>
+                      </div>
                     )}
-                  </button>
+                  </div>
 
                   {/* 7주차: 소다봇 빌더 */}
                   <button
