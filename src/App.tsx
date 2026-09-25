@@ -821,6 +821,20 @@ export default function App() {
     localStorage.setItem("authSessionId", sessionId);
     setToken(sessionId);
     setUser(loggedInUser);
+    
+    // Check if new user has a saved robot IP
+    const userKey = loggedInUser.id || loggedInUser.username;
+    const userSavedIp = localStorage.getItem(`sodabot_${userKey}_robot_ip`);
+    if (!userSavedIp) {
+      sodabotTransport.disconnect();
+      localStorage.removeItem("sodabot_robot_ip");
+      localStorage.removeItem("sodabot_connected");
+      setSodabotIp(null);
+      setConnType('none');
+    } else {
+      setSodabotIp(userSavedIp);
+    }
+    window.dispatchEvent(new Event("sodabot-status-changed"));
   };
 
   const handleLogout = async () => {
@@ -834,11 +848,21 @@ export default function App() {
         console.error("Logout request failed", err);
       }
     }
+    sodabotTransport.disconnect();
     localStorage.removeItem("authSessionId");
+    localStorage.removeItem("sodabot_robot_ip");
+    localStorage.removeItem("sodabot_connected");
+    localStorage.removeItem("sodabot_custom_name");
+    localStorage.removeItem("sodabot_device_name");
+    localStorage.removeItem("sodabot_wifi_ssid");
+    localStorage.removeItem("sodabot_wifi_password");
     setToken(null);
     setUser(null);
     setChats([]);
     setActiveChatId(null);
+    setSodabotIp(null);
+    setConnType('none');
+    window.dispatchEvent(new Event("sodabot-status-changed"));
   };
 
   if (!user) {
@@ -1738,7 +1762,7 @@ export default function App() {
                       <div className="flex items-center justify-between">
                         <h5 className="text-xs font-bold text-[#1D1D1F] truncate group-hover:text-indigo-600 transition-colors">
                           {isSodabotConnected 
-                            ? (localStorage.getItem("sodabot_device_name") || `SODABOT_${localStorage.getItem("sodabot_custom_name") || 'LUMI'}`)
+                            ? (localStorage.getItem(`sodabot_${user?.id || user?.username}_device_name`) || localStorage.getItem("sodabot_device_name") || (localStorage.getItem(`sodabot_${user?.id || user?.username}_custom_name`) ? `SODABOT_${localStorage.getItem(`sodabot_${user?.id || user?.username}_custom_name`)}` : 'SODABOT'))
                             : '소다봇 연결하기'}
                         </h5>
                         {isSodabotConnected && <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />}
@@ -2710,7 +2734,7 @@ export default function App() {
             </div>
           </div>
         ) : (
-          <SodabotSettingsScreen />
+          <SodabotSettingsScreen currentUser={user} />
         )}
       </main>
       )}

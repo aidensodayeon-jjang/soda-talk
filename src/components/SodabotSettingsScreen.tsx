@@ -88,7 +88,21 @@ ${targetDesc}
 코드 뒤에는 각 파트의 동작 설명을 간단히 덧붙여주세요.`;
 }
 
-export default function SodabotSettingsScreen() {
+interface SodabotSettingsScreenProps {
+  currentUser?: {
+    id: string;
+    username: string;
+    displayName: string;
+    role?: string;
+    canAccessChat?: boolean;
+    personalApiKey?: string;
+  } | null;
+}
+
+export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsScreenProps = {}) {
+  const userKey = currentUser?.id || currentUser?.username || 'default';
+  const getScopedKey = (key: string) => `sodabot_${userKey}_${key}`;
+
   const [connectionType, setConnectionType] = useState(sodabotTransport.type);
   React.useEffect(() => {
     const update = () => setConnectionType(sodabotTransport.type);
@@ -97,12 +111,12 @@ export default function SodabotSettingsScreen() {
   }, []);
 
   // State variables for interactive UI controls
-  const [profileName, setProfileName] = useState(localStorage.getItem("sodabot_profile_name") || '');
-  const [profileDesc, setProfileDesc] = useState(localStorage.getItem("sodabot_profile_desc") || '');
-  const [startupPrompt, setStartupPrompt] = useState(localStorage.getItem("sodabot_startup_prompt") || '');
+  const [profileName, setProfileName] = useState(() => localStorage.getItem(getScopedKey("profile_name")) || '');
+  const [profileDesc, setProfileDesc] = useState(() => localStorage.getItem(getScopedKey("profile_desc")) || '');
+  const [startupPrompt, setStartupPrompt] = useState(() => localStorage.getItem(getScopedKey("startup_prompt")) || '');
   const [exprTab, setExprTab] = useState<'basic' | 'custom'>('basic');
-  const [defaultIdleExpr, setDefaultIdleExpr] = useState(localStorage.getItem('sodabot_default_idle_expr') || 'happy');
-  const [selectedExpr, setSelectedExpr] = useState(() => localStorage.getItem('sodabot_default_idle_expr') || 'happy');
+  const [defaultIdleExpr, setDefaultIdleExpr] = useState(() => localStorage.getItem(getScopedKey('default_idle_expr')) || 'happy');
+  const [selectedExpr, setSelectedExpr] = useState(() => localStorage.getItem(getScopedKey('default_idle_expr')) || 'happy');
 
   // Custom Created Expression List State
   const [customExprList, setCustomExprList] = useState<Array<{

@@ -23,39 +23,21 @@ interface SodabotConnectScreenProps {
 }
 
 export default function SodabotConnectScreen({ currentUser }: SodabotConnectScreenProps) {
+  const userKey = currentUser?.id || currentUser?.username || 'default';
+  const getScopedKey = (key: string) => `sodabot_${userKey}_${key}`;
+
   const [apiKey, setApiKey] = useState<string>(() => {
-    const saved = localStorage.getItem("sodabot_api_key");
-    if (saved && saved.startsWith("sk-soda-") && !saved.includes("자동발급중")) return saved;
     if (currentUser?.personalApiKey) return currentUser.personalApiKey;
+    const saved = localStorage.getItem(getScopedKey("api_key"));
+    if (saved && saved.startsWith("sk-soda-") && !saved.includes("자동발급중")) return saved;
     return "sk-soda-23fdcaabe351c318b448d8540b9bb756";
   });
   const [copiedKey, setCopiedKey] = useState(false);
 
-  useEffect(() => {
-    if (currentUser?.personalApiKey) {
-      setApiKey(currentUser.personalApiKey);
-      localStorage.setItem("sodabot_api_key", currentUser.personalApiKey);
-      return;
-    }
-
-    // API에서 최신 키 조회 (토큰 여부 무관하게 /api/auth/current-key 조회)
-    const token = localStorage.getItem("authSessionId") || "";
-    fetch("/api/auth/current-key", {
-      headers: token ? { Authorization: `Bearer ${token}` } : {}
-    })
-      .then(res => res.json())
-      .then(data => {
-        if (data?.apiKey) {
-          setApiKey(data.apiKey);
-          localStorage.setItem("sodabot_api_key", data.apiKey);
-        }
-      })
-      .catch(() => {});
-  }, [currentUser]);
-
   const [step, setStepState] = useState<1 | 2 | 3>(() => {
-    if (sodabotTransport.type !== 'none') return 3;
-    const savedStep = localStorage.getItem("sodabot_connect_step");
+    const savedIp = localStorage.getItem(getScopedKey("robot_ip"));
+    if (sodabotTransport.type !== 'none' && savedIp) return 3;
+    const savedStep = localStorage.getItem(getScopedKey("connect_step"));
     if (savedStep) {
       const parsed = parseInt(savedStep, 10);
       if (parsed >= 1 && parsed <= 3) return parsed as 1 | 2 | 3;
@@ -65,51 +47,101 @@ export default function SodabotConnectScreen({ currentUser }: SodabotConnectScre
 
   const setStep = (newStep: 1 | 2 | 3) => {
     setStepState(newStep);
-    localStorage.setItem("sodabot_connect_step", String(newStep));
+    localStorage.setItem(getScopedKey("connect_step"), String(newStep));
   };
 
   const [robotName, setRobotName] = useState(() => {
-    const saved = localStorage.getItem("sodabot_custom_name");
+    const saved = localStorage.getItem(getScopedKey("custom_name"));
     return (saved && /^[a-zA-Z0-9_-]+$/.test(saved)) ? saved : '';
   });
-  const [ssid, setSsid] = useState(localStorage.getItem("sodabot_wifi_ssid") || '');
-  const [password, setPassword] = useState(localStorage.getItem("sodabot_wifi_password") || '');
+  const [ssid, setSsid] = useState(() => localStorage.getItem(getScopedKey("wifi_ssid")) || '');
+  const [password, setPassword] = useState(() => localStorage.getItem(getScopedKey("wifi_password")) || '');
   
   const [isSearching, setIsSearching] = useState(false);
   const [foundDevices, setFoundDevices] = useState<{ id: string; name: string; rssi?: number }[]>([]);
   const [connectedDeviceName, setConnectedDeviceName] = useState<string | null>(() => {
-    return localStorage.getItem("sodabot_device_name");
+    return localStorage.getItem(getScopedKey("device_name"));
   });
   const [status, setStatus] = useState<'idle' | 'ble_connecting' | 'wifi_connecting' | 'connected' | 'error'>(() => {
-    if (sodabotTransport.type !== 'none') return 'connected';
+    const savedIp = localStorage.getItem(getScopedKey("robot_ip"));
+    if (sodabotTransport.type !== 'none' && savedIp) return 'connected';
     return 'idle';
   });
-  const [robotIp, setRobotIp] = useState<string | null>(localStorage.getItem("sodabot_robot_ip"));
+  const [robotIp, setRobotIp] = useState<string | null>(() => {
+    return localStorage.getItem(getScopedKey("robot_ip"));
+  });
   const [copiedCode, setCopiedCode] = useState(false);
 
   const bleDeviceRef = useRef<any>(null);
 
   useEffect(() => {
+    if (currentUser?.personalApiKey) {
+      setApiKey(currentUser.personalApiKey);
+      localStorage.setItem(getScopedKey("api_key"), currentUser.personalApiKey);
+    } else {
+      const token = localStorage.getItem("authSessionId") || "";
+      fetch("/api/auth/current-key", {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data?.apiKey) {
+            setApiKey(data.apiKey);
+            localStorage.setItem(getScopedKey("api_key"), data.apiKey);
+          }
+        })
+        .catch(() => {});
+    }
+
+    const savedName = localStorage.getItem(getScopedKey("custom_name")) || '';
+    const savedSsid = localStorage.getItem(getScopedKey("wifi_ssid")) || '';
+    const savedPass = localStorage.getItem(getScopedKey("wifi_password")) || '';
+    const savedIp = localStorage.getItem(getScopedKey("robot_ip"));
+    const savedDev = localStorage.getItem(getScopedKey("device_name"));
+    const savedStep = localStorage.getItem(getScopedKey("connect_step"));
+
+    setRobotName(savedName);
+    setSsid(savedSsid);
+    setPassword(savedPass);
+    setRobotIp(savedIp);
+    setConnectedDeviceName(savedDev);
+
+    if (savedIp) {
+      if (sodabotTransport.type === 'none') {
+        void connectWebSocket(savedIp);
+      } else {
+        setStatus('connected');
+        setStepState(3);
+      }
+    } else {
+      if (sodabotTransport.type !== 'none') {
+        sodabotTransport.disconnect();
+      }
+      setStatus('idle');
+      setStepState(savedStep ? (parseInt(savedStep, 10) as 1 | 2 | 3) : 1);
+    }
+  }, [currentUser?.id, currentUser?.username]);
+
+  useEffect(() => {
     const update = () => {
-      const connected = sodabotTransport.type !== 'none';
+      const savedIp = localStorage.getItem(getScopedKey("robot_ip"));
+      const connected = sodabotTransport.type !== 'none' && !!savedIp;
       setStatus(connected ? 'connected' : 'idle');
       if (connected) setStep(3);
-      setRobotIp(localStorage.getItem('sodabot_robot_ip'));
+      setRobotIp(savedIp);
     };
     window.addEventListener('sodabot-status-changed', update);
-    const savedIp = localStorage.getItem('sodabot_robot_ip');
-    if (savedIp && sodabotTransport.type === 'none') void connectWebSocket(savedIp);
     return () => window.removeEventListener('sodabot-status-changed', update);
-  }, []);
+  }, [userKey]);
 
   // 1. Download Custom .ino Firmware file
   const handleDownloadFirmware = () => {
-    const cleanName = robotName.replace(/[^a-zA-Z0-9_-]/g, '') || 'LUMI';
-    localStorage.setItem("sodabot_custom_name", cleanName);
-    localStorage.setItem("sodabot_wifi_ssid", ssid);
-    localStorage.setItem("sodabot_wifi_password", password);
+    const cleanName = robotName.replace(/[^a-zA-Z0-9_-]/g, '') || (currentUser?.displayName ? currentUser.displayName.replace(/[^a-zA-Z0-9_-]/g, '') : 'ROBOT');
+    localStorage.setItem(getScopedKey("custom_name"), robotName);
+    localStorage.setItem(getScopedKey("wifi_ssid"), ssid);
+    localStorage.setItem(getScopedKey("wifi_password"), password);
 
-    const activeApiKey = apiKey || currentUser?.personalApiKey || localStorage.getItem("sodabot_api_key") || 'sk-soda-demo';
+    const activeApiKey = apiKey || currentUser?.personalApiKey || 'sk-soda-demo';
     const code = generateSodabotFirmware(cleanName, ssid, password, activeApiKey);
     const blob = new Blob([code], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -122,12 +154,12 @@ export default function SodabotConnectScreen({ currentUser }: SodabotConnectScre
 
   // 2. Copy Custom Code to Clipboard
   const handleCopyCode = async () => {
-    const cleanName = robotName.replace(/[^a-zA-Z0-9_-]/g, '') || 'LUMI';
-    localStorage.setItem("sodabot_custom_name", cleanName);
-    localStorage.setItem("sodabot_wifi_ssid", ssid);
-    localStorage.setItem("sodabot_wifi_password", password);
+    const cleanName = robotName.replace(/[^a-zA-Z0-9_-]/g, '') || (currentUser?.displayName ? currentUser.displayName.replace(/[^a-zA-Z0-9_-]/g, '') : 'ROBOT');
+    localStorage.setItem(getScopedKey("custom_name"), robotName);
+    localStorage.setItem(getScopedKey("wifi_ssid"), ssid);
+    localStorage.setItem(getScopedKey("wifi_password"), password);
 
-    const activeApiKey = apiKey || currentUser?.personalApiKey || localStorage.getItem("sodabot_api_key") || 'sk-soda-demo';
+    const activeApiKey = apiKey || currentUser?.personalApiKey || 'sk-soda-demo';
     const code = generateSodabotFirmware(cleanName, ssid, password, activeApiKey);
     await navigator.clipboard.writeText(code);
     setCopiedCode(true);
@@ -135,7 +167,7 @@ export default function SodabotConnectScreen({ currentUser }: SodabotConnectScre
   };
 
   const handleCopyApiKey = async () => {
-    const activeApiKey = apiKey || currentUser?.personalApiKey || localStorage.getItem("sodabot_api_key") || '';
+    const activeApiKey = apiKey || currentUser?.personalApiKey || '';
     if (!activeApiKey) return;
     await navigator.clipboard.writeText(activeApiKey);
     setCopiedKey(true);
@@ -170,6 +202,7 @@ export default function SodabotConnectScreen({ currentUser }: SodabotConnectScre
       }]);
 
       if (device.name) {
+        localStorage.setItem(getScopedKey("device_name"), device.name);
         localStorage.setItem("sodabot_device_name", device.name);
       }
       setConnectedDeviceName(device.name || targetBleName);
@@ -214,7 +247,10 @@ export default function SodabotConnectScreen({ currentUser }: SodabotConnectScre
     try {
       await sodabotTransport.connectWifi(ip);
       await sodabotTransport.send('get_status');
-      setRobotIp(ip); setStatus('connected'); setStep(3);
+      localStorage.setItem(getScopedKey("robot_ip"), ip);
+      setRobotIp(ip); 
+      setStatus('connected'); 
+      setStep(3);
     } catch (error: any) {
       setStatus(sodabotTransport.type === 'none' ? 'error' : 'connected');
       console.error(error);
@@ -224,6 +260,9 @@ export default function SodabotConnectScreen({ currentUser }: SodabotConnectScre
 
   const handleDisconnect = () => {
     if (confirm("소다봇 연결을 해제하시겠습니까?")) {
+      localStorage.removeItem(getScopedKey("robot_ip"));
+      localStorage.removeItem(getScopedKey("device_name"));
+      localStorage.removeItem(getScopedKey("connect_step"));
       localStorage.removeItem("sodabot_robot_ip");
       localStorage.removeItem("sodabot_connected");
       sodabotTransport.disconnect();
