@@ -1245,7 +1245,7 @@ class MyWriteCallbacks: public BLECharacteristicCallbacks {
 };
 
 void setupBLE() {
-  BLEDevice::init("SODABOT_ella");
+  BLEDevice::init("SODABOT_ELLA");
   pServer = BLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
   BLEService* service = pServer->createService(SERVICE_UUID);
@@ -1256,21 +1256,24 @@ void setupBLE() {
   service->start();
 
   BLEAdvertising* advertising = BLEDevice::getAdvertising();
-  advertising->addServiceUUID(SERVICE_UUID);
   advertising->setScanResponse(true);
   advertising->setMinPreferred(0x06);
   advertising->setMinPreferred(0x12);
 
+  // 31바이트 초과 방지: 기본 광고 패킷에는 플래그와 이름을 확실하게 전송
   BLEAdvertisementData advData;
-  advData.setName("SODABOT_ella");
-  advData.setCompleteServices(BLEUUID(SERVICE_UUID));
+  advData.setFlags(0x06); // General Discoverable + BR/EDR Not Supported
+  advData.setName("SODABOT_ELLA");
   advertising->setAdvertisementData(advData);
 
+  // 스캔 응답 패킷에 128비트 서비스 UUID 포함
   BLEAdvertisementData scanData;
-  scanData.setName("SODABOT_ella");
+  scanData.setCompleteServices(BLEUUID(SERVICE_UUID));
+  scanData.setName("SODABOT_ELLA");
   advertising->setScanResponseData(scanData);
 
   BLEDevice::startAdvertising();
+  Serial.println("[BLE] 광고 시작: SODABOT_ELLA");
 }
 
 inline uint32_t getUtf8Code(const String& s, size_t& i) {

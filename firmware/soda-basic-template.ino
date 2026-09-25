@@ -1256,21 +1256,24 @@ void setupBLE() {
   service->start();
 
   BLEAdvertising* advertising = BLEDevice::getAdvertising();
-  advertising->addServiceUUID(SERVICE_UUID);
   advertising->setScanResponse(true);
   advertising->setMinPreferred(0x06);
   advertising->setMinPreferred(0x12);
 
+  // 31바이트 초과 방지: 기본 광고 패킷에는 플래그와 이름을 확실하게 전송
   BLEAdvertisementData advData;
+  advData.setFlags(0x06); // General Discoverable + BR/EDR Not Supported
   advData.setName(__SODA_BLE_NAME__);
-  advData.setCompleteServices(BLEUUID(SERVICE_UUID));
   advertising->setAdvertisementData(advData);
 
+  // 스캔 응답 패킷에 128비트 서비스 UUID 포함
   BLEAdvertisementData scanData;
+  scanData.setCompleteServices(BLEUUID(SERVICE_UUID));
   scanData.setName(__SODA_BLE_NAME__);
   advertising->setScanResponseData(scanData);
 
   BLEDevice::startAdvertising();
+  Serial.println("[BLE] 광고 시작: " + String(__SODA_BLE_NAME__));
 }
 
 inline uint32_t getUtf8Code(const String& s, size_t& i) {
