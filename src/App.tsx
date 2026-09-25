@@ -2633,10 +2633,10 @@ export default function App() {
               {/* Header */}
               {(() => {
                 const userKey = user?.id || user?.username || 'default';
-                const userCustomName = localStorage.getItem(`sodabot_${userKey}_custom_name`) || '';
-                const userSsid = localStorage.getItem(`sodabot_${userKey}_wifi_ssid`) || '';
-                const userPass = localStorage.getItem(`sodabot_${userKey}_wifi_password`) || '';
-                const userApiKey = user?.personalApiKey || localStorage.getItem(`sodabot_${userKey}_api_key`) || '';
+                const userCustomName = localStorage.getItem(`sodabot_${userKey}_custom_name`) || localStorage.getItem('sodabot_custom_name') || '';
+                const userSsid = localStorage.getItem(`sodabot_${userKey}_wifi_ssid`) || localStorage.getItem('sodabot_wifi_ssid') || '';
+                const userPass = localStorage.getItem(`sodabot_${userKey}_wifi_password`) || localStorage.getItem('sodabot_wifi_password') || '';
+                const userApiKey = user?.personalApiKey || localStorage.getItem(`sodabot_${userKey}_api_key`) || localStorage.getItem('sodabot_api_key') || 'sk-soda-33b8c4c9312d29b8a01f1803e890a758';
                 const cleanRobotName = userCustomName.replace(/[^a-zA-Z0-9_-]/g, '') || (user?.displayName ? user.displayName.replace(/[^a-zA-Z0-9_-]/g, '') : 'ROBOT');
 
                 const isWeek8 = currentView === 'firmware_v8';
@@ -2652,13 +2652,11 @@ export default function App() {
                     dynamicCode = dynamicCode.replace(/const char\* SODA_BLE_NAME = ".*?";/, `const char* SODA_BLE_NAME = "SODABOT_${cleanRobotName}";`);
                     dynamicCode = dynamicCode.replace(/BLEDevice::init\("SODABOT_.*?"\);/, `BLEDevice::init("SODABOT_${cleanRobotName}");`);
                   }
-                  if (userApiKey) {
-                    dynamicCode = dynamicCode.replace(/const char\* DEFAULT_SODA_API_KEY = ".*?";/, `const char* DEFAULT_SODA_API_KEY = "${userApiKey}";`);
-                  }
+                  dynamicCode = dynamicCode.replace(/const char\* DEFAULT_SODA_API_KEY = ".*?";/, `const char* DEFAULT_SODA_API_KEY = "${userApiKey}";`);
                   const isHttps = window.location.protocol === 'https:';
                   const currentHost = (window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1')
                     ? window.location.hostname
-                    : '192.168.0.171';
+                    : 'sodabot.sodayeon.co.kr';
                   const currentPort = window.location.port ? parseInt(window.location.port, 10) : (isHttps ? 443 : 7989);
 
                   dynamicCode = dynamicCode.replace(/const char\* SODA_SERVER_HOST = ".*?";/, `const char* SODA_SERVER_HOST = "${currentHost}";`);

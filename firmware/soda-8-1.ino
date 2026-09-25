@@ -77,7 +77,7 @@ const uint16_t SODA_SERVER_PORT = 7989;
 const bool SODA_SERVER_HTTPS = false;
 const char* SODA_AUDIO_CHAT_PATH = "/api/hw/audio-chat";
 const char* SODA_TTS_PATH = "/api/hw/tts";
-const char* DEFAULT_SODA_API_KEY = "sk-soda-9597fe97de4771e361b8a171c9aefd7b";
+const char* DEFAULT_SODA_API_KEY = "sk-soda-33b8c4c9312d29b8a01f1803e890a758";
 String sodaApiKey;
 
 // 3가지 음성 인터랙션 전용 표정 전방 선언
