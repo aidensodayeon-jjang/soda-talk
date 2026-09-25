@@ -47,6 +47,7 @@ bool webServerStarted = false;
 #define SERVICE_UUID        "6b8a0001-4f2a-4b3c-9d5e-1a2b3c4d5e6f"
 #define CHAR_WRITE_UUID     "6b8a0002-4f2a-4b3c-9d5e-1a2b3c4d5e6f"
 #define CHAR_NOTIFY_UUID    "6b8a0003-4f2a-4b3c-9d5e-1a2b3c4d5e6f"
+const char* SODA_BLE_NAME = "SODABOT_ELLA";
 
 BLEServer* pServer = NULL;
 BLECharacteristic* pNotifyCharacteristic = NULL;
@@ -193,12 +194,6 @@ void microphoneTask(void*) {
       Serial.printf("[오류] 마이크 읽기 실패: %s\n", esp_err_to_name(err));
     }
 
-    if (!pressed && !voiceUploadPending.load() && !voiceUploadBusy.load() && now - lastStatus >= 5000) {
-      lastStatus = now;
-      Serial.println(micReady
-        ? "[대기] 버튼을 누른 채 말하고, 다 말하면 버튼을 놓으세요."
-        : "[오류] 마이크가 준비되지 않았습니다. 연결과 오류 메시지를 확인해주세요.");
-    }
     vTaskDelay(pdMS_TO_TICKS(5));
   }
 }
@@ -1245,7 +1240,7 @@ class MyWriteCallbacks: public BLECharacteristicCallbacks {
 };
 
 void setupBLE() {
-  BLEDevice::init("SODABOT_LUMI");
+  BLEDevice::init(SODA_BLE_NAME);
   pServer = BLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
   BLEService* service = pServer->createService(SERVICE_UUID);
@@ -1254,10 +1249,24 @@ void setupBLE() {
   pNotifyCharacteristic = service->createCharacteristic(CHAR_NOTIFY_UUID, BLECharacteristic::PROPERTY_NOTIFY);
   pNotifyCharacteristic->addDescriptor(new BLE2902());
   service->start();
+
   BLEAdvertising* advertising = BLEDevice::getAdvertising();
-  advertising->addServiceUUID(SERVICE_UUID);
   advertising->setScanResponse(true);
+  advertising->setMinPreferred(0x06);
+  advertising->setMinPreferred(0x12);
+
+  BLEAdvertisementData advData;
+  advData.setFlags(0x06);
+  advData.setName(SODA_BLE_NAME);
+  advertising->setAdvertisementData(advData);
+
+  BLEAdvertisementData scanData;
+  scanData.setCompleteServices(BLEUUID(SERVICE_UUID));
+  scanData.setName(SODA_BLE_NAME);
+  advertising->setScanResponseData(scanData);
+
   BLEDevice::startAdvertising();
+  Serial.println("[BLE] 새 이름으로 광고 중: " + String(SODA_BLE_NAME));
 }
 
 inline uint32_t getUtf8Code(const String& s, size_t& i) {

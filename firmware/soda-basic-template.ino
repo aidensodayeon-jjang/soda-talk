@@ -193,12 +193,6 @@ void microphoneTask(void*) {
       Serial.printf("[오류] 마이크 읽기 실패: %s\n", esp_err_to_name(err));
     }
 
-    if (!pressed && !voiceUploadPending.load() && !voiceUploadBusy.load() && now - lastStatus >= 5000) {
-      lastStatus = now;
-      Serial.println(micReady
-        ? "[대기] 버튼을 누른 채 말하고, 다 말하면 버튼을 놓으세요."
-        : "[오류] 마이크가 준비되지 않았습니다. 연결과 오류 메시지를 확인해주세요.");
-    }
     vTaskDelay(pdMS_TO_TICKS(5));
   }
 }

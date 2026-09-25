@@ -267,7 +267,10 @@ export function generateCustomFirmware(
     __SODA_WIFI_PASSWORD__: JSON.stringify(wifiPass),
     __SODA_BLE_NAME__: JSON.stringify(`SODABOT_${name}`),
   };
-  merged = merged.replace(/__SODA_WIFI_SSID__|__SODA_WIFI_PASSWORD__|__SODA_BLE_NAME__/g, key => substitutions[key]);
+  merged = merged.replace(
+    /__SODA_WIFI_SSID__|__SODA_WIFI_PASSWORD__|__SODA_BLE_NAME__/g,
+    key => substitutions[key]
+  );
 
   // 3. HEADERS 영역 교체
   merged = replaceCustomSection(
