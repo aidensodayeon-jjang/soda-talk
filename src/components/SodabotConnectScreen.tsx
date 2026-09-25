@@ -260,53 +260,21 @@ export default function SodabotConnectScreen({ currentUser }: SodabotConnectScre
     }
   };
 
-  const [resetStatusMsg, setResetStatusMsg] = useState<string | null>(null);
-
-  // Full Reset: Transport, Chrome Web Bluetooth Permission/Cache, and LocalStorage
-  const handleResetAll = async () => {
-    if (!confirm("소다봇 연결 정보 및 브라우저 블루투스 캐시를 완전히 초기화하시겠습니까?")) return;
-    
-    try {
-      sodabotTransport.disconnect();
-    } catch {}
-
-    // Revoke Chrome Web Bluetooth remembered device permissions to clear cached name
-    try {
-      if ((navigator as any).bluetooth?.getDevices) {
-        const devices = await (navigator as any).bluetooth.getDevices();
-        for (const dev of devices) {
-          if (dev.forget) {
-            await dev.forget();
-          }
-        }
-      }
-    } catch (e) {
-      console.warn("Web Bluetooth forget error:", e);
-    }
-
-    // Clean up local storage
-    localStorage.removeItem(getScopedKey("robot_ip"));
-    localStorage.removeItem(getScopedKey("device_name"));
-    localStorage.removeItem(getScopedKey("connect_step"));
-    localStorage.removeItem("sodabot_robot_ip");
-    localStorage.removeItem("sodabot_connected");
-    localStorage.removeItem("sodabot_device_name");
-
-    writeCharRef.current = null;
-    bleDeviceRef.current = null;
-    setRobotIp(null);
-    setConnectedDeviceName(null);
-    setStatus('idle');
-    setStep(1);
-    window.dispatchEvent(new Event("sodabot-status-changed"));
-
-    setResetStatusMsg("✓ 연결 및 블루투스 캐시가 초기화되었습니다.");
-    setTimeout(() => setResetStatusMsg(null), 3500);
-  };
-
   const handleDisconnect = () => {
     if (confirm("소다봇 연결을 해제하시겠습니까?")) {
-      handleResetAll();
+      localStorage.removeItem(getScopedKey("robot_ip"));
+      localStorage.removeItem(getScopedKey("device_name"));
+      localStorage.removeItem(getScopedKey("connect_step"));
+      localStorage.removeItem("sodabot_robot_ip");
+      localStorage.removeItem("sodabot_connected");
+      sodabotTransport.disconnect();
+      writeCharRef.current = null;
+      bleDeviceRef.current = null;
+      setRobotIp(null);
+      setConnectedDeviceName(null);
+      setStatus('idle');
+      setStep(1);
+      window.dispatchEvent(new Event("sodabot-status-changed"));
     }
   };
 
@@ -322,7 +290,7 @@ export default function SodabotConnectScreen({ currentUser }: SodabotConnectScre
       <div className="max-w-6xl mx-auto w-full space-y-8">
         
         {/* Header */}
-        <div className="flex items-center justify-between flex-wrap gap-4">
+        <div className="flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-bold text-[#1D1D1F] flex items-center gap-2">
               <span>🤖 소다봇 맞춤 연결 & 펌웨어 허브</span>
@@ -331,36 +299,13 @@ export default function SodabotConnectScreen({ currentUser }: SodabotConnectScre
               로봇 이름과 Wi-Fi를 입력하고 맞춤 펌웨어를 다운로드하여 소다봇을 100% 실시간으로 제어하세요.
             </p>
           </div>
-          
-          <div className="flex items-center gap-3">
-            <button
-              onClick={handleResetAll}
-              className="px-3.5 py-2 bg-white hover:bg-rose-50 text-rose-600 hover:text-rose-700 border border-rose-200 hover:border-rose-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs active:scale-95 cursor-pointer"
-              title="연결 정보 및 브라우저 블루투스 캐시를 완전히 초기화합니다."
-            >
-              <RotateCcw className="w-3.5 h-3.5 text-rose-500" />
-              <span>연결 & 캐시 초기화</span>
-            </button>
-
-            {status === 'connected' && (
-              <div className="px-3.5 py-2 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-bold flex items-center gap-2 shadow-xs">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span>온라인 ({robotIp || 'BLE'})</span>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Reset Feedback Notification Banner */}
-        {resetStatusMsg && (
-          <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-2.5 rounded-xl text-xs font-bold flex items-center justify-between animate-fadeIn shadow-xs">
-            <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              <span>{resetStatusMsg}</span>
+          {status === 'connected' && (
+            <div className="px-3.5 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-bold flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span>온라인 ({robotIp || 'BLE'})</span>
             </div>
-            <span className="text-[11px] text-emerald-600 font-normal">새로운 이름으로 페어링을 시작하세요.</span>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Stepper (3단계까지 표시) */}
         <div className="flex items-center justify-between relative px-10 max-w-4xl mx-auto">
@@ -570,28 +515,17 @@ export default function SodabotConnectScreen({ currentUser }: SodabotConnectScre
                 )}
               </div>
 
-              {/* Bottom Connection State Message & Reset Link */}
-              <div className="pt-2 text-center space-y-1.5">
-                <div>
-                  <span className={`inline-block text-[11px] font-bold px-3 py-1.5 rounded-full ${
-                    status === 'connected'
-                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                      : 'bg-slate-100 text-slate-600 border border-slate-200'
-                  }`}>
-                    {status === 'connected'
-                      ? `🤖 ${connectedDeviceName || `SODABOT_${robotName}`} 연결됨 (${robotIp || 'BLE'})`
-                      : '🔘 원형 버튼을 클릭하여 블루투스 활성화'}
-                  </span>
-                </div>
-                <div>
-                  <button
-                    onClick={handleResetAll}
-                    className="text-[10px] text-slate-400 hover:text-rose-600 font-semibold underline underline-offset-2 transition-colors inline-flex items-center gap-1 cursor-pointer"
-                  >
-                    <RotateCcw className="w-2.5 h-2.5" />
-                    <span>예전 로봇 이름이 뜨거나 오류 시 캐시 초기화</span>
-                  </button>
-                </div>
+              {/* Bottom Connection State Message */}
+              <div className="pt-2 text-center">
+                <span className={`inline-block text-[11px] font-bold px-3 py-1.5 rounded-full ${
+                  status === 'connected'
+                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                    : 'bg-slate-100 text-slate-600 border border-slate-200'
+                }`}>
+                  {status === 'connected'
+                    ? `🤖 ${connectedDeviceName || `SODABOT_${robotName}`} 연결됨 (${robotIp || 'BLE'})`
+                    : '🔘 원형 버튼을 클릭하여 블루투스 활성화'}
+                </span>
               </div>
 
             </div>
