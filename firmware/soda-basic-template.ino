@@ -22,6 +22,7 @@
 #include <ESPAsyncWebServer.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
+#include <esp_heap_caps.h>
 
 // === CUSTOM_HEADERS_START ===
 // === CUSTOM_HEADERS_END ===
@@ -64,204 +65,151 @@ bool deviceConnected = false;
 #define MIC_SD   8
 
 #define MIC_SAMPLE_RATE 16000
+constexpr uint32_t MAX_RECORD_SECONDS = 8;
+constexpr uint32_t MIN_RECORD_MS = 350;
+constexpr size_t MAX_RECORD_SAMPLES = MIC_SAMPLE_RATE * MAX_RECORD_SECONDS;
 
-// 주변 소음과 마이크 거리에 따라 조정하는 임시 소리 감지 기준 (dB 아님).
-const double SOUND_THRESHOLD = 500.0;
+// soda-talk 서버가 실행되는 컴퓨터의 현재 Wi-Fi 주소.
+// 컴퓨터 IP가 바뀌면 이 값만 고치면 된다.
+const char* SODA_SERVER_HOST = __SODA_SERVER_HOST__;
+const uint16_t SODA_SERVER_PORT = 7989;
+const char* SODA_AUDIO_CHAT_PATH = "/api/hw/audio-chat";
+const char* SODA_TTS_PATH = "/api/hw/tts";
+const char* DEFAULT_SODA_API_KEY = __SODA_API_KEY__;
+String sodaApiKey;
 
 bool micReady = false;
-std::atomic<bool> micTestRequested{false};
+int16_t* voicePcm = nullptr;
+volatile size_t voiceSampleCount = 0;
+std::atomic<bool> voiceUploadPending{false};
+std::atomic<bool> voiceUploadBusy{false};
 
-
-// =========================
-// 마이크 초기화
-// =========================
 void setupMicrophone() {
-
   i2s_config_t config = {
-    .mode = (i2s_mode_t)(
-      I2S_MODE_MASTER |
-      I2S_MODE_RX
-    ),
-
+    .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX),
     .sample_rate = MIC_SAMPLE_RATE,
-
-    .bits_per_sample =
-      I2S_BITS_PER_SAMPLE_32BIT,
-
-    .channel_format =
-      I2S_CHANNEL_FMT_ONLY_LEFT,
-
-    .communication_format =
-      I2S_COMM_FORMAT_STAND_I2S,
-
-    .intr_alloc_flags =
-      ESP_INTR_FLAG_LEVEL1,
-
+    .bits_per_sample = I2S_BITS_PER_SAMPLE_32BIT,
+    .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
+    .communication_format = I2S_COMM_FORMAT_STAND_I2S,
+    .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
     .dma_buf_count = 8,
     .dma_buf_len = 256,
-
     .use_apll = false
   };
-
-
   i2s_pin_config_t pins = {
-
     .mck_io_num = I2S_PIN_NO_CHANGE,
-
     .bck_io_num = MIC_SCK,
-
     .ws_io_num = MIC_WS,
-
-    .data_out_num =
-      I2S_PIN_NO_CHANGE,
-
-    .data_in_num =
-      MIC_SD
+    .data_out_num = I2S_PIN_NO_CHANGE,
+    .data_in_num = MIC_SD
   };
-
-
-  esp_err_t err = i2s_driver_install(
-    MIC_I2S_PORT,
-    &config,
-    0,
-    NULL
-  );
-
+  esp_err_t err = i2s_driver_install(MIC_I2S_PORT, &config, 0, NULL);
   if (err != ESP_OK) {
     Serial.printf("[오류] 마이크를 시작하지 못했습니다. 오류 코드: %s\n", esp_err_to_name(err));
     return;
   }
-
-
-  err = i2s_set_pin(
-    MIC_I2S_PORT,
-    &pins
-  );
-
+  err = i2s_set_pin(MIC_I2S_PORT, &pins);
   if (err != ESP_OK) {
     Serial.printf("[오류] 마이크 핀 설정에 실패했습니다. 배선을 확인해주세요. 오류 코드: %s\n", esp_err_to_name(err));
     i2s_driver_uninstall(MIC_I2S_PORT);
     return;
   }
 
-
+  voicePcm = static_cast<int16_t*>(heap_caps_malloc(
+    MAX_RECORD_SAMPLES * sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (!voicePcm) {
+    Serial.println("[오류] 녹음 버퍼를 만들지 못했습니다. 도구 > PSRAM을 QSPI PSRAM으로 설정해주세요.");
+    i2s_driver_uninstall(MIC_I2S_PORT);
+    return;
+  }
   micReady = true;
-  Serial.println("[준비] 마이크 초기화가 완료되었습니다.");
+  Serial.printf("[준비] 마이크와 %.0fKB 녹음 버퍼가 준비되었습니다.\n",
+                (MAX_RECORD_SAMPLES * sizeof(int16_t)) / 1024.0);
 }
-
-
-// =========================
-// 소리 크기 측정
-// =========================
-void readMicrophone(bool report) {
-
-  int32_t samples[256];
-
-  size_t bytesRead = 0;
-
-
-  esp_err_t err = i2s_read(
-    MIC_I2S_PORT,
-    samples,
-    sizeof(samples),
-    &bytesRead,
-    pdMS_TO_TICKS(50)
-  );
-
-  static uint32_t lastError = 0;
-  if (err != ESP_OK || bytesRead == 0) {
-    if (millis() - lastError >= 1000) {
-      Serial.printf("[오류] 마이크 데이터를 읽지 못했습니다. 연결을 확인해주세요. (코드: %s, 수신: %u바이트)\n", esp_err_to_name(err), (unsigned)bytesRead);
-      lastError = millis();
-    }
-    return;
-  }
-
-  // 버튼을 놓아도 DMA를 비워 다음 누름에서 오래된 음성이 나오지 않게 한다.
-  if (!report) return;
-  static uint32_t lastReport = 0;
-  if (millis() - lastReport < 500) return;
-  lastReport = millis();
-
-
-  int sampleCount =
-    bytesRead / sizeof(int32_t);
-
-
-  if (sampleCount == 0)
-    return;
-
-
-  double sum = 0;
-
-
-  for (int i = 0; i < sampleCount; i++) {
-
-    int32_t sample =
-      samples[i] >> 14;
-
-    sum +=
-      (double)sample *
-      (double)sample;
-  }
-
-
-  double rms =
-    sqrt(sum / sampleCount);
-
-
-  if (sum == 0) {
-    Serial.println("[확인 필요] 마이크 신호가 없습니다. 전원, SD 배선과 L/R의 GND 연결을 확인해주세요.");
-  } else if (rms >= SOUND_THRESHOLD) {
-    Serial.printf("[소리 감지] 소리가 정상적으로 감지되고 있습니다. (소리 크기: %.0f)\n", rms);
-  } else {
-    Serial.printf("[조용함] 소리가 작습니다. 마이크 가까이에서 말해보세요. (소리 크기: %.0f)\n", rms);
-  }
-}
-
-
 
 void microphoneTask(void*) {
-  bool lastRaw = false;
+  int32_t samples[256];
+  bool lastRaw = digitalRead(BUTTON_PIN) == LOW;
   bool pressed = false;
-  bool testing = false;
   uint32_t changedAt = millis();
-  uint32_t testStarted = 0;
   uint32_t lastStatus = millis();
+  uint32_t recordStarted = 0;
+  uint32_t lastLevelLog = 0;
+
   for (;;) {
     uint32_t now = millis();
     bool raw = digitalRead(BUTTON_PIN) == LOW;
     if (raw != lastRaw) { lastRaw = raw; changedAt = now; }
     if (raw != pressed && now - changedAt >= 30) {
       pressed = raw;
-      Serial.println(pressed ? "[버튼] 버튼 눌림을 감지했습니다."
-                             : "[버튼] 버튼을 놓았습니다.");
+      if (pressed) {
+        if (voiceUploadBusy.load() || voiceUploadPending.load()) {
+          Serial.println("[대기] 이전 대화를 처리 중입니다. 잠시 후 다시 눌러주세요.");
+          pressed = false;
+        } else {
+          voiceSampleCount = 0;
+          recordStarted = now;
+          Serial.println("[버튼] 버튼 눌림을 감지했습니다.");
+          Serial.println("[녹음 시작] 버튼을 누른 채 말해주세요.");
+        }
+      } else {
+        uint32_t duration = now - recordStarted;
+        Serial.println("[버튼] 버튼을 놓았습니다.");
+        if (duration < MIN_RECORD_MS || voiceSampleCount == 0) {
+          voiceSampleCount = 0;
+          Serial.println("[녹음 취소] 너무 짧습니다. 버튼을 조금 더 길게 누르고 말해주세요.");
+        } else {
+          Serial.printf("[녹음 완료] %.2f초, %u개 샘플을 서버로 보냅니다.\n",
+                        voiceSampleCount / (float)MIC_SAMPLE_RATE,
+                        (unsigned)voiceSampleCount);
+          voiceUploadPending.store(true);
+        }
+      }
     }
-    if (micTestRequested.exchange(false)) {
-      testing = true;
-      testStarted = now;
-      Serial.println("[테스트] 버튼 없이 5초 동안 소리를 확인합니다. 말해보세요.");
+
+    size_t bytesRead = 0;
+    esp_err_t err = i2s_read(MIC_I2S_PORT, samples, sizeof(samples), &bytesRead, pdMS_TO_TICKS(50));
+    if (err == ESP_OK && bytesRead > 0 && pressed) {
+      size_t count = bytesRead / sizeof(int32_t);
+      double sum = 0;
+      for (size_t i = 0; i < count && voiceSampleCount < MAX_RECORD_SAMPLES; ++i) {
+        int32_t sample = samples[i] >> 14;
+        sample = constrain(sample, -32768, 32767);
+        voicePcm[voiceSampleCount++] = static_cast<int16_t>(sample);
+        sum += static_cast<double>(sample) * sample;
+      }
+      if (now - lastLevelLog >= 500 && count > 0) {
+        lastLevelLog = now;
+        Serial.printf("[녹음 중] 소리가 감지되고 있습니다. (크기: %.0f, %.1f초)\n",
+                      sqrt(sum / count), voiceSampleCount / (float)MIC_SAMPLE_RATE);
+      }
+      if (voiceSampleCount >= MAX_RECORD_SAMPLES) {
+        pressed = false;
+        Serial.println("[녹음 완료] 최대 8초에 도달해 자동으로 전송합니다.");
+        voiceUploadPending.store(true);
+      }
+    } else if (err != ESP_OK && now - lastStatus >= 1000) {
+      lastStatus = now;
+      Serial.printf("[오류] 마이크 읽기 실패: %s\n", esp_err_to_name(err));
     }
-    if (testing && now - testStarted >= 5000) {
-      testing = false;
-      Serial.println("[테스트] 5초 테스트가 끝났습니다.");
-    }
-    if (!pressed && !testing && now - lastStatus >= 5000) {
+
+    if (!pressed && !voiceUploadPending.load() && !voiceUploadBusy.load() && now - lastStatus >= 5000) {
       lastStatus = now;
       Serial.println(micReady
-        ? "[대기] 버튼을 누르면 소리 감지를 시작합니다. (BASIC + 마이크 v4)"
+        ? "[대기] 버튼을 누른 채 말하고, 다 말하면 버튼을 놓으세요."
         : "[오류] 마이크가 준비되지 않았습니다. 연결과 오류 메시지를 확인해주세요.");
     }
-    if (micReady) readMicrophone(pressed || testing);
-    // I2S 오류 시에도 다른 작업이 실행될 수 있도록 양보한다.
     vTaskDelay(pdMS_TO_TICKS(5));
   }
 }
 
 void startMicrophoneMonitor() {
   setupMicrophone();
+  if (!micReady) return;
   if (xTaskCreate(microphoneTask, "mic-monitor", 4096, nullptr, 1, nullptr) != pdPASS) {
-    if (micReady) i2s_driver_uninstall(MIC_I2S_PORT);
+    heap_caps_free(voicePcm);
+    voicePcm = nullptr;
+    i2s_driver_uninstall(MIC_I2S_PORT);
     micReady = false;
     Serial.println("[오류] 마이크 감시 작업을 시작하지 못했습니다. 메모리가 부족합니다.");
   }
@@ -290,8 +238,8 @@ Adafruit_ST7789 tft = Adafruit_ST7789(&hspi, TFT_CS, TFT_DC, TFT_RST);
 #define I2S_SPK_LRC  3
 #define I2S_SPK_DOUT 44
 #define TTS_SAMPLE_RATE 24000
-#define SPEAKER_VOLUME_PERCENT 85
-#define SPEAKER_SAFE_PEAK 28000
+#define SPEAKER_VOLUME_PERCENT 110
+#define SPEAKER_SAFE_PEAK 30000
 
 
 bool speakerReady = false;
@@ -746,7 +694,7 @@ void renderCustomFace(const JsonDocument& doc) {
     tft.fillRoundRect(REX - ew/2 + px, EYE_Y - sleepH/2 + py, ew, sleepH, er, eyeColor);
   } else if (s == "heart") {
     // 하트 눈
-    uint16_t hc = eyeColor == EYE_COLOR ? tft.color565(255, 50, 100) : eyeColor;
+    uint16_t hc = tft.color565(255, 50, 100);
     for (int cx : {LEX, REX}) {
       int hx = cx + px;
       int hy = EYE_Y - 8 + py;
@@ -1823,13 +1771,6 @@ void processMessage(const IncomingMessage& message) {
   replySource = message.source; replyClient = message.clientId; replyId = "";
   DynamicJsonDocument doc(2560);
   String raw(message.json); raw.trim();
-  // 기존 USB 줄바꿈 기반 명령 파서를 유지한다. JSON의 글자를 가로채지 않는다.
-  if (raw == "t") {
-    if (!micReady) { sendReply("error", "microphone_not_ready"); return; }
-    micTestRequested.store(true);
-    sendReply("success");
-    return;
-  }
   String action, value;
   if (raw.startsWith("{")) {
     if (deserializeJson(doc, raw)) { sendReply("error", "invalid_json"); return; }
@@ -1845,12 +1786,6 @@ void processMessage(const IncomingMessage& message) {
     else if (prefix == "BEEP" || prefix == "GREETING" || prefix == "POWER_ON" || prefix == "BUTTON_CLICK" || prefix == "TOUCH_REACT") {
       action = "play_sound"; value = prefix;
     } else { action = "set_expression"; value = raw; }
-  }
-  if (action == "mic_test") {
-    if (!micReady) { sendReply("error", "microphone_not_ready"); return; }
-    micTestRequested.store(true);
-    sendReply("success");
-    return;
   }
   if (action == "get_status") { sendReply("success", "", true); return; }
   if (action == "configure_wifi" || doc["ssid"].is<const char*>()) {
@@ -1993,18 +1928,426 @@ void onWsEvent(AsyncWebSocket*, AsyncWebSocketClient* client, AwsEventType type,
   }
 }
 
+void writeLe16(uint8_t* dst, uint16_t value) {
+  dst[0] = value & 0xff;
+  dst[1] = (value >> 8) & 0xff;
+}
+
+void writeLe32(uint8_t* dst, uint32_t value) {
+  dst[0] = value & 0xff;
+  dst[1] = (value >> 8) & 0xff;
+  dst[2] = (value >> 16) & 0xff;
+  dst[3] = (value >> 24) & 0xff;
+}
+
+void makeWavHeader(uint8_t* header, uint32_t pcmBytes) {
+  memcpy(header, "RIFF", 4);
+  writeLe32(header + 4, 36 + pcmBytes);
+  memcpy(header + 8, "WAVEfmt ", 8);
+  writeLe32(header + 16, 16);
+  writeLe16(header + 20, 1);   // PCM
+  writeLe16(header + 22, 1);   // mono
+  writeLe32(header + 24, MIC_SAMPLE_RATE);
+  writeLe32(header + 28, MIC_SAMPLE_RATE * 2);
+  writeLe16(header + 32, 2);
+  writeLe16(header + 34, 16);
+  memcpy(header + 36, "data", 4);
+  writeLe32(header + 40, pcmBytes);
+}
+
+bool writeAll(WiFiClient& client, const uint8_t* data, size_t length) {
+  size_t sent = 0;
+  uint32_t lastProgress = millis();
+  while (sent < length && client.connected()) {
+    size_t written = client.write(data + sent, min((size_t)4096, length - sent));
+    if (written > 0) {
+      sent += written;
+      lastProgress = millis();
+    } else {
+      if (millis() - lastProgress > 10000) return false;
+      delay(2);
+    }
+  }
+  return sent == length;
+}
+
+bool readHttpBytes(WiFiClient& client, String& output, size_t length) {
+  uint32_t lastProgress = millis();
+  while (length > 0) {
+    while (client.available() && length > 0) {
+      output += static_cast<char>(client.read());
+      --length;
+      lastProgress = millis();
+    }
+    if (length == 0) return true;
+    if (!client.connected() || millis() - lastProgress > 90000) return false;
+    delay(2);
+  }
+  return true;
+}
+
+bool readHttpBody(WiFiClient& client, bool chunked, int contentLength, String& body) {
+  body = "";
+  if (contentLength > 0) body.reserve(contentLength + 1);
+
+  if (chunked) {
+    for (;;) {
+      String sizeLine = client.readStringUntil('\n');
+      sizeLine.trim();
+      int extension = sizeLine.indexOf(';');
+      if (extension >= 0) sizeLine = sizeLine.substring(0, extension);
+      char* endPtr = nullptr;
+      size_t chunkSize = strtoul(sizeLine.c_str(), &endPtr, 16);
+      if (endPtr == sizeLine.c_str()) return false;
+      if (chunkSize == 0) {
+        // 마지막 청크 뒤의 선택적 trailer 헤더를 소비한다.
+        for (;;) {
+          String trailer = client.readStringUntil('\n');
+          if (trailer == "\r" || trailer.length() == 0) break;
+        }
+        return true;
+      }
+      if (!readHttpBytes(client, body, chunkSize)) return false;
+      client.readStringUntil('\n'); // 각 청크 뒤의 CRLF
+    }
+  }
+
+  if (contentLength >= 0) return readHttpBytes(client, body, contentLength);
+
+  uint32_t lastProgress = millis();
+  while ((client.connected() || client.available()) && millis() - lastProgress < 90000) {
+    while (client.available()) {
+      body += static_cast<char>(client.read());
+      lastProgress = millis();
+    }
+    delay(2);
+  }
+  return body.length() > 0;
+}
+
+bool writePcmToSpeaker(const uint8_t* data, size_t length,
+                       bool& hasLowByte, uint8_t& lowByte, size_t& receivedBytes) {
+  int16_t stereoSamples[1024];
+  size_t index = 0;
+  size_t stereoCount = 0;
+  receivedBytes += length;
+
+  if (hasLowByte && index < length) {
+    int16_t sample = (int16_t)((uint16_t)lowByte | ((uint16_t)data[index++] << 8));
+    sample = applySpeakerVolume(sample);
+    stereoSamples[stereoCount++] = sample;
+    stereoSamples[stereoCount++] = sample;
+    hasLowByte = false;
+  }
+  while (index + 1 < length) {
+    int16_t sample = (int16_t)((uint16_t)data[index] | ((uint16_t)data[index + 1] << 8));
+    index += 2;
+    sample = applySpeakerVolume(sample);
+    stereoSamples[stereoCount++] = sample;
+    stereoSamples[stereoCount++] = sample;
+  }
+  if (index < length) {
+    lowByte = data[index];
+    hasLowByte = true;
+  }
+
+  if (stereoCount == 0) return true;
+  size_t bytesWritten = 0;
+  esp_err_t result = i2s_write(
+    I2S_NUM_0, stereoSamples, stereoCount * sizeof(int16_t), &bytesWritten, portMAX_DELAY);
+  return result == ESP_OK && bytesWritten == stereoCount * sizeof(int16_t);
+}
+
+bool readAndPlayPcmBytes(WiFiClient& client, size_t length,
+                         bool& hasLowByte, uint8_t& lowByte, size_t& receivedBytes) {
+  uint8_t buffer[1024];
+  uint32_t lastProgress = millis();
+  while (length > 0) {
+    int available = client.available();
+    if (available <= 0) {
+      if (!client.connected() || millis() - lastProgress > 90000) return false;
+      delay(2);
+      continue;
+    }
+    size_t toRead = min(length, min(sizeof(buffer), (size_t)available));
+    int bytesRead = client.read(buffer, toRead);
+    if (bytesRead <= 0) continue;
+    if (!writePcmToSpeaker(buffer, bytesRead, hasLowByte, lowByte, receivedBytes)) return false;
+    length -= bytesRead;
+    lastProgress = millis();
+  }
+  return true;
+}
+
+bool readAndPlayChunkedPcm(WiFiClient& client,
+                           bool& hasLowByte, uint8_t& lowByte, size_t& receivedBytes) {
+  for (;;) {
+    String sizeLine = client.readStringUntil('\n');
+    sizeLine.trim();
+    int extension = sizeLine.indexOf(';');
+    if (extension >= 0) sizeLine = sizeLine.substring(0, extension);
+    char* endPtr = nullptr;
+    size_t chunkSize = strtoul(sizeLine.c_str(), &endPtr, 16);
+    if (endPtr == sizeLine.c_str()) return false;
+    if (chunkSize == 0) {
+      for (;;) {
+        String trailer = client.readStringUntil('\n');
+        if (trailer == "\r" || trailer.length() == 0) break;
+      }
+      return !hasLowByte;
+    }
+    if (!readAndPlayPcmBytes(client, chunkSize, hasLowByte, lowByte, receivedBytes)) return false;
+    client.readStringUntil('\n');
+  }
+}
+
+bool playReplySpeech(const String& text) {
+  if (text.length() == 0) return false;
+  if (!speakerReady) {
+    Serial.println("[음성 출력 실패] 스피커가 준비되지 않았습니다.");
+    return false;
+  }
+
+  DynamicJsonDocument requestDoc(1024);
+  requestDoc["text"] = text;
+  String requestBody;
+  serializeJson(requestDoc, requestBody);
+
+  WiFiClient client;
+  client.setTimeout(90000);
+  Serial.println("[음성 생성] 서버에 답변 목소리를 요청합니다.");
+  if (!client.connect(SODA_SERVER_HOST, SODA_SERVER_PORT)) {
+    Serial.println("[음성 출력 실패] TTS 서버에 연결하지 못했습니다.");
+    return false;
+  }
+
+  client.printf("POST %s HTTP/1.1\r\n", SODA_TTS_PATH);
+  client.printf("Host: %s:%u\r\n", SODA_SERVER_HOST, SODA_SERVER_PORT);
+  client.printf("Authorization: Bearer %s\r\n", sodaApiKey.c_str());
+  client.print("Content-Type: application/json\r\n");
+  client.printf("Content-Length: %u\r\n", (unsigned)requestBody.length());
+  client.print("Connection: close\r\n\r\n");
+  if (!writeAll(client, reinterpret_cast<const uint8_t*>(requestBody.c_str()), requestBody.length())) {
+    Serial.println("[음성 출력 실패] TTS 요청을 보내지 못했습니다.");
+    client.stop();
+    return false;
+  }
+
+  uint32_t waitStarted = millis();
+  while (!client.available() && client.connected() && millis() - waitStarted < 90000) delay(10);
+  if (!client.available()) {
+    Serial.println("[음성 출력 실패] TTS 서버가 90초 안에 응답하지 않았습니다.");
+    client.stop();
+    return false;
+  }
+
+  String statusLine = client.readStringUntil('\n');
+  statusLine.trim();
+  int firstSpace = statusLine.indexOf(' ');
+  int httpCode = firstSpace >= 0 ? statusLine.substring(firstSpace + 1).toInt() : -1;
+  bool chunked = false;
+  int contentLength = -1;
+  while (client.connected() || client.available()) {
+    String headerLine = client.readStringUntil('\n');
+    if (headerLine == "\r" || headerLine.length() == 0) break;
+    String lowerHeader = headerLine;
+    lowerHeader.toLowerCase();
+    if (lowerHeader.startsWith("transfer-encoding:") && lowerHeader.indexOf("chunked") >= 0) {
+      chunked = true;
+    } else if (lowerHeader.startsWith("content-length:")) {
+      contentLength = headerLine.substring(headerLine.indexOf(':') + 1).toInt();
+    }
+  }
+
+  if (httpCode != 200) {
+    String errorBody;
+    readHttpBody(client, chunked, contentLength, errorBody);
+    client.stop();
+    Serial.printf("[음성 출력 실패] TTS 서버 응답 HTTP %d\n", httpCode);
+    if (errorBody.length() > 0) Serial.println("[TTS 서버 응답] " + errorBody);
+    return false;
+  }
+
+  Serial.println("[음성 출력] 음성을 받으면서 바로 재생합니다.");
+  i2s_zero_dma_buffer(I2S_NUM_0);
+  bool hasLowByte = false;
+  uint8_t lowByte = 0;
+  size_t receivedBytes = 0;
+  bool played = chunked
+    ? readAndPlayChunkedPcm(client, hasLowByte, lowByte, receivedBytes)
+    : (contentLength >= 0 && readAndPlayPcmBytes(
+        client, contentLength, hasLowByte, lowByte, receivedBytes));
+  client.stop();
+  finishSpeakerPlayback();
+
+  if (!played || receivedBytes == 0 || hasLowByte) {
+    Serial.println("[음성 출력 실패] 음성 데이터를 끝까지 재생하지 못했습니다.");
+    return false;
+  }
+  Serial.printf("[음성 출력 완료] %u바이트를 재생했습니다.\n", (unsigned)receivedBytes);
+  return true;
+}
+
+void saveSodaApiKey(const String& key) {
+  Preferences voicePrefs;
+  if (voicePrefs.begin("soda-voice", false)) {
+    voicePrefs.putString("api-key", key);
+    voicePrefs.end();
+    sodaApiKey = key;
+    Serial.println("[설정 완료] SODA API 키를 보드에 안전하게 저장했습니다.");
+  } else {
+    Serial.println("[오류] API 키를 저장하지 못했습니다.");
+  }
+}
+
+void loadSodaApiKey() {
+  // 7-1은 코드에 지정된 키로 바로 동작한다. NVS의 예전 빈 값이 덮어쓰지 않게 한다.
+  sodaApiKey = DEFAULT_SODA_API_KEY;
+  Serial.println("[서버 설정] SODA API 키가 코드에 설정되어 있습니다.");
+}
+
+void printServerStatus() {
+  Serial.printf("[서버 설정] http://%s:%u%s\n", SODA_SERVER_HOST,
+                SODA_SERVER_PORT, SODA_AUDIO_CHAT_PATH);
+  Serial.printf("[Wi-Fi] %s", WiFi.status() == WL_CONNECTED ? "연결됨" : "연결 안 됨");
+  if (WiFi.status() == WL_CONNECTED) Serial.printf(" / 보드 IP: %s", WiFi.localIP().toString().c_str());
+  Serial.println();
+  Serial.printf("[API 키] %s\n", sodaApiKey.length() > 0 ? "설정됨" : "설정 안 됨");
+}
+
+void uploadRecordedConversation() {
+  if (!voiceUploadPending.exchange(false)) return;
+  voiceUploadBusy.store(true);
+  const size_t samplesToSend = voiceSampleCount;
+
+  if (samplesToSend == 0) {
+    Serial.println("[전송 취소] 녹음 데이터가 없습니다.");
+    voiceUploadBusy.store(false);
+    return;
+  }
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[서버 연결 실패] Wi-Fi가 연결되어 있지 않습니다.");
+    voiceUploadBusy.store(false);
+    return;
+  }
+  if (sodaApiKey.length() == 0) {
+    Serial.println("[서버 연결 실패] SODA API 키가 없습니다. SET_API_KEY=발급키 를 먼저 전송하세요.");
+    voiceUploadBusy.store(false);
+    return;
+  }
+
+  const String boundary = "----SodaBotVoice71";
+  const String prefix = "--" + boundary + "\r\n"
+    "Content-Disposition: form-data; name=\"file\"; filename=\"sodabot.wav\"\r\n"
+    "Content-Type: audio/wav\r\n\r\n";
+  const String suffix = "\r\n--" + boundary + "--\r\n";
+  const uint32_t pcmBytes = samplesToSend * sizeof(int16_t);
+  const uint32_t contentLength = prefix.length() + 44 + pcmBytes + suffix.length();
+  uint8_t wavHeader[44];
+  makeWavHeader(wavHeader, pcmBytes);
+
+  WiFiClient client;
+  client.setTimeout(90000);
+  Serial.printf("[서버 전송] %u바이트 음성을 %s:%u로 전송합니다.\n",
+                (unsigned)pcmBytes, SODA_SERVER_HOST, SODA_SERVER_PORT);
+  if (!client.connect(SODA_SERVER_HOST, SODA_SERVER_PORT)) {
+    Serial.println("[서버 연결 실패] soda-talk 서버가 실행 중인지, 컴퓨터와 보드가 같은 Wi-Fi인지 확인하세요.");
+    voiceUploadBusy.store(false);
+    return;
+  }
+
+  client.printf("POST %s HTTP/1.1\r\n", SODA_AUDIO_CHAT_PATH);
+  client.printf("Host: %s:%u\r\n", SODA_SERVER_HOST, SODA_SERVER_PORT);
+  client.printf("Authorization: Bearer %s\r\n", sodaApiKey.c_str());
+  client.printf("Content-Type: multipart/form-data; boundary=%s\r\n", boundary.c_str());
+  client.printf("Content-Length: %u\r\n", (unsigned)contentLength);
+  client.print("Connection: close\r\n\r\n");
+
+  bool sent = writeAll(client, reinterpret_cast<const uint8_t*>(prefix.c_str()), prefix.length())
+           && writeAll(client, wavHeader, sizeof(wavHeader))
+           && writeAll(client, reinterpret_cast<const uint8_t*>(voicePcm), pcmBytes)
+           && writeAll(client, reinterpret_cast<const uint8_t*>(suffix.c_str()), suffix.length());
+  if (!sent) {
+    Serial.println("[전송 실패] 음성 데이터를 모두 보내지 못했습니다.");
+    client.stop();
+    voiceUploadBusy.store(false);
+    return;
+  }
+
+  uint32_t waitStarted = millis();
+  while (!client.available() && client.connected() && millis() - waitStarted < 90000) delay(10);
+  if (!client.available()) {
+    Serial.println("[응답 실패] 서버가 90초 안에 응답하지 않았습니다.");
+    client.stop();
+    voiceUploadBusy.store(false);
+    return;
+  }
+
+  String statusLine = client.readStringUntil('\n');
+  statusLine.trim();
+  int firstSpace = statusLine.indexOf(' ');
+  int httpCode = firstSpace >= 0 ? statusLine.substring(firstSpace + 1).toInt() : -1;
+  bool chunked = false;
+  int responseContentLength = -1;
+  while (client.connected() || client.available()) {
+    String headerLine = client.readStringUntil('\n');
+    if (headerLine == "\r" || headerLine.length() == 0) break;
+    String lowerHeader = headerLine;
+    lowerHeader.toLowerCase();
+    if (lowerHeader.startsWith("transfer-encoding:") && lowerHeader.indexOf("chunked") >= 0) {
+      chunked = true;
+    } else if (lowerHeader.startsWith("content-length:")) {
+      responseContentLength = headerLine.substring(headerLine.indexOf(':') + 1).toInt();
+    }
+  }
+
+  String body;
+  bool bodyRead = readHttpBody(client, chunked, responseContentLength, body);
+  client.stop();
+  Serial.printf("[서버 응답] HTTP %d\n", httpCode);
+
+  if (!bodyRead) {
+    Serial.println("[대화 실패] 서버 응답 본문을 끝까지 받지 못했습니다.");
+    voiceUploadBusy.store(false);
+    return;
+  }
+
+  DynamicJsonDocument response(4096);
+  DeserializationError jsonError = deserializeJson(response, body);
+  if (httpCode != 200 || jsonError) {
+    Serial.printf("[대화 실패] %s\n", jsonError ? "서버 응답 JSON을 해석하지 못했습니다." : "서버가 오류를 반환했습니다.");
+    Serial.println("[서버 응답 원문] " + body);
+    voiceUploadBusy.store(false);
+    return;
+  }
+
+  String recognized = response["text"] | "";
+  String reply = response["reply"] | "";
+  Serial.println("──────────────────────────────");
+  Serial.println("[음성 인식 결과] " + recognized);
+  Serial.println("[소다봇 답변] " + reply);
+  Serial.println("──────────────────────────────");
+  drawMessage(reply.length() > 0 ? reply : "음성을 인식하지 못했어요.", 1);
+  if (reply.length() > 0) playReplySpeech(reply);
+  sleeping = false;
+  customExpression = true;
+  expressionUntil = millis() + 8000;
+  lastActivityTime = millis();
+  voiceUploadBusy.store(false);
+}
+
 void setup() {
   Serial.begin(115200);
   uint32_t serialStarted = millis();
   while (!Serial && millis() - serialStarted < 2000) delay(10);
-  Serial.println("소다봇 BASIC + 버튼·마이크 통합 v4");
+  Serial.println("소다봇: 마이크 및 음성 대화 펌웨어");
   pinMode(BUTTON_PIN, INPUT_PULLUP);
   incomingQueue = xQueueCreate(6, sizeof(IncomingMessage));
   if (!incomingQueue) { Serial.println("큐 생성 실패"); while (true) delay(1000); }
   
   // 1. NVS에서 저장된 설정(환영인사, 기본표정 등) 불러오기
   loadSettingsFromNVS();
-  btnSingleAction = "weather";
+  loadSodaApiKey();
 
   // 2. LCD 디스플레이 초기화
   hspi.begin(TFT_CLK, -1, TFT_MOSI, TFT_CS);
@@ -2034,15 +2377,17 @@ void setup() {
   if (ssid && ssid[0]) WiFi.begin(ssid, password);
   startMicrophoneMonitor();
   Serial.println("SODABOT BASIC protocol=1 준비 완료");
-  Serial.println("[안내] 버튼을 누른 채 말해보세요. 기존 짧게/두 번/길게 누르기 기능도 동작합니다.");
-  Serial.println("[안내] 버튼 없이 테스트하려면 t + 줄바꿈 또는 {\"action\":\"mic_test\"} + 줄바꿈을 전송하세요.");
+  Serial.println("[사용 방법] 버튼을 누른 채 말하고, 다 말하면 버튼을 놓으세요.");
+  Serial.println("[시리얼 명령] SERVER_STATUS 또는 SET_API_KEY=발급키 (115200 baud, 새 줄)");
+  printServerStatus();
 
   // === CUSTOM_SETUP_START ===
   // === CUSTOM_SETUP_END ===
 }
 
 void loop() {
-  checkHardwareButton();
+  // 버튼 음성 대화 Push-to-Talk 처리
+  uploadRecordedConversation();
   startWebServerIfReady();
   ws.cleanupClients();
   static String serialInput;
@@ -2050,8 +2395,20 @@ void loop() {
   while (Serial.available()) {
     char ch = Serial.read();
     if (ch == '\n') {
-      if (!serialOverflow) enqueueMessage(serialInput.c_str(), serialInput.length(), 0);
+      serialInput.trim();
+      if (!serialOverflow && serialInput.startsWith("SET_API_KEY=")) {
+        String key = serialInput.substring(12);
+        key.trim();
+        if (key.length() >= 16) saveSodaApiKey(key);
+        else Serial.println("[설정 오류] API 키가 너무 짧습니다.");
+      } else if (!serialOverflow && serialInput == "SERVER_STATUS") {
+        printServerStatus();
+      } else if (!serialOverflow && serialInput.length() > 0) {
+        enqueueMessage(serialInput.c_str(), serialInput.length(), 0);
+      }
       serialInput = ""; serialOverflow = false;
+    } else if (ch == '\r') {
+      // CRLF 또는 Both NL & CR 설정에서도 명령을 한 번만 처리한다.
     } else if (!serialOverflow) {
       if (serialInput.length() >= 1023) { serialInput = ""; serialOverflow = true; }
       else serialInput += ch;

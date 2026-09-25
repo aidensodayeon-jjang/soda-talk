@@ -377,14 +377,26 @@ export function generateCustomFirmware(
 
 /** Protocol 1 and the SODA v2 board pin map; no embedded API credentials. */
 export function generateSodabotFirmware(
-  robotName: string, wifiSsid: string, wifiPass: string,
-  _apiKey = '', _apiHost = ''
+  robotName: string,
+  wifiSsid: string,
+  wifiPass: string,
+  apiKey = '',
+  apiHost = ''
 ): string {
   const name = robotName.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 10) || 'ROBOT';
+  const host = apiHost || (typeof window !== 'undefined' && window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1' ? window.location.hostname : '192.168.0.171');
+  const key = apiKey || 'sk-soda-demo';
+
   const substitutions: Record<string, string> = {
-    __SODA_WIFI_SSID__: JSON.stringify(wifiSsid),
-    __SODA_WIFI_PASSWORD__: JSON.stringify(wifiPass),
+    __SODA_WIFI_SSID__: JSON.stringify(wifiSsid || 'Dlab_2G'),
+    __SODA_WIFI_PASSWORD__: JSON.stringify(wifiPass || 'academy!'),
     __SODA_BLE_NAME__: JSON.stringify(`SODABOT_${name}`),
+    __SODA_SERVER_HOST__: JSON.stringify(host),
+    __SODA_API_KEY__: JSON.stringify(key),
   };
-  return template.replace(/__SODA_WIFI_SSID__|__SODA_WIFI_PASSWORD__|__SODA_BLE_NAME__/g, key => substitutions[key]);
+
+  return template.replace(
+    /__SODA_WIFI_SSID__|__SODA_WIFI_PASSWORD__|__SODA_BLE_NAME__|__SODA_SERVER_HOST__|__SODA_API_KEY__/g,
+    k => substitutions[k] ?? k
+  );
 }

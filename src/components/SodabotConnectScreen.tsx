@@ -142,7 +142,8 @@ export default function SodabotConnectScreen({ currentUser }: SodabotConnectScre
     localStorage.setItem(getScopedKey("wifi_password"), password);
 
     const activeApiKey = apiKey || currentUser?.personalApiKey || 'sk-soda-demo';
-    const code = generateSodabotFirmware(cleanName, ssid, password, activeApiKey);
+    const host = (typeof window !== 'undefined' && window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') ? window.location.hostname : '192.168.0.171';
+    const code = generateSodabotFirmware(cleanName, ssid, password, activeApiKey, host);
     const blob = new Blob([code], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -160,7 +161,8 @@ export default function SodabotConnectScreen({ currentUser }: SodabotConnectScre
     localStorage.setItem(getScopedKey("wifi_password"), password);
 
     const activeApiKey = apiKey || currentUser?.personalApiKey || 'sk-soda-demo';
-    const code = generateSodabotFirmware(cleanName, ssid, password, activeApiKey);
+    const host = (typeof window !== 'undefined' && window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') ? window.location.hostname : '192.168.0.171';
+    const code = generateSodabotFirmware(cleanName, ssid, password, activeApiKey, host);
     await navigator.clipboard.writeText(code);
     setCopiedCode(true);
     setTimeout(() => setCopiedCode(false), 2500);
