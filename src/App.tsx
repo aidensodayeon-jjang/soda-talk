@@ -2613,6 +2613,7 @@ export default function App() {
                 const userCustomName = localStorage.getItem(`sodabot_${userKey}_custom_name`) || '';
                 const userSsid = localStorage.getItem(`sodabot_${userKey}_wifi_ssid`) || '';
                 const userPass = localStorage.getItem(`sodabot_${userKey}_wifi_password`) || '';
+                const userApiKey = user?.personalApiKey || localStorage.getItem(`sodabot_${userKey}_api_key`) || '';
                 const cleanRobotName = userCustomName.replace(/[^a-zA-Z0-9_-]/g, '') || (user?.displayName ? user.displayName.replace(/[^a-zA-Z0-9_-]/g, '') : 'ROBOT');
 
                 let dynamicCode = soda63Code;
@@ -2624,6 +2625,12 @@ export default function App() {
                 }
                 if (cleanRobotName) {
                   dynamicCode = dynamicCode.replace(/BLEDevice::init\("SODABOT_.*?"\);/, `BLEDevice::init("SODABOT_${cleanRobotName}");`);
+                }
+                if (userApiKey) {
+                  dynamicCode = dynamicCode.replace(/const char\* DEFAULT_SODA_API_KEY = ".*?";/, `const char* DEFAULT_SODA_API_KEY = "${userApiKey}";`);
+                }
+                if (window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+                  dynamicCode = dynamicCode.replace(/const char\* SODA_SERVER_HOST = ".*?";/, `const char* SODA_SERVER_HOST = "${window.location.hostname}";`);
                 }
 
                 return (
