@@ -178,13 +178,42 @@ export default function SodabotConnectScreen({ currentUser }: SodabotConnectScre
 
   const writeCharRef = useRef<any>(null);
 
-  // 3. Web Bluetooth Direct One-Click Pairing
+  // 3. Web Bluetooth Direct One-Click Pairing (자동 캐시 초기화 포함)
   const handleDirectBlePair = async () => {
     if (!(navigator as any).bluetooth) {
       alert("블루투스를 지원하지 않는 브라우저이거나, 안전하지 않은 주소입니다. Chrome 브라우저에서 'localhost:7989'로 접속해 주세요.");
       return;
     }
     
+    // 페어링 버튼 클릭 시 이전 연결 및 브라우저 블루투스 캐시 자동 정리 (메시지/확인창 없이 자동 수행)
+    try {
+      sodabotTransport.disconnect();
+    } catch {}
+
+    try {
+      if ((navigator as any).bluetooth?.getDevices) {
+        const devices = await (navigator as any).bluetooth.getDevices();
+        for (const dev of devices) {
+          if (dev.forget) {
+            await dev.forget();
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Silent bluetooth cache clear warning:", e);
+    }
+
+    localStorage.removeItem(getScopedKey("robot_ip"));
+    localStorage.removeItem(getScopedKey("device_name"));
+    localStorage.removeItem("sodabot_robot_ip");
+    localStorage.removeItem("sodabot_connected");
+    localStorage.removeItem("sodabot_device_name");
+
+    writeCharRef.current = null;
+    bleDeviceRef.current = null;
+    setRobotIp(null);
+    setConnectedDeviceName(null);
+
     setIsSearching(true);
     setStatus('ble_connecting');
     try {
