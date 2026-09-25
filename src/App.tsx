@@ -423,17 +423,57 @@ export default function App() {
 
 
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000; // 30분 무동작 시 세션 아웃
+  const lastActivityRef = useRef<number>(
+    parseInt(localStorage.getItem("soda_last_activity") || String(Date.now()), 10)
+  );
 
-  // 1. Verify session on mount
+  // 1. Verify session on mount & Inactivity tracking
   useEffect(() => {
-    if (token) {
-      verifySession(token);
-      // 일반 학생 유저의 경우 선생님이 권한을 부여했을 때 실시간 반영을 위해 주기적 동기화
-      const interval = setInterval(() => {
-        verifySession(token);
-      }, 3000);
-      return () => clearInterval(interval);
+    if (!token) return;
+
+    // 마운트 시 저장된 마지막 활동 시간 체크
+    const savedLastActivity = parseInt(localStorage.getItem("soda_last_activity") || "0", 10);
+    if (savedLastActivity && Date.now() - savedLastActivity > INACTIVITY_TIMEOUT_MS) {
+      alert("30분 동안 활동이 없어 세션이 만료되었습니다. 다시 로그인해 주세요.");
+      handleLogout();
+      return;
     }
+
+    verifySession(token);
+
+    // 사용자 인터랙션 감지 (마우스, 키보드, 스크롤, 터치, 클릭)
+    let lastUpdate = 0;
+    const recordUserActivity = () => {
+      const now = Date.now();
+      lastActivityRef.current = now;
+      // 3초 단위로 localStorage 갱신 (과도한 I/O 방지)
+      if (now - lastUpdate > 3000) {
+        lastUpdate = now;
+        localStorage.setItem("soda_last_activity", String(now));
+      }
+    };
+
+    const activityEvents = ["mousedown", "mousemove", "keydown", "scroll", "touchstart", "click"];
+    activityEvents.forEach(evt => window.addEventListener(evt, recordUserActivity, { passive: true }));
+
+    // 10초 주기로 30분 무동작 검사 & 실시간 학생 권한 동기화
+    const interval = setInterval(() => {
+      const now = Date.now();
+      const lastAct = lastActivityRef.current || parseInt(localStorage.getItem("soda_last_activity") || "0", 10);
+      if (lastAct && now - lastAct > INACTIVITY_TIMEOUT_MS) {
+        clearInterval(interval);
+        alert("30분 동안 활동이 없어 세션이 만료되었습니다. 다시 로그인해 주세요.");
+        handleLogout();
+        return;
+      }
+      verifySession(token);
+    }, 5000);
+
+    return () => {
+      activityEvents.forEach(evt => window.removeEventListener(evt, recordUserActivity));
+      clearInterval(interval);
+    };
   }, [token]);
 
   // 2. Fetch data once logged in
@@ -821,6 +861,8 @@ export default function App() {
 
   const handleLoginSuccess = (sessionId: string, loggedInUser: { id: string; username: string; displayName: string }) => {
     localStorage.setItem("authSessionId", sessionId);
+    localStorage.setItem("soda_last_activity", String(Date.now()));
+    lastActivityRef.current = Date.now();
     setToken(sessionId);
     setUser(loggedInUser);
     
@@ -852,6 +894,7 @@ export default function App() {
     }
     sodabotTransport.disconnect();
     localStorage.removeItem("authSessionId");
+    localStorage.removeItem("soda_last_activity");
     localStorage.removeItem("sodabot_robot_ip");
     localStorage.removeItem("sodabot_connected");
     localStorage.removeItem("sodabot_custom_name");
@@ -2199,52 +2242,37 @@ export default function App() {
         /* Normal Chat / Sodabot Connect / Builder View */
         <main className="flex-1 flex flex-col h-screen overflow-hidden bg-white relative">
           {(!isSodabotConnected && currentView !== 'sodabot') ? (
-            /* Connection Required Gate View */
+            /* Connection Required Gate View - Ultra Clean & Bold Focus */
             <div className="flex-1 flex flex-col items-center justify-center h-full bg-[#FAF9F6] p-6 text-center select-none relative overflow-hidden">
               <div className="absolute inset-0 bg-[linear-gradient(to_right,#EAE6DF_1px,transparent_1px),linear-gradient(to_bottom,#EAE6DF_1px,transparent_1px)] bg-[size:5rem_5rem] opacity-30 pointer-events-none" />
 
-              <div className="max-w-md w-full bg-white border border-[#EAE6DF] rounded-3xl p-8 shadow-xl space-y-6 relative z-10 animate-fade-in">
-                <div className="w-16 h-16 rounded-3xl bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-600 mx-auto shadow-sm text-3xl">
-                  🤖
+              <div className="max-w-sm w-full bg-white border border-[#EAE6DF] rounded-3xl p-8 sm:p-10 shadow-2xl space-y-8 relative z-10 animate-fade-in">
+                {/* Robot Icon with soft pulsing glow */}
+                <div className="relative mx-auto w-24 h-24 flex items-center justify-center">
+                  <div className="absolute inset-0 rounded-3xl bg-indigo-500/15 animate-ping opacity-40" />
+                  <div className="relative w-24 h-24 rounded-3xl bg-gradient-to-b from-indigo-50 via-blue-50 to-indigo-100/50 border border-indigo-200/80 flex items-center justify-center shadow-lg text-5xl">
+                    🤖
+                  </div>
                 </div>
 
-                <div className="space-y-2">
-                  <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-50 border border-amber-200 text-amber-700 rounded-full text-xs font-bold">
-                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-                    소다봇 연결 필요
-                  </div>
-                  <h2 className="text-xl font-extrabold text-[#1D1D1F] tracking-tight">
-                    소다봇을 먼저 연결해 주세요
+                {/* Main Clear Title */}
+                <div className="space-y-1.5">
+                  <h2 className="text-2xl sm:text-[26px] font-black text-[#1D1D1F] tracking-tight">
+                    소다봇을 연결해 주세요
                   </h2>
-                  <p className="text-xs text-[#5C5B57] leading-relaxed">
-                    <strong>AI 코딩 & 인터랙션</strong> 및 <strong>소다봇빌더</strong>를 사용하려면 실제 소다봇 하드웨어와의 연결이 필요합니다.
+                  <p className="text-xs text-[#86868B]">
+                    소다봇과 대화하고 제어하려면 먼저 연결이 필요해요
                   </p>
                 </div>
 
-                <div className="p-4 bg-[#FAF9F6] border border-[#EAE6DF] rounded-2xl text-left space-y-2 text-xs">
-                  <div className="flex items-center gap-2 font-bold text-[#1D1D1F]">
-                    <Bluetooth className="w-4 h-4 text-indigo-600" />
-                    <span>원클릭 간편 연결 지원</span>
-                  </div>
-                  <p className="text-[11px] text-[#86868B] leading-relaxed">
-                    블루투스로 Wi-Fi를 1회 설정하면 이후 자동으로 실시간 WebSocket 연결이 활성화됩니다.
-                  </p>
-                </div>
-
-                <div className="flex flex-col gap-2 pt-2">
+                {/* Action Button */}
+                <div className="pt-1">
                   <button
                     onClick={() => setCurrentView('sodabot')}
-                    className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 active:scale-98 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+                    className="w-full py-4.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 active:scale-[0.98] text-white rounded-2xl text-base sm:text-lg font-black transition-all shadow-xl shadow-indigo-500/30 flex items-center justify-center gap-2.5 cursor-pointer hover:shadow-indigo-500/40"
                   >
-                    <Bluetooth className="w-4 h-4" />
-                    소다봇 연결하러 가기
-                  </button>
-                  <button
-                    onClick={() => setMainNavTab("dev")}
-                    className="w-full py-2.5 bg-white hover:bg-[#FAF9F6] border border-[#EAE6DF] text-[#5C5B57] rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <FolderCode className="w-3.5 h-3.5" />
-                    수업 & 펌웨어 개발실로 이동
+                    <Bluetooth className="w-5 h-5 text-white stroke-[2.5]" />
+                    <span>소다봇 연결하러 가기</span>
                   </button>
                 </div>
               </div>
@@ -2627,9 +2655,15 @@ export default function App() {
                   if (userApiKey) {
                     dynamicCode = dynamicCode.replace(/const char\* DEFAULT_SODA_API_KEY = ".*?";/, `const char* DEFAULT_SODA_API_KEY = "${userApiKey}";`);
                   }
-                  if (window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-                    dynamicCode = dynamicCode.replace(/const char\* SODA_SERVER_HOST = ".*?";/, `const char* SODA_SERVER_HOST = "${window.location.hostname}";`);
-                  }
+                  const isHttps = window.location.protocol === 'https:';
+                  const currentHost = (window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1')
+                    ? window.location.hostname
+                    : '192.168.0.171';
+                  const currentPort = window.location.port ? parseInt(window.location.port, 10) : (isHttps ? 443 : 7989);
+
+                  dynamicCode = dynamicCode.replace(/const char\* SODA_SERVER_HOST = ".*?";/, `const char* SODA_SERVER_HOST = "${currentHost}";`);
+                  dynamicCode = dynamicCode.replace(/const uint16_t SODA_SERVER_PORT = \d+;/, `const uint16_t SODA_SERVER_PORT = ${currentPort};`);
+                  dynamicCode = dynamicCode.replace(/const bool SODA_SERVER_HTTPS = (true|false);/, `const bool SODA_SERVER_HTTPS = ${isHttps ? 'true' : 'false'};`);
                 }
 
                 const fileBaseName = isWeek8 ? `soda-8-1_${cleanRobotName}` : `soda-6-3_mic_test`;

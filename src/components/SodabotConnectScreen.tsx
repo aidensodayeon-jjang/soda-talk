@@ -403,13 +403,13 @@ export default function SodabotConnectScreen({ currentUser }: SodabotConnectScre
                   <label className="text-[11px] font-bold text-[#1D1D1F] block mb-1">로봇 이름</label>
                   <input 
                     type="text" 
-                    placeholder="예: LUMI, SODA_01" 
+                    placeholder="예: lumi, SODA_01" 
                     value={robotName} 
                     onChange={e => {
                       const sanitized = e.target.value.replace(/[^a-zA-Z0-9_-]/g, '');
                       setRobotName(sanitized);
                     }} 
-                    className="w-full text-xs px-3 py-2 bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl focus:outline-none focus:border-indigo-500 font-bold font-mono uppercase" 
+                    className="w-full text-xs px-3 py-2 bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl focus:outline-none focus:border-indigo-500 font-bold font-mono" 
                   />
                 </div>
                 <div>

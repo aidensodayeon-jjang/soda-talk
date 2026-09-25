@@ -74,6 +74,7 @@ constexpr size_t MAX_RECORD_SAMPLES = MIC_SAMPLE_RATE * MAX_RECORD_SECONDS;
 // 컴퓨터 IP가 바뀌면 이 값만 고치면 된다.
 const char* SODA_SERVER_HOST = "192.168.0.171";
 const uint16_t SODA_SERVER_PORT = 7989;
+const bool SODA_SERVER_HTTPS = false;
 const char* SODA_AUDIO_CHAT_PATH = "/api/hw/audio-chat";
 const char* SODA_TTS_PATH = "/api/hw/tts";
 const char* DEFAULT_SODA_API_KEY = "sk-soda-9597fe97de4771e361b8a171c9aefd7b";
@@ -2259,9 +2260,21 @@ bool playReplySpeech(const String& text) {
   String requestBody;
   serializeJson(requestDoc, requestBody);
 
-  WiFiClient client;
+  WiFiClient plainClient;
+  WiFiClientSecure secureClient;
+  WiFiClient* clientPtr = nullptr;
+  if (SODA_SERVER_HTTPS || SODA_SERVER_PORT == 443) {
+    secureClient.setInsecure();
+    clientPtr = &secureClient;
+  } else {
+    clientPtr = &plainClient;
+  }
+  WiFiClient& client = *clientPtr;
   client.setTimeout(90000);
-  Serial.println("[음성 생성] 서버에 답변 목소리를 요청합니다.");
+
+  Serial.printf("[음성 생성] 서버(%s://%s:%u)에 답변 목소리를 요청합니다.\n",
+                (SODA_SERVER_HTTPS || SODA_SERVER_PORT == 443) ? "https" : "http",
+                SODA_SERVER_HOST, SODA_SERVER_PORT);
   if (!client.connect(SODA_SERVER_HOST, SODA_SERVER_PORT)) {
     Serial.println("[음성 출력 실패] TTS 서버에 연결하지 못했습니다.");
     return false;
@@ -2392,10 +2405,22 @@ void uploadRecordedConversation() {
   uint8_t wavHeader[44];
   makeWavHeader(wavHeader, pcmBytes);
 
-  WiFiClient client;
+  WiFiClient plainClient;
+  WiFiClientSecure secureClient;
+  WiFiClient* clientPtr = nullptr;
+  if (SODA_SERVER_HTTPS || SODA_SERVER_PORT == 443) {
+    secureClient.setInsecure();
+    clientPtr = &secureClient;
+  } else {
+    clientPtr = &plainClient;
+  }
+  WiFiClient& client = *clientPtr;
   client.setTimeout(90000);
-  Serial.printf("[서버 전송] %u바이트 음성을 %s:%u로 전송합니다.\n",
-                (unsigned)pcmBytes, SODA_SERVER_HOST, SODA_SERVER_PORT);
+
+  Serial.printf("[서버 전송] %u바이트 음성을 %s://%s:%u로 전송합니다.\n",
+                (unsigned)pcmBytes,
+                (SODA_SERVER_HTTPS || SODA_SERVER_PORT == 443) ? "https" : "http",
+                SODA_SERVER_HOST, SODA_SERVER_PORT);
   if (!client.connect(SODA_SERVER_HOST, SODA_SERVER_PORT)) {
     Serial.println("[서버 연결 실패] soda-talk 서버가 실행 중인지, 컴퓨터와 보드가 같은 Wi-Fi인지 확인하세요.");
     voiceUploadBusy.store(false);

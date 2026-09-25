@@ -859,9 +859,47 @@ interface SessionUser {
   role: "admin" | "student" | "user";
   canAccessChat: boolean;
   personalApiKey?: string;
+  lastActivity: number;
 }
 
+const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30분 무동작 시 세션 만료
+
 const sessions = new Map<string, SessionUser>();
+
+function getSession(token: string): SessionUser | undefined {
+  if (!token) return undefined;
+  const session = sessions.get(token);
+  if (!session) return undefined;
+
+  const now = Date.now();
+  if (session.lastActivity && now - session.lastActivity > SESSION_TIMEOUT_MS) {
+    sessions.delete(token);
+    return undefined;
+  }
+
+  session.lastActivity = now;
+  return session;
+}
+
+// 1분마다 만료된 세션 메모리 자동 정리
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, session] of sessions.entries()) {
+    if (session.lastActivity && now - session.lastActivity > SESSION_TIMEOUT_MS) {
+      sessions.delete(token);
+    }
+  }
+}, 60 * 1000);
+
+function createSession(userData: Omit<SessionUser, "lastActivity">): { sessionId: string; sessionUser: SessionUser } {
+  const sessionId = Math.random().toString(36).substring(2, 15);
+  const sessionUser: SessionUser = {
+    ...userData,
+    lastActivity: Date.now()
+  };
+  sessions.set(sessionId, sessionUser);
+  return { sessionId, sessionUser };
+}
 
 function ensureUserApiKey(user: User, db: DBStructure): string {
   if (!user.personalApiKey) {
@@ -901,16 +939,14 @@ app.post("/api/auth/login", async (req, res) => {
       }
       const apiKey = ensureUserApiKey(adminUser, db);
 
-      const sessionUser: SessionUser = {
+      const { sessionId, sessionUser } = createSession({
         id: adminUser.id,
         username: adminUser.username,
         displayName: adminUser.displayName,
         role: "admin",
         canAccessChat: true,
         personalApiKey: apiKey
-      };
-      const sessionId = Math.random().toString(36).substring(2, 15);
-      sessions.set(sessionId, sessionUser);
+      });
       return res.json({ success: true, sessionId, user: sessionUser });
     }
 
@@ -922,16 +958,14 @@ app.post("/api/auth/login", async (req, res) => {
 
     const apiKey = ensureUserApiKey(user, db);
     const isUserAdmin = user.username === "admin" || user.role === "admin";
-    const sessionUser: SessionUser = {
+    const { sessionId, sessionUser } = createSession({
       id: user.id,
       username: user.username,
       displayName: user.displayName,
       role: isUserAdmin ? "admin" : (user.role || "student"),
       canAccessChat: isUserAdmin ? true : (user.canAccessChat ?? false),
       personalApiKey: apiKey
-    };
-    const sessionId = Math.random().toString(36).substring(2, 15);
-    sessions.set(sessionId, sessionUser);
+    });
     return res.json({ success: true, sessionId, user: sessionUser });
   }
 
@@ -958,16 +992,14 @@ app.post("/api/auth/login", async (req, res) => {
       db.users.push(aidenUser);
     }
     const apiKey = ensureUserApiKey(aidenUser, db);
-    const sessionUser: SessionUser = {
+    const { sessionId, sessionUser } = createSession({
       id: aidenUser.id,
       username: "aiden",
       displayName: "Aiden (Master Admin)",
       role: "admin",
       canAccessChat: true,
       personalApiKey: apiKey
-    };
-    const sessionId = Math.random().toString(36).substring(2, 15);
-    sessions.set(sessionId, sessionUser);
+    });
     return res.json({ success: true, sessionId, user: sessionUser });
   }
 
@@ -1015,17 +1047,14 @@ app.post("/api/auth/login", async (req, res) => {
     }
     const apiKey = ensureUserApiKey(localUser, db);
 
-    const sessionUser: SessionUser = {
+    const { sessionId, sessionUser } = createSession({
       id: localUser.id,
       username: localUser.username,
       displayName: localUser.displayName,
       role: "student",
       canAccessChat: localUser.canAccessChat ?? false,
       personalApiKey: apiKey
-    };
-
-    const sessionId = Math.random().toString(36).substring(2, 15);
-    sessions.set(sessionId, sessionUser);
+    });
 
     return res.json({ success: true, sessionId, user: sessionUser });
 
@@ -1037,16 +1066,14 @@ app.post("/api/auth/login", async (req, res) => {
     );
     if (fallbackUser) {
       const apiKey = ensureUserApiKey(fallbackUser, db);
-      const sessionUser: SessionUser = {
+      const { sessionId, sessionUser } = createSession({
         id: fallbackUser.id,
         username: fallbackUser.username,
         displayName: fallbackUser.displayName,
         role: fallbackUser.role || "student",
         canAccessChat: fallbackUser.canAccessChat ?? false,
         personalApiKey: apiKey
-      };
-      const sessionId = Math.random().toString(36).substring(2, 15);
-      sessions.set(sessionId, sessionUser);
+      });
       return res.json({ success: true, sessionId, user: sessionUser });
     }
 
@@ -1079,16 +1106,14 @@ app.post("/api/auth/signup", (req, res) => {
   db.users.push(newUser);
   writeDB(db);
 
-  const sessionId = Math.random().toString(36).substring(2, 15);
-  const sessionUser: SessionUser = {
+  const { sessionId, sessionUser } = createSession({
     id: newUser.id,
     username: newUser.username,
     displayName: newUser.displayName,
     role: "student",
     canAccessChat: false,
     personalApiKey: apiKey
-  };
-  sessions.set(sessionId, sessionUser);
+  });
 
   res.json({ success: true, sessionId, user: sessionUser });
 });
@@ -1108,7 +1133,7 @@ app.get("/api/auth/me", (req, res) => {
     return res.status(401).json({ error: "인증되지 않은 사용자입니다." });
   }
   const token = authHeader.replace("Bearer ", "");
-  let session = sessions.get(token);
+  let session = getSession(token);
   const db = readDB();
 
   // 세션이 메모리에 없을 때 (서버 재시작 등) DB 또는 기본 유저 매칭 복구
@@ -1123,7 +1148,8 @@ app.get("/api/auth/me", (req, res) => {
         displayName: matchedUser.displayName,
         role: isUserAdmin ? "admin" : (matchedUser.role || "student"),
         canAccessChat: isUserAdmin ? true : (matchedUser.canAccessChat ?? false),
-        personalApiKey: apiKey
+        personalApiKey: apiKey,
+        lastActivity: Date.now()
       };
       sessions.set(token, session);
     } else {
@@ -1150,7 +1176,7 @@ app.get("/api/auth/current-key", (req, res) => {
   const authHeader = req.headers.authorization;
   if (authHeader) {
     const token = authHeader.replace("Bearer ", "");
-    const session = sessions.get(token);
+    const session = getSession(token);
     if (session) {
       const dbUser = db.users.find(u => u.id === session.id);
       if (dbUser) {
@@ -1176,7 +1202,7 @@ const requireAdmin = (req: any, res: any, next: any) => {
   if (!authHeader) return res.status(401).json({ error: "인증되지 않은 사용자입니다." });
   
   const token = authHeader.replace("Bearer ", "");
-  const session = sessions.get(token);
+  const session = getSession(token);
   if (!session || (session.username !== "admin" && session.role !== "admin")) {
     return res.status(403).json({ error: "운영자 권한이 필요합니다." });
   }
@@ -1562,7 +1588,7 @@ app.post("/api/lmstudio/stream", async (req, res) => {
   if (!authHeader) return res.status(401).json({ error: "인증 필요" });
 
   const token = authHeader.replace("Bearer ", "");
-  const session = sessions.get(token);
+  const session = getSession(token);
   if (!session) return res.status(401).json({ error: "세션 만료" });
 
   const db = readDB();
@@ -1726,7 +1752,7 @@ app.get("/api/chats", (req, res) => {
   if (!authHeader) return res.status(401).json({ error: "인증 필요" });
 
   const token = authHeader.replace("Bearer ", "");
-  const session = sessions.get(token);
+  const session = getSession(token);
   if (!session) return res.status(401).json({ error: "세션 만료" });
 
   const db = readDB();
@@ -1739,7 +1765,7 @@ app.post("/api/chats", (req, res) => {
   if (!authHeader) return res.status(401).json({ error: "인증 필요" });
 
   const token = authHeader.replace("Bearer ", "");
-  const session = sessions.get(token);
+  const session = getSession(token);
   if (!session) return res.status(401).json({ error: "세션 만료" });
 
   const { title } = req.body;
@@ -1764,7 +1790,7 @@ app.delete("/api/chats/:id", (req, res) => {
   if (!authHeader) return res.status(401).json({ error: "인증 필요" });
 
   const token = authHeader.replace("Bearer ", "");
-  const session = sessions.get(token);
+  const session = getSession(token);
   if (!session) return res.status(401).json({ error: "세션 만료" });
 
   const { id } = req.params;
@@ -1786,7 +1812,7 @@ app.post("/api/chats/:id/sync", (req, res) => {
   if (!authHeader) return res.status(401).json({ error: "인증 필요" });
 
   const token = authHeader.replace("Bearer ", "");
-  const session = sessions.get(token);
+  const session = getSession(token);
   if (!session) return res.status(401).json({ error: "세션 만료" });
 
   const { id } = req.params;
@@ -1864,7 +1890,7 @@ app.post("/api/chats/:id/messages", async (req, res) => {
   if (!authHeader) return res.status(401).json({ error: "인증 필요" });
 
   const token = authHeader.replace("Bearer ", "");
-  const session = sessions.get(token);
+  const session = getSession(token);
   if (!session) return res.status(401).json({ error: "세션 만료" });
 
   const { id } = req.params;
