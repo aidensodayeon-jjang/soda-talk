@@ -1254,9 +1254,22 @@ void setupBLE() {
   pNotifyCharacteristic = service->createCharacteristic(CHAR_NOTIFY_UUID, BLECharacteristic::PROPERTY_NOTIFY);
   pNotifyCharacteristic->addDescriptor(new BLE2902());
   service->start();
+
   BLEAdvertising* advertising = BLEDevice::getAdvertising();
   advertising->addServiceUUID(SERVICE_UUID);
   advertising->setScanResponse(true);
+  advertising->setMinPreferred(0x06);
+  advertising->setMinPreferred(0x12);
+
+  BLEAdvertisementData advData;
+  advData.setName(__SODA_BLE_NAME__);
+  advData.setCompleteServices(BLEUUID(SERVICE_UUID));
+  advertising->setAdvertisementData(advData);
+
+  BLEAdvertisementData scanData;
+  scanData.setName(__SODA_BLE_NAME__);
+  advertising->setScanResponseData(scanData);
+
   BLEDevice::startAdvertising();
 }
 

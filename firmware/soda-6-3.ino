@@ -1245,7 +1245,7 @@ class MyWriteCallbacks: public BLECharacteristicCallbacks {
 };
 
 void setupBLE() {
-  BLEDevice::init("SODABOT_LUMI");
+  BLEDevice::init("SODABOT_ella");
   pServer = BLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
   BLEService* service = pServer->createService(SERVICE_UUID);
@@ -1254,9 +1254,22 @@ void setupBLE() {
   pNotifyCharacteristic = service->createCharacteristic(CHAR_NOTIFY_UUID, BLECharacteristic::PROPERTY_NOTIFY);
   pNotifyCharacteristic->addDescriptor(new BLE2902());
   service->start();
+
   BLEAdvertising* advertising = BLEDevice::getAdvertising();
   advertising->addServiceUUID(SERVICE_UUID);
   advertising->setScanResponse(true);
+  advertising->setMinPreferred(0x06);
+  advertising->setMinPreferred(0x12);
+
+  BLEAdvertisementData advData;
+  advData.setName("SODABOT_ella");
+  advData.setCompleteServices(BLEUUID(SERVICE_UUID));
+  advertising->setAdvertisementData(advData);
+
+  BLEAdvertisementData scanData;
+  scanData.setName("SODABOT_ella");
+  advertising->setScanResponseData(scanData);
+
   BLEDevice::startAdvertising();
 }
 
