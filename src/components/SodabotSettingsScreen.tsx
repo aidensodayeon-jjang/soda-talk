@@ -97,9 +97,9 @@ export default function SodabotSettingsScreen() {
   }, []);
 
   // State variables for interactive UI controls
-  const [profileName, setProfileName] = useState(localStorage.getItem("sodabot_profile_name") || 'LUMI');
-  const [profileDesc, setProfileDesc] = useState(localStorage.getItem("sodabot_profile_desc") || 'Your Smart AI Companion');
-  const [startupPrompt, setStartupPrompt] = useState(localStorage.getItem("sodabot_startup_prompt") || 'Hello, I am Lumi! Ready to assist you.');
+  const [profileName, setProfileName] = useState(localStorage.getItem("sodabot_profile_name") || '');
+  const [profileDesc, setProfileDesc] = useState(localStorage.getItem("sodabot_profile_desc") || '');
+  const [startupPrompt, setStartupPrompt] = useState(localStorage.getItem("sodabot_startup_prompt") || '');
   const [exprTab, setExprTab] = useState<'basic' | 'custom'>('basic');
   const [defaultIdleExpr, setDefaultIdleExpr] = useState(localStorage.getItem('sodabot_default_idle_expr') || 'happy');
   const [selectedExpr, setSelectedExpr] = useState(() => localStorage.getItem('sodabot_default_idle_expr') || 'happy');
@@ -699,15 +699,15 @@ export default function SodabotSettingsScreen() {
 
   const [btnSingleClick, setBtnSingleClick] = useState(() => {
     const saved = localStorage.getItem('sodabot_btn_single');
-    return saved && saved !== 'show_time' ? saved : 'random_face';
+    return (saved && saved !== 'show_time') ? saved : 'none';
   });
   const [btnDoubleClick, setBtnDoubleClick] = useState(() => {
     const saved = localStorage.getItem('sodabot_btn_double');
-    return saved && saved !== 'show_time' ? saved : 'happy_face';
+    return (saved && saved !== 'show_time') ? saved : 'none';
   });
   const [btnLongPress, setBtnLongPress] = useState(() => {
     const saved = localStorage.getItem('sodabot_btn_long');
-    return saved && saved !== 'show_time' ? saved : 'greeting';
+    return (saved && saved !== 'show_time') ? saved : 'none';
   });
 
   const previewStandbyScreen = (face: string) => {
@@ -1002,6 +1002,11 @@ export default function SodabotSettingsScreen() {
   };
 
   const executeButtonAction = (targetAction: string, triggerName: string) => {
+    if (!targetAction || targetAction === 'none') {
+      showToast(`ℹ️ [${triggerName}] 동작이 '동작 없음 (미연결)' 상태입니다.`);
+      return;
+    }
+
     showToast(`🔘 [${triggerName}] 동작을 테스트합니다!`);
 
     // 1. 커스텀 사용자 정의 함수 슬롯(CUSTOM_1, CUSTOM_2, CUSTOM_3) 실행
@@ -1321,6 +1326,7 @@ export default function SodabotSettingsScreen() {
   ];
 
   const baseButtonActions = [
+    { id: 'none', label: '🚫 동작 없음 (미연결)' },
     { id: 'random_face', label: '🎲 랜덤 표정 전환' },
     { id: 'next_face', label: '🔄 다음 표정 전환' },
     { id: 'happy_face', label: '😆 기쁨 표정' },

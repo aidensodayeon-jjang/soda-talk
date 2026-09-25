@@ -70,7 +70,7 @@ export default function SodabotConnectScreen({ currentUser }: SodabotConnectScre
 
   const [robotName, setRobotName] = useState(() => {
     const saved = localStorage.getItem("sodabot_custom_name");
-    return (saved && /^[a-zA-Z0-9_-]+$/.test(saved)) ? saved : (currentUser?.displayName ? currentUser.displayName.replace(/[^a-zA-Z0-9_-]/g, '') : 'LUMI');
+    return (saved && /^[a-zA-Z0-9_-]+$/.test(saved)) ? saved : '';
   });
   const [ssid, setSsid] = useState(localStorage.getItem("sodabot_wifi_ssid") || '');
   const [password, setPassword] = useState(localStorage.getItem("sodabot_wifi_password") || '');
