@@ -23,6 +23,8 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include <esp_heap_caps.h>
+#include <esp_mac.h>
+#include <esp_gap_ble_api.h>
 
 // === CUSTOM_HEADERS_START ===
 // === CUSTOM_HEADERS_END ===
@@ -1246,6 +1248,19 @@ class MyWriteCallbacks: public BLECharacteristicCallbacks {
 
 void setupBLE() {
   BLEDevice::init(__SODA_BLE_NAME__);
+
+  // 이름별 고유 Random Static Address 생성 (Mac/Chrome의 이전 이름 캐시 완전 무력화)
+  esp_bd_addr_t rand_addr;
+  esp_read_mac(rand_addr, ESP_MAC_BT);
+  uint32_t nameHash = 5381;
+  const char* bleNameStr = __SODA_BLE_NAME__;
+  for (size_t i = 0; i < strlen(bleNameStr); i++) {
+    nameHash = ((nameHash << 5) + nameHash) + (uint8_t)bleNameStr[i];
+  }
+  rand_addr[0] = (rand_addr[0] ^ (nameHash & 0x3F)) | 0xC0; // Static Random Address 규격 (최상위 2비트 11)
+  rand_addr[5] ^= (uint8_t)((nameHash >> 8) & 0xFF);
+  esp_ble_gap_set_rand_addr(rand_addr);
+
   pServer = BLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
   BLEService* service = pServer->createService(SERVICE_UUID);
@@ -1256,6 +1271,7 @@ void setupBLE() {
   service->start();
 
   BLEAdvertising* advertising = BLEDevice::getAdvertising();
+  advertising->setDeviceAddressType(BLE_ADDR_TYPE_RANDOM);
   advertising->setScanResponse(true);
   advertising->setMinPreferred(0x06);
   advertising->setMinPreferred(0x12);
@@ -1273,7 +1289,7 @@ void setupBLE() {
   advertising->setScanResponseData(scanData);
 
   BLEDevice::startAdvertising();
-  Serial.println("[BLE] 광고 시작: " + String(__SODA_BLE_NAME__));
+  Serial.println("[BLE] 광고 시작 (Static Random MAC 적용): " + String(__SODA_BLE_NAME__));
 }
 
 inline uint32_t getUtf8Code(const String& s, size_t& i) {
