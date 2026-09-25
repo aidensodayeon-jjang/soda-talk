@@ -540,26 +540,72 @@ app.post('/v1/chat/completions', express.json(), async (req, res) => {
   const routeConfig = checkHybridQuotaAndRoute(user, db);
   writeDB(db); // Save quota increments immediately
 
+  let responseData: any = null;
+  let modelUsed = "Unknown Model";
+  let promptMessage = req.body.messages?.[req.body.messages.length - 1]?.content || "No prompt";
+  let replyMessage = "No reply";
+
+  // 1차 시도: routeConfig에 따라 호출
   try {
-    const openaiRes = await fetch(routeConfig.url, {
+    const controller = new AbortController();
+    const timeoutMs = routeConfig.routedToGpt ? 30000 : 5000; // 로컬 LM Studio는 5초 내 미응답시 타임아웃
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    const mainRes = await fetch(routeConfig.url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": routeConfig.auth
+        "Authorization": routeConfig.auth,
+        "ngrok-skip-browser-warning": "true"
       },
       body: JSON.stringify({
         ...req.body,
-        model: routeConfig.routedToGpt ? req.body.model : db.settings.modelName
-      })
+        model: routeConfig.routedToGpt ? (req.body.model || "gpt-4o-mini") : db.settings.modelName
+      }),
+      signal: controller.signal
     });
+    clearTimeout(timeoutId);
 
-    const data = await openaiRes.json();
-    
-    // Log to DB
-    const promptMessage = req.body.messages?.[req.body.messages.length - 1]?.content || "No prompt";
-    const replyMessage = data.choices?.[0]?.message?.content || "No reply";
-    const modelUsed = data.model || (routeConfig.routedToGpt ? req.body.model : db.settings.modelName) || "Unknown Model";
+    if (mainRes.ok) {
+      responseData = await mainRes.json();
+      modelUsed = responseData.model || (routeConfig.routedToGpt ? "gpt-4o-mini" : db.settings.modelName);
+      replyMessage = responseData.choices?.[0]?.message?.content || "";
+    } else {
+      throw new Error(`Primary engine HTTP ${mainRes.status}`);
+    }
+  } catch (primaryErr: any) {
+    console.warn(`[Hardware Gateway] 1차 엔진(${routeConfig.routedToGpt ? 'GPT' : 'LM Studio'}) 실패:`, primaryErr.message);
 
+    // 2차 시도: 로컬 LM Studio 실패 시 OpenAI로 자동 폴백
+    if (!routeConfig.routedToGpt && db.settings.openaiApiKey) {
+      console.log("[Hardware Gateway] OpenAI로 자동 폴백 시도...");
+      try {
+        const fallbackRes = await fetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${db.settings.openaiApiKey}`
+          },
+          body: JSON.stringify({
+            ...req.body,
+            model: "gpt-4o-mini"
+          })
+        });
+
+        if (fallbackRes.ok) {
+          responseData = await fallbackRes.json();
+          modelUsed = "gpt-4o-mini (Fallback)";
+          replyMessage = responseData.choices?.[0]?.message?.content || "";
+        } else {
+          throw new Error(`OpenAI Fallback HTTP ${fallbackRes.status}`);
+        }
+      } catch (fallbackErr: any) {
+        console.error("[Hardware Gateway] OpenAI 폴백도 실패:", fallbackErr.message);
+      }
+    }
+  }
+
+  if (responseData) {
     let chat = db.chats.find(c => c.userId === user.id && c.title === "아두이노 소다봇 대화");
     if (!chat) {
       chat = {
@@ -587,10 +633,13 @@ app.post('/v1/chat/completions', express.json(), async (req, res) => {
     });
     writeDB(db);
 
-    res.json(data);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    return res.json(responseData);
   }
+
+  // 둘 다 실패한 경우 친절한 에러 반환
+  res.status(503).json({
+    error: "AI 엔진(LM Studio 및 OpenAI) 연결에 실패했습니다. 설정을 확인해 주세요."
+  });
 });
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -604,6 +653,80 @@ async function getTranscriber() {
   }
   return transcriber;
 }
+
+// ESP32용 TTS 프록시: OpenAI의 24kHz 16-bit mono PCM을 저장하지 않고 즉시 전달한다.
+app.post('/api/hw/tts', express.json({ limit: '16kb' }), async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
+
+  const token = authHeader.replace("Bearer ", "");
+  const db = readDB();
+  const user = db.users.find(u => u.personalApiKey === token);
+  if (!user) return res.status(403).json({ error: "Invalid SODA API Key" });
+
+  const text = typeof req.body?.text === "string" ? req.body.text.trim() : "";
+  if (!text) return res.status(400).json({ error: "No text provided" });
+  if (text.length > 1000) return res.status(400).json({ error: "Text is too long" });
+  if (!db.settings.openaiApiKey) {
+    return res.status(503).json({ error: "OpenAI API key is not configured" });
+  }
+
+  const controller = new AbortController();
+  res.on("close", () => {
+    if (!res.writableEnded) controller.abort();
+  });
+
+  try {
+    const speechRes = await fetch("https://api.openai.com/v1/audio/speech", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${db.settings.openaiApiKey}`
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini-tts",
+        voice: "coral",
+        input: text,
+        instructions: "한국어로 밝고 친근한 어린이 로봇처럼 자연스럽게 말해 주세요.",
+        response_format: "pcm"
+      }),
+      signal: controller.signal
+    });
+
+    if (!speechRes.ok) {
+      const errorText = await speechRes.text();
+      console.error("TTS API error:", speechRes.status, errorText);
+      return res.status(502).json({ error: `TTS API failed: ${speechRes.status}` });
+    }
+    if (!speechRes.body) {
+      return res.status(502).json({ error: "TTS API returned no audio" });
+    }
+
+    res.status(200);
+    res.setHeader("Content-Type", "audio/pcm");
+    res.setHeader("Cache-Control", "no-store");
+    res.flushHeaders();
+
+    const reader = speechRes.body.getReader();
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!res.write(Buffer.from(value))) {
+          await new Promise<void>(resolve => res.once("drain", resolve));
+        }
+      }
+      res.end();
+    } finally {
+      reader.releaseLock();
+    }
+  } catch (err: any) {
+    if (err?.name === "AbortError") return;
+    console.error("Hardware TTS error:", err);
+    if (res.headersSent) res.destroy();
+    else res.status(500).json({ error: err.message });
+  }
+});
 
 app.post('/api/hw/audio-chat', upload.single('file'), async (req, res) => {
   const authHeader = req.headers.authorization;
@@ -1484,9 +1607,22 @@ app.post("/api/lmstudio/stream", async (req, res) => {
     res.end();
   };
 
+  const sendNoticeChunk = (notice: string) => {
+    const chunk = {
+      choices: [
+        {
+          delta: { content: notice },
+          finish_reason: null
+        }
+      ]
+    };
+    res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+  };
+
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 300000); // 300s timeout
+    const timeoutMs = routedToGpt ? 60000 : 6000; // 로컬 LM Studio는 6초 이내 연결 안 되면 바로 전환
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     const lmResponse = await fetch(fetchUrl, {
       method: "POST",
@@ -1497,14 +1633,15 @@ app.post("/api/lmstudio/stream", async (req, res) => {
       },
       body: JSON.stringify({
         ...req.body,
-        model: routedToGpt ? "gpt-4o-mini" : req.body.model
+        model: routedToGpt ? "gpt-4o-mini" : req.body.model,
+        stream: true
       }),
       signal: controller.signal
     });
     clearTimeout(timeoutId);
 
     if (!lmResponse.ok) {
-      throw new Error(`LM Studio returned status ${lmResponse.status}`);
+      throw new Error(`Engine returned status ${lmResponse.status}`);
     }
 
     if (!lmResponse.body) {
@@ -1523,20 +1660,57 @@ app.post("/api/lmstudio/stream", async (req, res) => {
     }
     res.end();
   } catch (err: any) {
-    console.warn("LM Studio streaming failed:", err.message || err);
+    console.warn("[Stream API] 1차 엔진 호출 실패:", err.message || err);
+
+    // 2차 시도: 로컬 LM Studio 실패 시 OpenAI로 자동 폴백 스트리밍
+    if (!routedToGpt && db.settings.openaiApiKey) {
+      console.log("[Stream API] OpenAI(gpt-4o-mini)로 자동 전환 스트리밍 시작...");
+      try {
+        sendNoticeChunk("⚡ [안내] 로컬 LM Studio 연결이 원활하지 않아 OpenAI(GPT)로 자동 전환하여 답변합니다.\n\n");
+
+        const gptController = new AbortController();
+        const gptTimeoutId = setTimeout(() => gptController.abort(), 60000);
+
+        const gptResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${db.settings.openaiApiKey}`
+          },
+          body: JSON.stringify({
+            ...req.body,
+            model: "gpt-4o-mini",
+            stream: true
+          }),
+          signal: gptController.signal
+        });
+        clearTimeout(gptTimeoutId);
+
+        if (gptResponse.ok && gptResponse.body) {
+          const reader = gptResponse.body.getReader();
+          let done = false;
+          while (!done) {
+            const { value, done: readerDone } = await reader.read();
+            done = readerDone;
+            if (value) {
+              res.write(value);
+            }
+          }
+          res.end();
+          return;
+        } else {
+          throw new Error(`OpenAI stream status ${gptResponse.status}`);
+        }
+      } catch (gptErr: any) {
+        console.error("[Stream API] OpenAI 폴백 스트리밍도 실패:", gptErr.message);
+      }
+    }
+
+    // 3차 폴백: 둘 다 실패했거나 fallbackMode인 경우
     if (fallbackMode) {
       await streamFallback();
     } else {
-      const errChunk = {
-        choices: [
-          {
-            delta: {
-              content: `[LM Studio 연결 실패: ${err.message || err}]`
-            }
-          }
-        ]
-      };
-      res.write(`data: ${JSON.stringify(errChunk)}\n\n`);
+      sendNoticeChunk(`\n\n[⚠️ AI 엔진 연결 실패: 로컬 LM Studio 및 OpenAI 연결이 원활하지 않습니다. 설정을 확인해 주세요.]`);
       res.write("data: [DONE]\n\n");
       res.end();
     }
