@@ -1442,19 +1442,11 @@ unsigned long standbyTimeoutMs = 30000; // 30초 (기본값)
 unsigned long lastActivityTime = 0;
 bool isStandbyActive = false;
 
-// 물리 버튼 기본 동작
-String btnSingleAction = "random_face";
-String btnDoubleAction = "happy_face";
-String btnLongAction = "greeting";
-
 void loadSettingsFromNVS() {
   if (prefs.begin("sodabot", true)) { // 읽기 모드로 오픈
     welcomeMsg = prefs.getString("welcome", "HELLO!\nI AM LUMI :)\nNICE TO SEE YOU TODAY!");
     defaultIdleExpr = prefs.getString("idle_expr", "default");
     standbyMode = prefs.getString("standby", "default");
-    btnSingleAction = prefs.getString("btn_single", "random_face");
-    btnDoubleAction = prefs.getString("btn_double", "happy_face");
-    btnLongAction = prefs.getString("btn_long", "greeting");
     prefs.end();
   }
 }
@@ -1476,15 +1468,6 @@ void saveIdleExprToNVS(const String& expr) {
 void saveStandbyModeToNVS(const String& mode) {
   if (prefs.begin("sodabot", false)) {
     prefs.putString("standby", mode);
-    prefs.end();
-  }
-}
-
-void saveButtonActionsToNVS(const String& s, const String& d, const String& l) {
-  if (prefs.begin("sodabot", false)) {
-    if (s.length() > 0) prefs.putString("btn_single", s);
-    if (d.length() > 0) prefs.putString("btn_double", d);
-    if (l.length() > 0) prefs.putString("btn_long", l);
     prefs.end();
   }
 }
@@ -1675,107 +1658,6 @@ void handleUserCustomFunction(const String& cmd) {
   }
 }
 
-void executeLocalButtonAction(const String& act, const char* clickType) {
-  if (act.length() == 0 || act == "none" || act == "없음") return;
-  lastActivityTime = millis();
-  if (isStandbyActive) { isStandbyActive = false; }
-  broadcastButtonEvent(clickType, act);
-
-  // 1. 사용자 정의 함수 (custom:xxx 또는 사용자 등록 함수명) 처리
-  if (act.startsWith("custom:")) {
-    String fn = act.substring(7);
-    handleUserCustomFunction(fn);
-    return;
-  }
-
-  // 2. 기본 내장 기능 처리
-  if (act == "weather" || act == "날씨") {
-    showTodayWeather();
-  } else if (act == "random_face") {
-    int count = sizeof(EXPRESSIONS_POOL) / sizeof(EXPRESSIONS_POOL[0]);
-    int r = random(0, count);
-    triggerExpressionByName(EXPRESSIONS_POOL[r]);
-    if (speakerReady) playToneI2S(1200, 50);
-  } else if (act == "next_face") {
-    int count = sizeof(EXPRESSIONS_POOL) / sizeof(EXPRESSIONS_POOL[0]);
-    exprPoolIndex = (exprPoolIndex + 1) % count;
-    triggerExpressionByName(EXPRESSIONS_POOL[exprPoolIndex]);
-    if (speakerReady) playToneI2S(1000, 50);
-  } else if (act == "happy_face" || act == "happy") {
-    triggerExpressionByName("happy");
-    if (speakerReady) playToneI2S(1000, 80);
-  } else if (act == "wink_face" || act == "wink") {
-    triggerExpressionByName("wink");
-    if (speakerReady) playToneI2S(1100, 80);
-  } else if (act == "greeting") {
-    drawMessage(welcomeMsg.length() > 0 ? welcomeMsg : "HELLO!\nI AM LUMI :)", 0);
-    sleeping = false; customExpression = true; expressionUntil = millis() + 4000;
-    if (speakerReady) { playToneI2S(523, 120); playToneI2S(659, 120); playToneI2S(784, 200); }
-  } else if (act == "play_sound") {
-    if (speakerReady) { playToneI2S(400, 100); playToneI2S(600, 150); }
-  } else if (act == "default_face" || act == "default") {
-    idleEyes();
-    customExpression = false; sleeping = false;
-    if (speakerReady) playToneI2S(800, 60);
-  } else {
-    // 등록된 사용자 함수명이 직접 전달되었거나 알 수 없는 액션일 경우 사용자 함수 핸들러로 전달
-    handleUserCustomFunction(act);
-  }
-}
-
-void checkHardwareButton() {
-  static bool lastBtnState = HIGH;
-  static unsigned long pressStartTime = 0;
-  static unsigned long lastReleaseTime = 0;
-  static int clickCount = 0;
-  static bool longPressTriggered = false;
-
-  static bool rawBtnState = HIGH;
-  static bool stableBtnState = HIGH;
-  static unsigned long rawChangedAt = 0;
-  unsigned long now = millis();
-  bool raw = digitalRead(BUTTON_PIN);
-  if (raw != rawBtnState) { rawBtnState = raw; rawChangedAt = now; }
-  if (now - rawChangedAt >= 30) stableBtnState = raw;
-  bool currentBtnState = stableBtnState;
-
-  // 버튼 눌림 시작 (Falling Edge: HIGH -> LOW)
-  if (lastBtnState == HIGH && currentBtnState == LOW) {
-    pressStartTime = now;
-    longPressTriggered = false;
-    lastActivityTime = now;
-    if (isStandbyActive) { isStandbyActive = false; idleEyes(); }
-  }
-  // 버튼 누르고 있는 중 (LOW 유지)
-  else if (lastBtnState == LOW && currentBtnState == LOW) {
-    if (!longPressTriggered && (now - pressStartTime >= 750)) {
-      longPressTriggered = true;
-      clickCount = 0;
-      executeLocalButtonAction(btnLongAction, "long");
-    }
-  }
-  // 버튼에서 손을 뗌 (Rising Edge: LOW -> HIGH)
-  else if (lastBtnState == LOW && currentBtnState == HIGH) {
-    unsigned long pressDuration = now - pressStartTime;
-    if (!longPressTriggered && pressDuration >= 20 && pressDuration < 750) {
-      clickCount++;
-      lastReleaseTime = now;
-      if (clickCount >= 2) {
-        executeLocalButtonAction(btnDoubleAction, "double");
-        clickCount = 0;
-      }
-    }
-  }
-
-  // 1회 클릭 후 더블 클릭 대기 시간(320ms) 만료 시 싱글 클릭 확정 실행
-  if (clickCount == 1 && (now - lastReleaseTime > 320)) {
-    executeLocalButtonAction(btnSingleAction, "single");
-    clickCount = 0;
-  }
-
-  lastBtnState = currentBtnState;
-}
-
 void startWebServerIfReady() {
   if (!webServerStarted && WiFi.status() == WL_CONNECTED) {
     server.begin();
@@ -1887,20 +1769,6 @@ void processMessage(const IncomingMessage& message) {
     saveWelcomeMsgToNVS(welcomeMsg);
     drawMessage(welcomeMsg, 0);
     sleeping = false; customExpression = true; expressionUntil = millis() + 4000;
-  } else if (action == "set_button_action") {
-    if (value.startsWith("{")) {
-      DynamicJsonDocument btnDoc(512);
-      if (!deserializeJson(btnDoc, value)) {
-        if (btnDoc.containsKey("single")) btnSingleAction = btnDoc["single"].as<String>();
-        if (btnDoc.containsKey("double")) btnDoubleAction = btnDoc["double"].as<String>();
-        if (btnDoc.containsKey("long")) btnLongAction = btnDoc["long"].as<String>();
-      }
-    } else {
-      if (doc.containsKey("single")) btnSingleAction = doc["single"].as<String>();
-      if (doc.containsKey("double")) btnDoubleAction = doc["double"].as<String>();
-      if (doc.containsKey("long")) btnLongAction = doc["long"].as<String>();
-    }
-    saveButtonActionsToNVS(btnSingleAction, btnDoubleAction, btnLongAction);
   } else if (action == "set_standby" || action == "set_standby_mode" || action == "set_default_expression" || action == "set_default_expr") {
     if (value.startsWith("{")) {
       DynamicJsonDocument sbDoc(512);
@@ -2403,7 +2271,6 @@ void setup() {
 }
 
 void loop() {
-  checkHardwareButton();
   uploadRecordedConversation();
   startWebServerIfReady();
   ws.cleanupClients();

@@ -1952,168 +1952,53 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
           </div>
 
 
-          {/* Card 3: 단일 물리 버튼 동작 설정 */}
-          <div id="card-button-settings" className="bg-white border border-[#E5E5E3] hover:border-neutral-300 rounded-2xl p-5 shadow-2xs flex flex-col justify-between transition-all scroll-mt-6">
+          {/* Card 3: 커스텀 아두이노 기능 관리 */}
+          <div id="card-custom-functions" className="bg-white border border-[#E5E5E3] hover:border-neutral-300 rounded-2xl p-5 shadow-2xs flex flex-col justify-between transition-all scroll-mt-6">
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="w-5 h-5 rounded-md bg-neutral-100 border border-neutral-200/80 text-[11px] font-bold text-neutral-700 flex items-center justify-center">3</span>
-                  <span className="text-xs font-bold text-[#191919]">물리 버튼 동작 설정</span>
+                  <span className="text-xs font-bold text-[#191919]">커스텀 기능 관리</span>
                 </div>
-                <Sliders className="w-4 h-4 text-neutral-400" />
+                <Sparkles className="w-4 h-4 text-amber-500" />
               </div>
-              <div className="flex items-center justify-between">
+              
+              <div className="space-y-1.5">
                 <p className="text-[11px] text-[#787774] leading-relaxed">
-                  단일 버튼에 기본 기능 및 내가 만든 아두이노 기능을 연결합니다.
+                  소다봇에 추가할 나만의 커스텀 아두이노 기능을 등록하고 관리합니다.
                 </p>
-              </div>
-
-              {/* Single Button 3 Actions */}
-              <div className="space-y-2 pt-0.5">
-                {/* 1. Single Click */}
-                <div className="p-2 bg-[#FBFBFA] rounded-xl border border-[#EBEBEA] space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-[#191919] flex items-center gap-1">
-                      <span>🔘</span> 한 번 누름 (클릭)
-                    </span>
-                    <button
-                      onClick={() => executeButtonAction(btnSingleClick, '한 번 누름')}
-                      className="px-1.5 py-0.5 bg-white hover:bg-neutral-100 text-neutral-700 border border-[#E5E5E3] text-[9px] font-semibold rounded transition-colors"
-                      title="화면 및 소다봇에서 테스트"
-                    >
-                      테스트
-                    </button>
-                  </div>
-                  <select
-                    value={btnSingleClick}
-                    onChange={(e) => setBtnSingleClick(e.target.value)}
-                    aria-label="한 번 누름 동작 선택"
-                    className="w-full text-[10px] font-medium text-[#191919] bg-white border border-[#E5E5E3] rounded-lg px-2 py-1 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 cursor-pointer shadow-2xs transition-all"
-                  >
-                    <optgroup label="🤖 기본 기능">
-                      {baseButtonActions.map((opt) => (
-                        <option key={opt.id} value={opt.id}>{opt.label}</option>
-                      ))}
-                    </optgroup>
-                    <optgroup label="✨ 내가 만든 기능">
-                      {customFunctions.length === 0 ? (
-                        <option disabled value="">아직 등록된 기능이 없습니다</option>
-                      ) : (
-                        customFunctions.map((fn) => (
-                          <option key={fn.id} value={`custom:${fn.slot}`}>
-                            ✨ {fn.name} ({fn.arduinoFunction}())
-                          </option>
-                        ))
-                      )}
-                    </optgroup>
-                  </select>
-                </div>
-
-                {/* 2. Double Click */}
-                <div className="p-2 bg-[#FBFBFA] rounded-xl border border-[#EBEBEA] space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-[#191919] flex items-center gap-1">
-                      <span>⚡️</span> 더블 클릭 (2회)
-                    </span>
-                    <button
-                      onClick={() => executeButtonAction(btnDoubleClick, '더블 클릭')}
-                      className="px-1.5 py-0.5 bg-white hover:bg-neutral-100 text-neutral-700 border border-[#E5E5E3] text-[9px] font-semibold rounded transition-colors"
-                      title="화면 및 소다봇에서 테스트"
-                    >
-                      테스트
-                    </button>
-                  </div>
-                  <select
-                    value={btnDoubleClick}
-                    onChange={(e) => setBtnDoubleClick(e.target.value)}
-                    aria-label="더블 클릭 동작 선택"
-                    className="w-full text-[10px] font-medium text-[#191919] bg-white border border-[#E5E5E3] rounded-lg px-2 py-1 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 cursor-pointer shadow-2xs transition-all"
-                  >
-                    <optgroup label="🤖 기본 기능">
-                      {baseButtonActions.map((opt) => (
-                        <option key={opt.id} value={opt.id}>{opt.label}</option>
-                      ))}
-                    </optgroup>
-                    <optgroup label="✨ 내가 만든 기능">
-                      {customFunctions.length === 0 ? (
-                        <option disabled value="">아직 등록된 기능이 없습니다</option>
-                      ) : (
-                        customFunctions.map((fn) => (
-                          <option key={fn.id} value={`custom:${fn.slot}`}>
-                            ✨ {fn.name} ({fn.arduinoFunction}())
-                          </option>
-                        ))
-                      )}
-                    </optgroup>
-                  </select>
-                </div>
-
-                {/* 3. Long Press */}
-                <div className="p-2 bg-[#FBFBFA] rounded-xl border border-[#EBEBEA] space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-[#191919] flex items-center gap-1">
-                      <span>⏳</span> 길게 누름 (1초)
-                    </span>
-                    <button
-                      onClick={() => executeButtonAction(btnLongPress, '길게 누름')}
-                      className="px-1.5 py-0.5 bg-white hover:bg-neutral-100 text-neutral-700 border border-[#E5E5E3] text-[9px] font-semibold rounded transition-colors"
-                      title="화면 및 소다봇에서 테스트"
-                    >
-                      테스트
-                    </button>
-                  </div>
-                  <select
-                    value={btnLongPress}
-                    onChange={(e) => setBtnLongPress(e.target.value)}
-                    aria-label="길게 누름 동작 선택"
-                    className="w-full text-[10px] font-medium text-[#191919] bg-white border border-[#E5E5E3] rounded-lg px-2 py-1 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 cursor-pointer shadow-2xs transition-all"
-                  >
-                    <optgroup label="🤖 기본 기능">
-                      {baseButtonActions.map((opt) => (
-                        <option key={opt.id} value={opt.id}>{opt.label}</option>
-                      ))}
-                    </optgroup>
-                    <optgroup label="✨ 내가 만든 기능">
-                      {customFunctions.length === 0 ? (
-                        <option disabled value="">아직 등록된 기능이 없습니다</option>
-                      ) : (
-                        customFunctions.map((fn) => (
-                          <option key={fn.id} value={`custom:${fn.slot}`}>
-                            ✨ {fn.name} ({fn.arduinoFunction}())
-                          </option>
-                        ))
-                      )}
-                    </optgroup>
-                  </select>
+                <div className="p-2 bg-indigo-50/70 border border-indigo-100 rounded-xl flex items-center gap-1.5 text-[10px] text-indigo-800 font-medium">
+                  <span>🎙️</span>
+                  <span>물리 버튼은 <strong>실시간 음성 대화 (Push-to-Talk)</strong> 전용으로 작동합니다.</span>
                 </div>
               </div>
 
               {/* 내가 등록한 기능 목록 */}
-              <div className="space-y-1.5 pt-2 border-t border-[#E5E5E3]">
+              <div className="space-y-2 pt-1 border-t border-[#E5E5E3]">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-bold text-[#191919]">
                     내가 등록한 기능 ({customFunctions.length}/3)
                   </span>
-                  <span className="text-[9px] text-[#787774]">슬롯 관리</span>
+                  <span className="text-[9px] text-[#787774]">슬롯 3개 지원</span>
                 </div>
 
                 {customFunctions.length === 0 ? (
-                  <div className="p-3 bg-[#FBFBFA] border border-[#EBEBEA] rounded-xl text-center space-y-0.5">
-                    <p className="text-[11px] font-medium text-neutral-600">
+                  <div className="p-4 bg-[#FBFBFA] border border-[#EBEBEA] rounded-xl text-center space-y-1">
+                    <p className="text-[11px] font-bold text-neutral-700">
                       아직 등록된 기능이 없습니다.
                     </p>
                     <p className="text-[10px] text-[#787774]">
-                      Arduino에서 코드를 작성한 후 새 기능을 등록해보세요.
+                      아래 '+ 커스텀 기능 추가' 버튼을 눌러 새 기능을 등록해보세요.
                     </p>
                   </div>
                 ) : (
-                  <div className="space-y-1.5">
+                  <div className="space-y-2">
                     {customFunctions.map((fn) => {
                       const slotObj = USER_FUNCTION_SLOTS.find(s => s.slot === fn.slot);
                       return (
                         <div 
                           key={fn.id} 
-                          className="p-2.5 bg-[#FBFBFA] border border-[#EBEBEA] rounded-xl space-y-2 transition-all hover:border-neutral-300"
+                          className="p-3 bg-[#FBFBFA] border border-[#EBEBEA] rounded-xl space-y-2 transition-all hover:border-neutral-300"
                         >
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
@@ -2134,31 +2019,35 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-1.5 pt-1.5 border-t border-neutral-200/50 flex-wrap">
+                          <div className="flex items-center gap-1.5 pt-2 border-t border-neutral-200/50 flex-wrap">
+                            <button
+                              onClick={() => {
+                                const customCmd = `custom:${fn.slot}`;
+                                sendWsCommand(customCmd, '', `커스텀 기능 실행 (${fn.name})`);
+                                showToast(`🚀 '${fn.name}' (${fn.arduinoFunction}()) 기능을 실행했습니다!`);
+                              }}
+                              className="py-1 px-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-[10px] font-bold rounded-lg flex items-center justify-center gap-1 transition-all cursor-pointer active:scale-95 shadow-2xs"
+                              title="소다봇에서 이 기능을 즉시 실행합니다"
+                            >
+                              <span>▶️ 실행</span>
+                            </button>
                             <button
                               onClick={() => handleCopyCustomFunctionCode(fn)}
-                              className="flex-1 py-1.5 px-2 bg-blue-50/70 hover:bg-blue-100 text-blue-700 border border-blue-200 text-[10px] font-semibold rounded-lg flex items-center justify-center gap-1 transition-all cursor-pointer active:scale-95 shadow-2xs"
+                              className="flex-1 py-1 px-2 bg-blue-50/70 hover:bg-blue-100 text-blue-700 border border-blue-200 text-[10px] font-semibold rounded-lg flex items-center justify-center gap-1 transition-all cursor-pointer active:scale-95 shadow-2xs"
                               title="이 기능이 합쳐진 전체 Arduino 펌웨어 코드를 복사합니다"
                             >
                               {copiedFuncId === fn.id ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3 text-blue-600" />}
                               <span>{copiedFuncId === fn.id ? '복사 완료!' : '전체 코드 복사'}</span>
                             </button>
                             <button
-                              onClick={() => setConnectTargetFunc(fn)}
-                              className="py-1.5 px-2 bg-white hover:bg-neutral-50 text-neutral-700 border border-[#E5E5E3] text-[10px] font-medium rounded-lg flex items-center justify-center gap-1 transition-all cursor-pointer"
-                            >
-                              <Link className="w-3 h-3 text-neutral-400" />
-                              버튼 연결
-                            </button>
-                            <button
                               onClick={() => handleOpenEditFuncModal(fn)}
-                              className="py-1.5 px-2 bg-white hover:bg-neutral-50 text-neutral-700 border border-[#E5E5E3] text-[10px] font-medium rounded-lg transition-all cursor-pointer"
+                              className="py-1 px-2 bg-white hover:bg-neutral-50 text-neutral-700 border border-[#E5E5E3] text-[10px] font-medium rounded-lg transition-all cursor-pointer"
                             >
                               수정
                             </button>
                             <button
                               onClick={() => handleRequestDeleteFunction(fn)}
-                              className="py-1.5 px-2 bg-white hover:bg-rose-50 text-neutral-500 hover:text-rose-600 border border-[#E5E5E3] text-[10px] font-medium rounded-lg transition-all cursor-pointer"
+                              className="py-1 px-2 bg-white hover:bg-rose-50 text-neutral-500 hover:text-rose-600 border border-[#E5E5E3] text-[10px] font-medium rounded-lg transition-all cursor-pointer"
                             >
                               삭제
                             </button>
@@ -2185,24 +2074,6 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
                 )}
               </div>
             </div>
-
-            <button 
-              onClick={() => {
-                localStorage.setItem('sodabot_btn_single', btnSingleClick);
-                localStorage.setItem('sodabot_btn_double', btnDoubleClick);
-                localStorage.setItem('sodabot_btn_long', btnLongPress);
-                sendWsCommand("set_button_action", JSON.stringify({
-                  single: btnSingleClick,
-                  double: btnDoubleClick,
-                  long: btnLongPress
-                }), "단일 버튼 동작 설정 저장 및 전송");
-                showToast('단일 버튼 동작 설정이 저장 및 소다봇에 적용되었습니다!');
-              }}
-              className="mt-3 w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl transition-colors shadow-2xs flex items-center justify-center gap-1.5 cursor-pointer"
-            >
-              <Save className="w-3.5 h-3.5" />
-              저장 후 소다봇에 적용
-            </button>
           </div>
 
 
