@@ -2624,6 +2624,7 @@ export default function App() {
                   dynamicCode = dynamicCode.replace(/const char\* password = ".*?";/, `const char* password = "${userPass}";`);
                 }
                 if (cleanRobotName) {
+                  dynamicCode = dynamicCode.replace(/const char\* SODA_BLE_NAME = ".*?";/, `const char* SODA_BLE_NAME = "SODABOT_${cleanRobotName}";`);
                   dynamicCode = dynamicCode.replace(/BLEDevice::init\("SODABOT_.*?"\);/, `BLEDevice::init("SODABOT_${cleanRobotName}");`);
                 }
                 if (userApiKey) {
