@@ -8,6 +8,7 @@ import SodaAiLabScreen from "./components/SodaAiLabScreen";
 import DevCodeHubScreen from "./components/DevCodeHubScreen";
 import AdminCourseManagerModal from "./components/AdminCourseManagerModal";
 import soda63Code from "../firmware/soda-6-3.ino?raw";
+import soda81Code from "../firmware/soda-8-1.ino?raw";
 import {
   Sparkles,
   Plus,
@@ -70,6 +71,7 @@ export default function App() {
   const [courseContents, setCourseContents] = useState<CourseContent[]>([]);
   const [expandedWeeks, setExpandedWeeks] = useState<number[]>([1]);
   const [isWeek67Expanded, setIsWeek67Expanded] = useState<boolean>(true);
+  const [isWeek8Expanded, setIsWeek8Expanded] = useState<boolean>(true);
   const [selectedDevCodeId, setSelectedDevCodeId] = useState<string>("content-week-1-sound");
 
   // Load course contents on mount
@@ -1665,9 +1667,6 @@ export default function App() {
                         )}
                         <span className="truncate">{weekNum}주차 실습</span>
                       </div>
-                      <span className="text-[9px] text-[#86868B] font-mono bg-[#FAF9F6] px-1.5 py-0.5 rounded border border-[#EAE6DF]">
-                        {weekCodes.length}개
-                      </span>
                     </button>
 
                     {/* File Children Rows */}
@@ -1776,12 +1775,12 @@ export default function App() {
                   </div>
                 </button>
 
-                {/* 6~11주차 실습 & AI 연동 메뉴 (소다봇 미연결 시 잠금 처리) */}
+                {/* 6~10주차 실습 & AI 연동 메뉴 (소다봇 미연결 시 잠금 처리) */}
                 <div className="space-y-1 pb-1 pt-1 border-t border-[#EAE6DF]/70">
                   <div className="flex items-center justify-between px-2 py-1 text-[10px] font-bold text-[#86868B] uppercase tracking-wider font-mono">
                     <span className="flex items-center gap-1.5">
                       <FolderCode className="w-3 h-3 text-indigo-600" />
-                      6~11주차 실습 & 연동
+                      6~10주차 실습 & 연동
                     </span>
                     {!isSodabotConnected ? (
                       <span className="text-[9px] text-amber-600 font-extrabold flex items-center gap-0.5 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
@@ -1808,9 +1807,6 @@ export default function App() {
                         )}
                         <span className="truncate">6-7주차 실습</span>
                       </div>
-                      <span className="text-[9px] text-indigo-700 font-mono bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200/60 font-bold">
-                        2개
-                      </span>
                     </button>
 
                     {isWeek67Expanded && (
@@ -1866,7 +1862,7 @@ export default function App() {
                           </span>
                         </button>
 
-                        {/* 3. 소다봇 기본 펌웨어 (마이크 통합 v4) */}
+                        {/* 3. 마이크 입력 테스트 (soda-6-3) */}
                         <button
                           onClick={() => {
                             setCurrentView('firmware_v4');
@@ -1879,7 +1875,7 @@ export default function App() {
                         >
                           <div className="flex items-center gap-1.5 min-w-0">
                             <Code2 className={`w-3.5 h-3.5 shrink-0 ${currentView === 'firmware_v4' ? 'text-blue-600' : 'text-indigo-500'}`} />
-                            <span className="truncate text-xs">3. 소다봇 기본 펌웨어</span>
+                            <span className="truncate text-xs">3. 마이크 입력 테스트</span>
                           </div>
                           <span className="text-[8px] text-indigo-700 bg-indigo-50 border border-indigo-200/60 px-1.5 py-0.5 rounded font-mono font-semibold shrink-0">
                             코드
@@ -1889,38 +1885,79 @@ export default function App() {
                     )}
                   </div>
 
-                  {/* 7주차: 소다봇 빌더 */}
-                  <button
-                    onClick={() => {
-                      if (!isSodabotConnected) {
-                        alert("소다봇이 연결되지 않았습니다. 상단 '소다봇 상태' 카드를 눌러 먼저 기기를 연결해 주세요.");
-                        setCurrentView('sodabot');
-                        return;
-                      }
-                      setCurrentView('sodabot_builder');
-                    }}
-                    className={`w-full text-left px-2.5 py-2 rounded-xl text-xs font-medium flex items-center justify-between transition-all cursor-pointer ${
-                      !isSodabotConnected
-                        ? 'text-[#A1A1A6] hover:bg-neutral-100/50 hover:text-neutral-700'
-                        : currentView === 'sodabot_builder'
-                        ? 'bg-blue-50/70 text-blue-900 font-bold border border-blue-200/70 shadow-2xs'
-                        : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20 hover:text-[#1D1D1F]'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <Sparkles className={`w-3.5 h-3.5 shrink-0 ${isSodabotConnected ? (currentView === 'sodabot_builder' ? 'text-blue-600' : 'text-neutral-600') : 'text-slate-400'}`} />
-                      <span className="truncate">7주차: 소다봇 빌더</span>
-                    </div>
-                    {!isSodabotConnected ? (
-                      <Lock className="w-3 h-3 text-neutral-400 shrink-0" />
-                    ) : (
-                      <span className="text-[9px] text-neutral-700 bg-neutral-100 border border-neutral-200 px-1.5 py-0.5 rounded font-mono font-semibold shrink-0">
-                        빌더
-                      </span>
-                    )}
-                  </button>
+                  {/* 8주차 실습 폴더 */}
+                  <div className="space-y-0.5">
+                    <button
+                      onClick={() => setIsWeek8Expanded(!isWeek8Expanded)}
+                      className="w-full text-left px-2 py-1.5 rounded-xl text-xs font-bold flex items-center justify-between text-[#1D1D1F] hover:bg-[#EAE6DF]/40 transition-colors cursor-pointer group"
+                    >
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        {isWeek8Expanded ? (
+                          <ChevronDown className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                        ) : (
+                          <ChevronRight className="w-3.5 h-3.5 text-[#86868B] shrink-0" />
+                        )}
+                        <span className="truncate">8주차 실습</span>
+                      </div>
+                    </button>
 
-                  {/* 8주차: 소다와 대화하기 */}
+                    {isWeek8Expanded && (
+                      <div className="pl-3.5 space-y-0.5 border-l-2 border-indigo-100 ml-3.5 my-1">
+                        {/* 1. 8주차 기본 펌웨어 (soda-8-1) */}
+                        <button
+                          onClick={() => {
+                            setCurrentView('firmware_v8');
+                          }}
+                          className={`w-full text-left px-2.5 py-1.5 rounded-xl text-xs font-medium flex items-center justify-between transition-all cursor-pointer ${
+                            currentView === 'firmware_v8'
+                              ? 'bg-blue-50/70 text-blue-900 font-bold border border-blue-200/70 shadow-2xs'
+                              : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20 hover:text-[#1D1D1F]'
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <Code2 className={`w-3.5 h-3.5 shrink-0 ${currentView === 'firmware_v8' ? 'text-blue-600' : 'text-indigo-500'}`} />
+                            <span className="truncate text-xs">1. 소다봇 기본 펌웨어</span>
+                          </div>
+                          <span className="text-[8px] text-indigo-700 bg-indigo-50 border border-indigo-200/60 px-1.5 py-0.5 rounded font-mono font-semibold shrink-0">
+                            코드
+                          </span>
+                        </button>
+
+                        {/* 2. 소다봇 빌더 */}
+                        <button
+                          onClick={() => {
+                            if (!isSodabotConnected) {
+                              alert("소다봇이 연결되지 않았습니다. 상단 '소다봇 상태' 카드를 눌러 먼저 기기를 연결해 주세요.");
+                              setCurrentView('sodabot');
+                              return;
+                            }
+                            setCurrentView('sodabot_builder');
+                          }}
+                          className={`w-full text-left px-2.5 py-1.5 rounded-xl text-xs font-medium flex items-center justify-between transition-all cursor-pointer ${
+                            !isSodabotConnected
+                              ? 'text-[#A1A1A6] hover:bg-neutral-100/50 hover:text-neutral-700'
+                              : currentView === 'sodabot_builder'
+                              ? 'bg-blue-50/70 text-blue-900 font-bold border border-blue-200/70 shadow-2xs'
+                              : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20 hover:text-[#1D1D1F]'
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <Sparkles className={`w-3.5 h-3.5 shrink-0 ${isSodabotConnected ? (currentView === 'sodabot_builder' ? 'text-blue-600' : 'text-neutral-600') : 'text-slate-400'}`} />
+                            <span className="truncate text-xs">2. 소다봇 빌더</span>
+                          </div>
+                          {!isSodabotConnected ? (
+                            <Lock className="w-3 h-3 text-neutral-400 shrink-0" />
+                          ) : (
+                            <span className="text-[8px] text-blue-700 bg-blue-50 border border-blue-200/60 px-1.5 py-0.5 rounded font-mono font-semibold shrink-0">
+                              빌더
+                            </span>
+                          )}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 9주차: 소다와 대화하기 */}
                   <button
                     onClick={() => {
                       if (!isSodabotConnected) {
@@ -1940,7 +1977,7 @@ export default function App() {
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       <MessageSquare className={`w-3.5 h-3.5 shrink-0 ${isSodabotConnected ? (currentView === 'chat' ? 'text-blue-600' : 'text-neutral-600') : 'text-slate-400'}`} />
-                      <span className="truncate">8주차: 소다와 대화하기</span>
+                      <span className="truncate">9주차: 소다와 대화하기</span>
                     </div>
                     {!isSodabotConnected ? (
                       <Lock className="w-3 h-3 text-neutral-400 shrink-0" />
@@ -1951,7 +1988,7 @@ export default function App() {
                     )}
                   </button>
 
-                  {/* 9주차: 소다봇 시나리오 & 센서 */}
+                  {/* 10주차: 소다봇 시나리오 & 센서 */}
                   <button
                     onClick={() => {
                       if (!isSodabotConnected) {
@@ -1959,55 +1996,13 @@ export default function App() {
                         setCurrentView('sodabot');
                         return;
                       }
-                      alert("9주차: 소다봇 인터랙션 & 센서 제어 기능은 수업 진행에 맞춰 순차 오픈됩니다.");
+                      alert("10주차: 소다봇 인터랙션 & 센서 제어 기능은 수업 진행에 맞춰 순차 오픈됩니다.");
                     }}
                     className="w-full text-left px-2.5 py-2 rounded-xl text-xs font-medium flex items-center justify-between text-[#86868B] hover:bg-[#EAE6DF]/20 transition-all cursor-pointer opacity-80"
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       <Cpu className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span className="truncate">9주차: 시나리오 & 센서</span>
-                    </div>
-                    <span className="text-[9px] text-[#86868B] bg-[#FAF9F6] border border-[#EAE6DF] px-1.5 py-0.5 rounded font-mono shrink-0">
-                      준비중
-                    </span>
-                  </button>
-
-                  {/* 10주차: 웹 API & 클라우드 연동 */}
-                  <button
-                    onClick={() => {
-                      if (!isSodabotConnected) {
-                        alert("소다봇이 연결되지 않았습니다. 상단 '소다봇 상태' 카드를 눌러 먼저 기기를 연결해 주세요.");
-                        setCurrentView('sodabot');
-                        return;
-                      }
-                      alert("10주차: 웹 API & 클라우드 연동 실습은 수업 진행에 맞춰 순차 오픈됩니다.");
-                    }}
-                    className="w-full text-left px-2.5 py-2 rounded-xl text-xs font-medium flex items-center justify-between text-[#86868B] hover:bg-[#EAE6DF]/20 transition-all cursor-pointer opacity-80"
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <Wifi className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span className="truncate">10주차: 웹 API & 클라우드</span>
-                    </div>
-                    <span className="text-[9px] text-[#86868B] bg-[#FAF9F6] border border-[#EAE6DF] px-1.5 py-0.5 rounded font-mono shrink-0">
-                      준비중
-                    </span>
-                  </button>
-
-                  {/* 11주차: 캡스톤 최종 프로젝트 */}
-                  <button
-                    onClick={() => {
-                      if (!isSodabotConnected) {
-                        alert("소다봇이 연결되지 않았습니다. 상단 '소다봇 상태' 카드를 눌러 먼저 기기를 연결해 주세요.");
-                        setCurrentView('sodabot');
-                        return;
-                      }
-                      alert("11주차: 나만의 소다봇 캡스톤 프로젝트 발표 실습은 수업 진행에 맞춰 순차 오픈됩니다.");
-                    }}
-                    className="w-full text-left px-2.5 py-2 rounded-xl text-xs font-medium flex items-center justify-between text-[#86868B] hover:bg-[#EAE6DF]/20 transition-all cursor-pointer opacity-80"
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span className="truncate">11주차: 캡스톤 프로젝트</span>
+                      <span className="truncate">10주차: 시나리오 & 센서</span>
                     </div>
                     <span className="text-[9px] text-[#86868B] bg-[#FAF9F6] border border-[#EAE6DF] px-1.5 py-0.5 rounded font-mono shrink-0">
                       준비중
@@ -2604,7 +2599,7 @@ export default function App() {
               </div>
             </div>
           </div>
-        ) : currentView === 'firmware_v4' ? (
+        ) : (currentView === 'firmware_v4' || currentView === 'firmware_v8') ? (
           <div className="flex-1 flex flex-col h-screen overflow-y-auto bg-[#FAF9F6] p-4 sm:p-8 scrollbar-thin">
             <div className="max-w-4xl w-full mx-auto space-y-6 animate-fade-in pb-16">
               {/* Header */}
@@ -2616,40 +2611,47 @@ export default function App() {
                 const userApiKey = user?.personalApiKey || localStorage.getItem(`sodabot_${userKey}_api_key`) || '';
                 const cleanRobotName = userCustomName.replace(/[^a-zA-Z0-9_-]/g, '') || (user?.displayName ? user.displayName.replace(/[^a-zA-Z0-9_-]/g, '') : 'ROBOT');
 
-                let dynamicCode = soda63Code;
-                if (userSsid) {
-                  dynamicCode = dynamicCode.replace(/const char\* ssid = ".*?";/, `const char* ssid = "${userSsid}";`);
+                const isWeek8 = currentView === 'firmware_v8';
+                let dynamicCode = isWeek8 ? soda81Code : soda63Code;
+                if (isWeek8) {
+                  if (userSsid) {
+                    dynamicCode = dynamicCode.replace(/const char\* ssid = ".*?";/, `const char* ssid = "${userSsid}";`);
+                  }
+                  if (userPass) {
+                    dynamicCode = dynamicCode.replace(/const char\* password = ".*?";/, `const char* password = "${userPass}";`);
+                  }
+                  if (cleanRobotName) {
+                    dynamicCode = dynamicCode.replace(/const char\* SODA_BLE_NAME = ".*?";/, `const char* SODA_BLE_NAME = "SODABOT_${cleanRobotName}";`);
+                    dynamicCode = dynamicCode.replace(/BLEDevice::init\("SODABOT_.*?"\);/, `BLEDevice::init("SODABOT_${cleanRobotName}");`);
+                  }
+                  if (userApiKey) {
+                    dynamicCode = dynamicCode.replace(/const char\* DEFAULT_SODA_API_KEY = ".*?";/, `const char* DEFAULT_SODA_API_KEY = "${userApiKey}";`);
+                  }
+                  if (window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+                    dynamicCode = dynamicCode.replace(/const char\* SODA_SERVER_HOST = ".*?";/, `const char* SODA_SERVER_HOST = "${window.location.hostname}";`);
+                  }
                 }
-                if (userPass) {
-                  dynamicCode = dynamicCode.replace(/const char\* password = ".*?";/, `const char* password = "${userPass}";`);
-                }
-                if (cleanRobotName) {
-                  dynamicCode = dynamicCode.replace(/const char\* SODA_BLE_NAME = ".*?";/, `const char* SODA_BLE_NAME = "SODABOT_${cleanRobotName}";`);
-                  dynamicCode = dynamicCode.replace(/BLEDevice::init\("SODABOT_.*?"\);/, `BLEDevice::init("SODABOT_${cleanRobotName}");`);
-                }
-                if (userApiKey) {
-                  dynamicCode = dynamicCode.replace(/const char\* DEFAULT_SODA_API_KEY = ".*?";/, `const char* DEFAULT_SODA_API_KEY = "${userApiKey}";`);
-                }
-                if (window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-                  dynamicCode = dynamicCode.replace(/const char\* SODA_SERVER_HOST = ".*?";/, `const char* SODA_SERVER_HOST = "${window.location.hostname}";`);
-                }
+
+                const fileBaseName = isWeek8 ? `soda-8-1_${cleanRobotName}` : `soda-6-3_mic_test`;
 
                 return (
                   <>
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-white p-5 rounded-2xl border border-[#EAE6DF] shadow-xs gap-4">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-200 flex items-center justify-center text-xl shrink-0">
-                          💻
+                          {isWeek8 ? '🤖' : '🎙️'}
                         </div>
                         <div>
                           <h2 className="text-base sm:text-lg font-black text-[#1D1D1F] flex items-center gap-2 flex-wrap">
-                            <span>6-7주차: 소다봇 기본 펌웨어</span>
+                            <span>{isWeek8 ? '8주차: 소다봇 기본 펌웨어' : '6-7주차: 마이크 입력 테스트'}</span>
                             <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 font-mono font-bold">
-                              마이크 통합 v4
+                              {isWeek8 ? '소다봇 빌더 통합 v4' : '사운드 레벨 측정'}
                             </span>
                           </h2>
                           <p className="text-xs text-[#86868B]">
-                            ESP32-S3 기반 BLE, Wi-Fi, 2.0" LCD, I2S 스피커/마이크 및 물리 버튼 통합 표준 아두이노 코드입니다.
+                            {isWeek8
+                              ? 'ESP32-S3 기반 BLE, Wi-Fi, 2.0" LCD, I2S 스피커/마이크, Push-to-Talk 실시간 음성인식, 실시간 시계(NTP) 및 커스텀 기능 통합 표준 아두이노 코드입니다.'
+                              : '물리 버튼(GPIO 4)을 누르고 있는 동안에만 마이크가 활성화되어 소리 크기(VU 미터)를 2.0" LCD와 시리얼 모니터로 실시간 측정하는 6주차 마이크 테스트 실습 펌웨어입니다.'}
                           </p>
                         </div>
                       </div>
@@ -2677,7 +2679,7 @@ export default function App() {
                             const url = URL.createObjectURL(blob);
                             const a = document.createElement('a');
                             a.href = url;
-                            a.download = `soda-6-3_${cleanRobotName}.ino`;
+                            a.download = `${fileBaseName}.ino`;
                             a.click();
                             URL.revokeObjectURL(url);
                           }}
@@ -2714,7 +2716,7 @@ export default function App() {
                           <span className="w-3 h-3 rounded-full bg-emerald-500/80 inline-block" />
                           <span className="font-mono text-neutral-300 ml-2 font-bold flex items-center gap-1.5">
                             <Code2 className="w-3.5 h-3.5 text-indigo-400" />
-                            soda-6-3_{cleanRobotName}.ino
+                            {fileBaseName}.ino
                           </span>
                         </div>
 

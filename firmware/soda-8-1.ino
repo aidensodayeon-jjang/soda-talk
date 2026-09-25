@@ -79,6 +79,19 @@ const char* SODA_TTS_PATH = "/api/hw/tts";
 const char* DEFAULT_SODA_API_KEY = "sk-soda-9597fe97de4771e361b8a171c9aefd7b";
 String sodaApiKey;
 
+// 3가지 음성 인터랙션 전용 표정 전방 선언
+void listeningFace();
+void thinkingFace();
+void answeringFace();
+void drawListeningFaceFrame(int waveLevel);
+void drawThinkingFaceFrame(int frame);
+void drawAnsweringFaceFrame(bool mouthOpen);
+void updateTalkingMouth(bool open);
+void renderDefaultIdleFace();
+void confusedEyes();
+extern bool customExpression;
+extern unsigned long expressionUntil;
+
 bool micReady = false;
 int16_t* voicePcm = nullptr;
 volatile size_t voiceSampleCount = 0;
@@ -152,6 +165,9 @@ void microphoneTask(void*) {
           recordStarted = now;
           Serial.println("[버튼] 버튼 눌림을 감지했습니다.");
           Serial.println("[녹음 시작] 버튼을 누른 채 말해주세요.");
+          customExpression = true;
+          expressionUntil = millis() + 30000;
+          listeningFace();
         }
       } else {
         uint32_t duration = now - recordStarted;
@@ -159,10 +175,15 @@ void microphoneTask(void*) {
         if (duration < MIN_RECORD_MS || voiceSampleCount == 0) {
           voiceSampleCount = 0;
           Serial.println("[녹음 취소] 너무 짧습니다. 버튼을 조금 더 길게 누르고 말해주세요.");
+          customExpression = false;
+          renderDefaultIdleFace();
         } else {
           Serial.printf("[녹음 완료] %.2f초, %u개 샘플을 서버로 보냅니다.\n",
                         voiceSampleCount / (float)MIC_SAMPLE_RATE,
                         (unsigned)voiceSampleCount);
+          thinkingFace();
+          customExpression = true;
+          expressionUntil = millis() + 60000;
           voiceUploadPending.store(true);
         }
       }
@@ -179,17 +200,20 @@ void microphoneTask(void*) {
         voicePcm[voiceSampleCount++] = static_cast<int16_t>(sample);
         sum += static_cast<double>(sample) * sample;
       }
-      if (now - lastLevelLog >= 500 && count > 0) {
+      if (now - lastLevelLog >= 150 && count > 0) {
         lastLevelLog = now;
+        double rms = sqrt(sum / count);
+        int waveLvl = constrain((int)(rms / 400.0), 1, 4);
+        drawListeningFaceFrame(waveLvl);
         Serial.printf("[녹음 중] 소리가 감지되고 있습니다. (크기: %.0f, %.1f초)\n",
-                      sqrt(sum / count), voiceSampleCount / (float)MIC_SAMPLE_RATE);
+                      rms, voiceSampleCount / (float)MIC_SAMPLE_RATE);
       }
       if (voiceSampleCount >= MAX_RECORD_SAMPLES) {
         pressed = false;
         Serial.println("[녹음 완료] 최대 8초에 도달해 자동으로 전송합니다.");
         voiceUploadPending.store(true);
       }
-    } else if (err != ESP_OK && now - lastStatus >= 1000) {
+    } else if (err != ESP_OK && now - lastStatus >= 3000) {
       lastStatus = now;
       Serial.printf("[오류] 마이크 읽기 실패: %s\n", esp_err_to_name(err));
     }
@@ -306,20 +330,204 @@ void happyEyes() {
   }
 }
 
-// 가로로 좁아진 눈 (녹음 중)
-void listeningEyes() {
-  tft.fillScreen(LCD_BG_COLOR);
-  drawEye(LEX, EYE_Y, EW, EH / 2, ER, 0, 0);
-  drawEye(REX, EYE_Y, EW, EH / 2, ER, 0, 0);
+// 둥근 사선 캡슐(알약 바) 그리기 헬퍼
+void drawThickCapsule(int x1, int y1, int x2, int y2, int r, uint16_t color) {
+  float dx = x2 - x1;
+  float dy = y2 - y1;
+  float dist = sqrtf(dx * dx + dy * dy);
+  int steps = (int)dist;
+  if (steps == 0) {
+    tft.fillCircle(x1, y1, r, color);
+    return;
+  }
+  for (int i = 0; i <= steps; ++i) {
+    float t = (float)i / steps;
+    int cx = (int)(x1 + dx * t);
+    int cy = (int)(y1 + dy * t);
+    tft.fillCircle(cx, cy, r, color);
+  }
 }
 
-// 눈 위로 굴리기 (생각 중) — 위쪽 절반 마스킹
-void thinkingEyes() {
+// ── 1. 듣고 있어요 (내가 말하는 동안 / 버튼 누를 때: 둥근 사각형 눈 2개 + 양옆 3개 사운드 감지 파동)
+void drawListeningFaceFrame(int waveLevel) {
   tft.fillScreen(LCD_BG_COLOR);
-  drawEye(LEX, EYE_Y, EW, EH, ER, 0, 0);
-  drawEye(REX, EYE_Y, EW, EH, ER, 0, 0);
-  tft.fillRect(LEX - EW/2 - 2, EYE_Y - EH/2 - 2, EW + 4, EH / 2, LCD_BG_COLOR);
-  tft.fillRect(REX - EW/2 - 2, EYE_Y - EH/2 - 2, EW + 4, EH / 2, LCD_BG_COLOR);
+  uint16_t ec = EYE_COLOR;
+
+  // 1. 중앙 둥근 사각형 눈 2개 (Squircle Eyes)
+  constexpr int EYE_W = 76;
+  constexpr int EYE_H = 68;
+  constexpr int EYE_R = 22;
+  constexpr int L_EYE_X = 110;
+  constexpr int R_EYE_X = 210;
+  constexpr int EYE_CENTER_Y = 120;
+
+  tft.fillRoundRect(L_EYE_X - EYE_W / 2, EYE_CENTER_Y - EYE_H / 2, EYE_W, EYE_H, EYE_R, ec);
+  tft.fillRoundRect(R_EYE_X - EYE_W / 2, EYE_CENTER_Y - EYE_H / 2, EYE_W, EYE_H, EYE_R, ec);
+
+  // 2. 소리 감지 파동 색상 (마이크 입력 강도에 따라 밝기 조절)
+  uint16_t waveColor = (waveLevel >= 2) ? tft.color565(56, 189, 248) : ec;
+
+  // 3. 왼쪽 사운드 감지 파동 (위 / 중간 / 아래 3개)
+  drawThickCapsule(60, 104, 38, 82, 5, waveColor);    // 위쪽 대각선 바
+  drawThickCapsule(60, 120, 32, 120, 5, waveColor);   // 중간 수평 바
+  drawThickCapsule(60, 136, 38, 158, 5, waveColor);   // 아래쪽 대각선 바
+
+  // 4. 오른쪽 사운드 감지 파동 (위 / 중간 / 아래 3개)
+  drawThickCapsule(260, 104, 282, 82, 5, waveColor);  // 위쪽 대각선 바
+  drawThickCapsule(260, 120, 288, 120, 5, waveColor); // 중간 수평 바
+  drawThickCapsule(260, 136, 282, 158, 5, waveColor); // 아래쪽 대각선 바
+}
+
+void listeningFace() {
+  drawListeningFaceFrame(3);
+}
+
+void listeningEyes() {
+  listeningFace();
+}
+
+// 회전된 둥근 사각형 그리기 헬퍼
+void drawRotatedSquircle(int cx, int cy, int w, int h, int r, float angleRad, uint16_t color) {
+  float cosA = cosf(angleRad);
+  float sinA = sinf(angleRad);
+  int halfW = w / 2;
+  int halfH = h / 2;
+  int innerHalfW = halfW - r;
+  int innerHalfH = halfH - r;
+  int rSq = r * r;
+
+  // 바운딩 반경
+  int boundR = (int)(sqrtf(halfW * halfW + halfH * halfH) + 1);
+
+  for (int dy = -boundR; dy <= boundR; ++dy) {
+    for (int dx = -boundR; dx <= boundR; ++dx) {
+      float lx = dx * cosA + dy * sinA;
+      float ly = -dx * sinA + dy * cosA;
+
+      float alx = fabsf(lx);
+      float aly = fabsf(ly);
+
+      if (alx <= halfW && aly <= halfH) {
+        bool inside = true;
+        if (alx > innerHalfW && aly > innerHalfH) {
+          float cdx = alx - innerHalfW;
+          float cdy = aly - innerHalfH;
+          if (cdx * cdx + cdy * cdy > rSq) {
+            inside = false;
+          }
+        }
+        if (inside) {
+          tft.drawPixel(cx + dx, cy + dy, color);
+        }
+      }
+    }
+  }
+}
+
+// 큼직하고 둥근 귀여운 물음표 마크 그리기 헬퍼
+void drawThinkingQuestionMark(int cx, int topY, int floatOffset, uint16_t color) {
+  int cy = topY + floatOffset;
+
+  // 1. 상단 둥근 원호 (반지름 16, 중심 cx, cy+18)
+  for (int r = 16; r >= 10; --r) {
+    for (int deg = -45; deg <= 180; ++deg) {
+      float rad = deg * 3.14159265f / 180.0f;
+      int px = cx + (int)(cosf(rad) * r);
+      int py = (cy + 18) - (int)(sinf(rad) * r);
+      tft.drawPixel(px, py, color);
+      tft.drawPixel(px + 1, py, color);
+    }
+  }
+
+  // 2. 중간 꺾여서 내려오는 기둥
+  drawThickCapsule(cx + 8, cy + 18, cx, cy + 28, 4, color);
+  drawThickCapsule(cx, cy + 28, cx, cy + 36, 4, color);
+
+  // 3. 하단 둥근 점
+  tft.fillCircle(cx, cy + 48, 6, color);
+}
+
+// ── 2. 생각 중 (AI의 답을 기다리는 동안: 갸우뚱 기울어진 둥근 사각형 눈 + 상단 둥실둥실 물음표)
+void drawThinkingFaceFrame(int frame) {
+  tft.fillScreen(LCD_BG_COLOR);
+  uint16_t ec = EYE_COLOR;
+
+  // 상단 물음표 부유 애니메이션 (0 -> -3 -> -6 -> -3 px)
+  int floatOffsets[] = { 0, -3, -6, -3 };
+  int dy = floatOffsets[frame % 4];
+  drawThinkingQuestionMark(160, 20, dy, ec);
+
+  // 갸우뚱 기울어진 둥근 사각형 눈 2개 (바깥쪽 아래로 기울어짐)
+  constexpr int EYE_W = 78;
+  constexpr int EYE_H = 66;
+  constexpr int EYE_R = 22;
+  constexpr int EYE_CENTER_Y = 144;
+
+  // 왼쪽 눈: 안쪽이 살짝 올라가고 바깥쪽이 내려간 기울기 (-0.19 rad ≈ -11°)
+  drawRotatedSquircle(100, EYE_CENTER_Y, EYE_W, EYE_H, EYE_R, -0.19f, ec);
+
+  // 오른쪽 눈: 안쪽이 살짝 올라가고 바깥쪽이 내려간 기울기 (+0.19 rad ≈ +11°)
+  drawRotatedSquircle(220, EYE_CENTER_Y, EYE_W, EYE_H, EYE_R, 0.19f, ec);
+}
+
+void thinkingFace() {
+  drawThinkingFaceFrame(0);
+}
+
+void thinkingEyes() {
+  thinkingFace();
+}
+
+// 입 모양 부분 갱신 (답변 중 오디오 립싱크: 꽉 찬 D자형 웃는 입 ↔ 부드러운 닫힌 미소 입)
+void updateTalkingMouth(bool open) {
+  uint16_t ec = EYE_COLOR;
+  // 입 영역만 고속 클리어 (눈 깜빡임 없이 고속 립싱크)
+  tft.fillRect(160 - 45, 150, 90, 60, LCD_BG_COLOR);
+
+  if (open) {
+    // 1. 말하는 중 (열린 입): 이미지와 1:1 일치하는 꽉 찬 D자형 반원 입
+    constexpr int MOUTH_W = 68;
+    constexpr int MOUTH_TOP_Y = 162;
+    constexpr int MOUTH_R = 34;
+
+    // 하단 둥근 반원 채우기
+    tft.fillCircle(160, MOUTH_TOP_Y, MOUTH_R, ec);
+    // 상단 반원 컷팅
+    tft.fillRect(160 - MOUTH_R - 2, MOUTH_TOP_Y - MOUTH_R - 2, (MOUTH_R + 2) * 2, MOUTH_R + 2, LCD_BG_COLOR);
+    // 상단 부드러운 직사각형 덮기
+    tft.fillRoundRect(160 - MOUTH_W / 2, MOUTH_TOP_Y, MOUTH_W, 14, 6, ec);
+  } else {
+    // 2. 닫힌 입 (음절 사이): 얇고 부드러운 둥근 미소 입
+    constexpr int MOUTH_W = 54;
+    constexpr int MOUTH_TOP_Y = 168;
+    constexpr int MOUTH_R = 27;
+
+    tft.fillCircle(160, MOUTH_TOP_Y, MOUTH_R, ec);
+    tft.fillRect(160 - MOUTH_R - 2, MOUTH_TOP_Y - MOUTH_R - 2, (MOUTH_R + 2) * 2, MOUTH_R + 2, LCD_BG_COLOR);
+    tft.fillRoundRect(160 - MOUTH_W / 2, MOUTH_TOP_Y, MOUTH_W, 10, 5, ec);
+  }
+}
+
+// ── 3. 대답해요 (답변 중일 때 화면: 부드러운 둥근 사각형 눈 ■ ■ + 꽉 찬 D자형 웃는 입)
+void drawAnsweringFaceFrame(bool mouthOpen) {
+  tft.fillScreen(LCD_BG_COLOR);
+  uint16_t ec = EYE_COLOR;
+
+  // 부드러운 둥근 사각형 눈 (Squircle Eyes)
+  constexpr int EYE_W = 86;
+  constexpr int EYE_H = 70;
+  constexpr int EYE_R = 24;
+  constexpr int EYE_POS_Y = 106;
+
+  tft.fillRoundRect(LEX - EYE_W / 2, EYE_POS_Y - EYE_H / 2, EYE_W, EYE_H, EYE_R, ec);
+  tft.fillRoundRect(REX - EYE_W / 2, EYE_POS_Y - EYE_H / 2, EYE_W, EYE_H, EYE_R, ec);
+
+  // 꽉 찬 D자형 입 그리기
+  updateTalkingMouth(mouthOpen);
+}
+
+void answeringFace() {
+  drawAnsweringFaceFrame(true);
 }
 
 // 졸린 눈 — 화면 깜빡임 없이 Zzz 영역만 부분 갱신하여 둥실둥실 애니메이션
@@ -689,7 +897,7 @@ void renderCustomFace(const JsonDocument& doc) {
     tft.fillRoundRect(REX - ew/2 + px, EYE_Y - sleepH/2 + py, ew, sleepH, er, eyeColor);
   } else if (s == "heart") {
     // 하트 눈
-    uint16_t hc = eyeColor == EYE_COLOR ? tft.color565(255, 50, 100) : eyeColor;
+    uint16_t hc = tft.color565(255, 50, 100);
     for (int cx : {LEX, REX}) {
       int hx = cx + px;
       int hy = EYE_Y - 8 + py;
@@ -1547,6 +1755,9 @@ void triggerExpressionByName(const String& name) {
   else if (name == "cat") catFace();
   else if (name == "sad") sadEyes();
   else if (name == "angry") angryEyes();
+  else if (name == "listening") listeningFace();
+  else if (name == "thinking") thinkingFace();
+  else if (name == "answering" || name == "speaking") answeringFace();
   else idleEyes();
   sleeping = (name == "sleepy");
   customExpression = (name != "idle" && name != "default" && !sleeping);
@@ -1986,6 +2197,9 @@ bool readAndPlayPcmBytes(WiFiClient& client, size_t length,
                          bool& hasLowByte, uint8_t& lowByte, size_t& receivedBytes) {
   uint8_t buffer[1024];
   uint32_t lastProgress = millis();
+  static uint32_t lastLipSyncTime = 0;
+  static bool lipSyncMouthOpen = false;
+
   while (length > 0) {
     int available = client.available();
     if (available <= 0) {
@@ -1997,6 +2211,14 @@ bool readAndPlayPcmBytes(WiFiClient& client, size_t length,
     int bytesRead = client.read(buffer, toRead);
     if (bytesRead <= 0) continue;
     if (!writePcmToSpeaker(buffer, bytesRead, hasLowByte, lowByte, receivedBytes)) return false;
+
+    // 말하기 립싱크 애니메이션 (180ms 주기 부분 갱신)
+    if (millis() - lastLipSyncTime >= 180) {
+      lipSyncMouthOpen = !lipSyncMouthOpen;
+      updateTalkingMouth(lipSyncMouthOpen);
+      lastLipSyncTime = millis();
+    }
+
     length -= bytesRead;
     lastProgress = millis();
   }
@@ -2199,9 +2421,18 @@ void uploadRecordedConversation() {
   }
 
   uint32_t waitStarted = millis();
-  while (!client.available() && client.connected() && millis() - waitStarted < 90000) delay(10);
+  int thinkFrame = 0;
+  uint32_t lastAnimTime = 0;
+  while (!client.available() && client.connected() && millis() - waitStarted < 90000) {
+    if (millis() - lastAnimTime >= 200) {
+      drawThinkingFaceFrame(thinkFrame++);
+      lastAnimTime = millis();
+    }
+    delay(10);
+  }
   if (!client.available()) {
     Serial.println("[응답 실패] 서버가 90초 안에 응답하지 않았습니다.");
+    confusedEyes();
     client.stop();
     voiceUploadBusy.store(false);
     return;
@@ -2251,11 +2482,13 @@ void uploadRecordedConversation() {
   Serial.println("[음성 인식 결과] " + recognized);
   Serial.println("[소다봇 답변] " + reply);
   Serial.println("──────────────────────────────");
-  drawMessage(reply.length() > 0 ? reply : "음성을 인식하지 못했어요.", 1);
+
+  // 텍스트 대신 '대답해요' 표정(■ ■ 눈과 ◡ 웃는 입)으로 화면 전환
+  answeringFace();
   if (reply.length() > 0) playReplySpeech(reply);
   sleeping = false;
   customExpression = true;
-  expressionUntil = millis() + 8000;
+  expressionUntil = millis() + 6000;
   lastActivityTime = millis();
   voiceUploadBusy.store(false);
 }
@@ -2264,7 +2497,7 @@ void setup() {
   Serial.begin(115200);
   uint32_t serialStarted = millis();
   while (!Serial && millis() - serialStarted < 2000) delay(10);
-  Serial.println("소다봇 7-1: 버튼 음성 대화 펌웨어");
+  Serial.println("소다봇: 마이크 및 음성 대화 펌웨어");
   pinMode(BUTTON_PIN, INPUT_PULLUP);
   incomingQueue = xQueueCreate(6, sizeof(IncomingMessage));
   if (!incomingQueue) { Serial.println("큐 생성 실패"); while (true) delay(1000); }

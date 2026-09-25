@@ -306,6 +306,35 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
     }, 3000);
   };
 
+  // Custom Function Real-time Interactive Test State (표정처럼 선택 시 즉시 테스트)
+  const [selectedCustomSlot, setSelectedCustomSlot] = useState<string>('CUSTOM_1');
+  const [activeCustomFuncSlot, setActiveCustomFuncSlot] = useState<string | null>(null);
+  const customFuncTimeoutRef = React.useRef<any>(null);
+
+  const triggerCustomFunction = (fn: any) => {
+    setSelectedCustomSlot(fn.slot);
+    setActiveCustomFuncSlot(fn.slot);
+
+    // 1. 소다봇 기기로 커스텀 함수 실행 명령 전송 (call_function)
+    sendWsCommand("call_function", fn.slot, `커스텀 기능 테스트 (${fn.name})`);
+
+    // 2. 시계 관련 기능이면 실시간 시간 텍스트 전송 및 시뮬레이터 표시
+    if (fn.name.includes('시계') || fn.slot === 'CUSTOM_1' || (fn.arduinoFunction && fn.arduinoFunction.toLowerCase().includes('clock'))) {
+      setBootingState('time');
+      const now = new Date();
+      const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+      sendWsCommand("send_message", `TIME\n${timeStr}`, `현재 시간 표시 (${timeStr})`);
+    }
+
+    showToast(`⚡ '${fn.name}' (${fn.arduinoFunction || 'customFunction'}()) 테스트 실행 중…`);
+
+    if (customFuncTimeoutRef.current) clearTimeout(customFuncTimeoutRef.current);
+    customFuncTimeoutRef.current = setTimeout(() => {
+      setActiveCustomFuncSlot(null);
+      setBootingState(null);
+    }, 3500);
+  };
+
   // Expression Studio Editor Modal State
   const [showExprEditor, setShowExprEditor] = useState(false);
   const [editorTab, setEditorTab] = useState<'pixel' | 'slider'>('slider');
@@ -804,7 +833,8 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
     try {
       const wifiSsid = localStorage.getItem('sodabot_wifi_ssid') || '';
       const wifiPass = localStorage.getItem('sodabot_wifi_password') || localStorage.getItem('sodabot_wifi_pass') || '';
-      const result = generateCustomFirmware(parts, profileName || 'LUMI', wifiSsid, wifiPass);
+      const userApiKey = currentUser?.personalApiKey || localStorage.getItem('sodabot_api_key') || localStorage.getItem(`sodabot_${currentUser?.id || currentUser?.username}_api_key`) || '';
+      const result = generateCustomFirmware(parts, profileName || 'LUMI', wifiSsid, wifiPass, userApiKey);
       setGenerationResult(result);
 
       // SODA TALK 내 기능 목록에 등록
@@ -868,6 +898,7 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
     try {
       const wifiSsid = localStorage.getItem('sodabot_wifi_ssid') || '';
       const wifiPass = localStorage.getItem('sodabot_wifi_password') || localStorage.getItem('sodabot_wifi_pass') || '';
+      const userApiKey = currentUser?.personalApiKey || localStorage.getItem('sodabot_api_key') || localStorage.getItem(`sodabot_${currentUser?.id || currentUser?.username}_api_key`) || '';
       const parts: CustomCodeParts = {
         name: fn.name,
         description: fn.description,
@@ -877,7 +908,7 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
         functionCode: fn.functionCode || `void ${fn.arduinoFunction || 'customFunction'}() {\n  // 기능 코드\n}`,
         targetSlot: fn.slot
       };
-      const result = generateCustomFirmware(parts, profileName || 'LUMI', wifiSsid, wifiPass);
+      const result = generateCustomFirmware(parts, profileName || 'LUMI', wifiSsid, wifiPass, userApiKey);
       navigator.clipboard.writeText(result.mergedCode);
       setCopiedFuncId(fn.id);
       showToast(`📋 '${fn.name}' 전체 펌웨어 코드가 클립보드에 복사되었습니다!`);
@@ -1952,137 +1983,12 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
           </div>
 
 
-          {/* Card 3: 커스텀 아두이노 기능 관리 */}
-          <div id="card-custom-functions" className="bg-white border border-[#E5E5E3] hover:border-neutral-300 rounded-2xl p-5 shadow-2xs flex flex-col justify-between transition-all scroll-mt-6">
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="w-5 h-5 rounded-md bg-neutral-100 border border-neutral-200/80 text-[11px] font-bold text-neutral-700 flex items-center justify-center">3</span>
-                  <span className="text-xs font-bold text-[#191919]">커스텀 기능 관리</span>
-                </div>
-                <Sparkles className="w-4 h-4 text-amber-500" />
-              </div>
-              
-              <div className="space-y-1.5">
-                <p className="text-[11px] text-[#787774] leading-relaxed">
-                  소다봇에 추가할 나만의 커스텀 아두이노 기능을 등록하고 관리합니다.
-                </p>
-                <div className="p-2 bg-indigo-50/70 border border-indigo-100 rounded-xl flex items-center gap-1.5 text-[10px] text-indigo-800 font-medium">
-                  <span>🎙️</span>
-                  <span>물리 버튼은 <strong>실시간 음성 대화 (Push-to-Talk)</strong> 전용으로 작동합니다.</span>
-                </div>
-              </div>
-
-              {/* 내가 등록한 기능 목록 */}
-              <div className="space-y-2 pt-1 border-t border-[#E5E5E3]">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold text-[#191919]">
-                    내가 등록한 기능 ({customFunctions.length}/3)
-                  </span>
-                  <span className="text-[9px] text-[#787774]">슬롯 3개 지원</span>
-                </div>
-
-                {customFunctions.length === 0 ? (
-                  <div className="p-4 bg-[#FBFBFA] border border-[#EBEBEA] rounded-xl text-center space-y-1">
-                    <p className="text-[11px] font-bold text-neutral-700">
-                      아직 등록된 기능이 없습니다.
-                    </p>
-                    <p className="text-[10px] text-[#787774]">
-                      아래 '+ 커스텀 기능 추가' 버튼을 눌러 새 기능을 등록해보세요.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {customFunctions.map((fn) => {
-                      const slotObj = USER_FUNCTION_SLOTS.find(s => s.slot === fn.slot);
-                      return (
-                        <div 
-                          key={fn.id} 
-                          className="p-3 bg-[#FBFBFA] border border-[#EBEBEA] rounded-xl space-y-2 transition-all hover:border-neutral-300"
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="text-xs font-bold text-[#191919] truncate">{fn.name}</span>
-                                <span className="px-1.5 py-0.5 bg-neutral-200/70 text-neutral-700 text-[9px] font-medium rounded">
-                                  {slotObj?.displayName || fn.slot}
-                                </span>
-                                <span className="text-[9px] font-mono text-[#787774]">
-                                  {fn.arduinoFunction}()
-                                </span>
-                              </div>
-                              {fn.description && (
-                                <p className="text-[10px] text-[#787774] mt-0.5 truncate">
-                                  {fn.description}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-1.5 pt-2 border-t border-neutral-200/50 flex-wrap">
-                            <button
-                              onClick={() => {
-                                const customCmd = `custom:${fn.slot}`;
-                                sendWsCommand(customCmd, '', `커스텀 기능 실행 (${fn.name})`);
-                                showToast(`🚀 '${fn.name}' (${fn.arduinoFunction}()) 기능을 실행했습니다!`);
-                              }}
-                              className="py-1 px-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-[10px] font-bold rounded-lg flex items-center justify-center gap-1 transition-all cursor-pointer active:scale-95 shadow-2xs"
-                              title="소다봇에서 이 기능을 즉시 실행합니다"
-                            >
-                              <span>▶️ 실행</span>
-                            </button>
-                            <button
-                              onClick={() => handleCopyCustomFunctionCode(fn)}
-                              className="flex-1 py-1 px-2 bg-blue-50/70 hover:bg-blue-100 text-blue-700 border border-blue-200 text-[10px] font-semibold rounded-lg flex items-center justify-center gap-1 transition-all cursor-pointer active:scale-95 shadow-2xs"
-                              title="이 기능이 합쳐진 전체 Arduino 펌웨어 코드를 복사합니다"
-                            >
-                              {copiedFuncId === fn.id ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3 text-blue-600" />}
-                              <span>{copiedFuncId === fn.id ? '복사 완료!' : '전체 코드 복사'}</span>
-                            </button>
-                            <button
-                              onClick={() => handleOpenEditFuncModal(fn)}
-                              className="py-1 px-2 bg-white hover:bg-neutral-50 text-neutral-700 border border-[#E5E5E3] text-[10px] font-medium rounded-lg transition-all cursor-pointer"
-                            >
-                              수정
-                            </button>
-                            <button
-                              onClick={() => handleRequestDeleteFunction(fn)}
-                              className="py-1 px-2 bg-white hover:bg-rose-50 text-neutral-500 hover:text-rose-600 border border-[#E5E5E3] text-[10px] font-medium rounded-lg transition-all cursor-pointer"
-                            >
-                              삭제
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {/* 커스텀 기능 추가 버튼 */}
-                {customFunctions.length < 3 ? (
-                  <button
-                    onClick={handleOpenNewFuncModal}
-                    className="w-full py-2 bg-white hover:bg-neutral-50 border border-[#E5E5E3] rounded-xl text-[11px] font-semibold text-blue-600 flex items-center justify-center gap-1 transition-all cursor-pointer shadow-2xs mt-1"
-                  >
-                    <Plus className="w-3.5 h-3.5 text-blue-600" />
-                    커스텀 기능 추가
-                  </button>
-                ) : (
-                  <div className="py-1.5 px-2 bg-neutral-100/70 border border-neutral-200 rounded-xl text-center text-[10px] text-neutral-500">
-                    모든 기능 슬롯(3개)이 사용 중입니다
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-
-          {/* Card 4: 시작 시퀀스 & 대기 시간 */}
+          {/* Card 3: 시작 시퀀스 & 대기 시간 */}
           <div className="bg-white border border-[#E5E5E3] hover:border-neutral-300 rounded-2xl p-5 shadow-2xs flex flex-col justify-between transition-all space-y-3">
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="w-5 h-5 rounded-md bg-neutral-100 border border-neutral-200/80 text-[11px] font-bold text-neutral-700 flex items-center justify-center">4</span>
+                  <span className="w-5 h-5 rounded-md bg-neutral-100 border border-neutral-200/80 text-[11px] font-bold text-neutral-700 flex items-center justify-center">3</span>
                   <span className="text-xs font-bold text-[#191919]">시작 시퀀스 설정</span>
                 </div>
                 <Zap className="w-4 h-4 text-neutral-400" />
@@ -2219,6 +2125,167 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
               <Play className="w-3.5 h-3.5" />
               시작 시퀀스 실행
             </button>
+          </div>
+
+
+          {/* Card 4: 커스텀 아두이노 기능 관리 (표정처럼 선택 & 즉시 테스트) */}
+          <div id="card-custom-functions" className="bg-white border border-[#E5E5E3] hover:border-neutral-300 rounded-2xl p-5 shadow-2xs flex flex-col justify-between transition-all scroll-mt-6">
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-md bg-neutral-100 border border-neutral-200/80 text-[11px] font-bold text-neutral-700 flex items-center justify-center">4</span>
+                  <span className="text-xs font-bold text-[#191919]">커스텀 기능 관리</span>
+                </div>
+                <Sparkles className="w-4 h-4 text-amber-500" />
+              </div>
+              
+              <p className="text-[11px] text-[#787774] leading-relaxed">
+                등록한 나만의 커스텀 기능을 표정처럼 선택하여 소다봇에서 즉시 테스트합니다.
+              </p>
+
+              {/* Current Selected / Active Function Display */}
+              {(() => {
+                const currentFunc = customFunctions.find(f => f.slot === selectedCustomSlot);
+                return (
+                  <div className="flex items-center justify-between bg-[#FBFBFA] border border-[#EBEBEA] px-2.5 py-1.5 rounded-xl text-[10px]">
+                    <span className="font-medium text-[#191919] flex items-center gap-1.5 truncate max-w-[75%]">
+                      <span className="text-[#787774]">선택 기능:</span>
+                      <span className="text-[#191919] bg-white px-1.5 py-0.5 rounded border border-[#E5E5E3] font-bold truncate">
+                        {currentFunc ? `⚡ ${currentFunc.name} (${currentFunc.arduinoFunction}())` : '선택된 기능 없음'}
+                      </span>
+                    </span>
+                    <span className="text-[9px] text-blue-600 font-semibold shrink-0">
+                      {activeCustomFuncSlot ? '⚡ 동작 중…' : '클릭 시 즉시 실행'}
+                    </span>
+                  </div>
+                );
+              })()}
+
+              {/* 3 Interactive Function Slots (표정처럼 클릭 시 즉시 테스트) */}
+              <div className="space-y-2 pt-1 border-t border-[#E5E5E3]">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-[#191919]">
+                    기능 슬롯 ({customFunctions.length}/3)
+                  </span>
+                  <span className="text-[9px] text-[#787774]">클릭하여 테스트</span>
+                </div>
+
+                <div className="space-y-1.5">
+                  {USER_FUNCTION_SLOTS.map((slotDef) => {
+                    const fn = customFunctions.find(f => f.slot === slotDef.slot);
+                    const isSelected = selectedCustomSlot === slotDef.slot;
+                    const isActive = activeCustomFuncSlot === slotDef.slot;
+
+                    if (!fn) {
+                      return (
+                        <div
+                          key={slotDef.slot}
+                          onClick={() => {
+                            setSelectedSlot(slotDef.slot);
+                            handleOpenNewFuncModal();
+                          }}
+                          className="p-2.5 rounded-xl border border-dashed border-[#E5E5E3] bg-[#FBFBFA]/60 hover:bg-blue-50/40 hover:border-blue-300 transition-all cursor-pointer flex items-center justify-between group"
+                          title={`${slotDef.displayName}에 새로운 기능 등록`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="w-6 h-6 rounded-lg bg-neutral-100 text-neutral-400 group-hover:bg-blue-100 group-hover:text-blue-600 flex items-center justify-center text-xs font-bold transition-colors">
+                              +
+                            </span>
+                            <div>
+                              <span className="text-xs font-semibold text-neutral-400 group-hover:text-blue-600 transition-colors">
+                                {slotDef.displayName} (비어있음)
+                              </span>
+                            </div>
+                          </div>
+                          <span className="text-[10px] text-blue-600 font-medium opacity-0 group-hover:opacity-100 transition-opacity">
+                            기능 등록 →
+                          </span>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div
+                        key={fn.id}
+                        onClick={() => triggerCustomFunction(fn)}
+                        className={`p-2.5 rounded-xl border transition-all cursor-pointer group ${
+                          isActive
+                            ? 'border-blue-600 bg-blue-50/60 ring-2 ring-blue-600/40 shadow-xs'
+                            : isSelected
+                            ? 'border-blue-500 bg-blue-50/30 ring-1 ring-blue-500/20'
+                            : 'border-[#E5E5E3] bg-white hover:border-neutral-400 hover:bg-[#FBFBFA]'
+                        }`}
+                        title={`클릭하여 ${fn.name} (${fn.arduinoFunction}()) 실시간 테스트 실행`}
+                      >
+                        <div className="flex items-start justify-between gap-1.5">
+                          <div className="min-w-0 flex items-center gap-2">
+                            <div className={`w-6 h-6 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 transition-colors ${
+                              isActive ? 'bg-blue-600 text-white animate-pulse' : 'bg-neutral-100 text-neutral-700'
+                            }`}>
+                              ⚡
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-xs font-bold text-[#191919] truncate">{fn.name}</span>
+                                <span className="px-1 py-0.2 bg-neutral-200/70 text-neutral-700 text-[8px] font-medium rounded">
+                                  {slotDef.displayName}
+                                </span>
+                              </div>
+                              <p className="text-[9px] font-mono text-[#787774] truncate">
+                                {fn.arduinoFunction}() {fn.description ? `· ${fn.description}` : ''}
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Action Buttons (Copy, Edit, Delete) */}
+                          <div className="flex items-center gap-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              onClick={() => handleCopyCustomFunctionCode(fn)}
+                              className="p-1 text-neutral-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors cursor-pointer"
+                              title="전체 펌웨어 코드 복사"
+                            >
+                              {copiedFuncId === fn.id ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                            </button>
+                            <button
+                              onClick={() => handleOpenEditFuncModal(fn)}
+                              className="p-1 text-neutral-400 hover:text-neutral-900 hover:bg-neutral-100 rounded transition-colors cursor-pointer"
+                              title="기능 정보 수정"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleRequestDeleteFunction(fn)}
+                              className="p-1 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
+                              title="기능 삭제"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Bottom Action Area */}
+            <div className="mt-3 space-y-1.5">
+              <button
+                onClick={() => {
+                  const target = customFunctions.find(f => f.slot === selectedCustomSlot) || customFunctions[0];
+                  if (target) {
+                    triggerCustomFunction(target);
+                  } else {
+                    handleOpenNewFuncModal();
+                  }
+                }}
+                className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl transition-colors shadow-2xs flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+              >
+                <Play className="w-3.5 h-3.5" />
+                <span>{customFunctions.length > 0 ? '선택한 커스텀 기능 테스트 실행' : '+ 커스텀 기능 추가'}</span>
+              </button>
+            </div>
           </div>
         </div>
 

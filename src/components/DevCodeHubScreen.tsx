@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import LcdPixelEditor from './LcdPixelEditor';
 import soda63Code from '../../firmware/soda-6-3.ino?raw';
+import soda81Code from '../../firmware/soda-8-1.ino?raw';
 import { 
   Code2, 
   Copy, 
@@ -862,15 +863,28 @@ void loop() {
   {
     id: "content-week-6-firmware-v4",
     week: 6,
-    title: "3. 소다봇 기본 펌웨어 (마이크 통합 v4)",
-    description: "ESP32-S3 기반 소다봇 표준 펌웨어 v4입니다. BLE, Wi-Fi, WebSocket, 2.0인치 ST7789 LCD, MAX98357A I2S 스피커, INMP441 I2S 마이크, 물리 버튼 및 NVS 설정 저장이 모두 통합되어 있습니다.",
+    title: "3. 마이크 입력 테스트 (소리 크기 측정)",
+    description: "물리 버튼(GPIO 4)을 누르고 있는 동안에만 INMP441 I2S 마이크가 활성화되어 소리 크기(VU 미터)를 2.0인치 LCD 화면과 시리얼 모니터로 측정하는 6주차 실습 펌웨어입니다.",
     filename: "soda-6-3.ino",
     language: "arduino",
     contentType: "code",
-    tags: ["6-7주차", "기본펌웨어", "마이크통합v4", "ESP32-S3", "ST7789", "MAX98357A", "INMP441", "BLE", "WebSocket"],
-    pinMap: "LCD(MOSI:11, CLK:12, CS:13, DC:7, RST:6), 버튼:4, I2S스피커(5,3,44), I2S마이크(9,10,8)",
+    tags: ["6-7주차", "마이크입력테스트", "버튼테스트", "소리크기측정", "VUmeter", "INMP441", "ESP32-S3"],
+    pinMap: "LCD(MOSI:11, CLK:12, CS:13, DC:7, RST:6), 버튼:4, LED:2, I2S마이크(SCK:9, WS:10, SD:8)",
     updatedAt: new Date().toISOString(),
     code: soda63Code
+  },
+  {
+    id: "content-week-8-firmware",
+    week: 8,
+    title: "8주차 소다봇 기본 펌웨어",
+    description: "8주차 소다봇 빌더 실습을 위한 표준 아두이노 펌웨어입니다. BLE, Wi-Fi, WebSocket, 2.0인치 ST7789 LCD, MAX98357A I2S 스피커, INMP441 I2S 마이크, Push-to-Talk 실시간 음성인식, 인터넷 실시간 시계(NTP) 및 커스텀 기능이 모두 통합되어 있습니다.",
+    filename: "soda-8-1.ino",
+    language: "arduino",
+    contentType: "code",
+    tags: ["8주차", "기본펌웨어", "소다봇빌더", "음성대화", "NTP시계", "ESP32-S3", "soda-8-1"],
+    pinMap: "LCD(MOSI:11, CLK:12, CS:13, DC:7, RST:6), 버튼:4, I2S스피커(5,3,44), I2S마이크(9,10,8)",
+    updatedAt: new Date().toISOString(),
+    code: soda81Code
   }
 ];
 

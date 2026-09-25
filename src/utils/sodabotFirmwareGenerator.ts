@@ -249,7 +249,9 @@ export function generateCustomFirmware(
   parts: CustomCodeParts,
   robotName = 'LUMI',
   wifiSsid = '',
-  wifiPass = ''
+  wifiPass = '',
+  apiKey = '',
+  apiHost = ''
 ): GeneratedFirmwareResult {
   const name = robotName.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 10) || 'ROBOT';
   const cleanPascal = sanitizeToPascalCase(parts.name);
@@ -258,18 +260,23 @@ export function generateCustomFirmware(
   const extractedFunctions = extractFunctionNames(parts.functionCode || '');
   const mainFunctionName = findMainExecutableFunction(parts.functionCode || '') || extractedFunctions[0] || '';
 
+  const host = apiHost || (typeof window !== 'undefined' && window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1' ? window.location.hostname : '192.168.0.171');
+  const key = apiKey || 'sk-soda-9597fe97de4771e361b8a171c9aefd7b';
+
   // 1. 기본 템플릿 로드
   let merged = template;
 
-  // 2. Wi-Fi / BLE 설정 치환
+  // 2. Wi-Fi / BLE / Host / API Key 설정 치환
   const substitutions: Record<string, string> = {
-    __SODA_WIFI_SSID__: JSON.stringify(wifiSsid),
-    __SODA_WIFI_PASSWORD__: JSON.stringify(wifiPass),
+    __SODA_WIFI_SSID__: JSON.stringify(wifiSsid || 'Dlab_2G'),
+    __SODA_WIFI_PASSWORD__: JSON.stringify(wifiPass || 'academy!'),
     __SODA_BLE_NAME__: JSON.stringify(`SODABOT_${name}`),
+    __SODA_SERVER_HOST__: JSON.stringify(host),
+    __SODA_API_KEY__: JSON.stringify(key),
   };
   merged = merged.replace(
-    /__SODA_WIFI_SSID__|__SODA_WIFI_PASSWORD__|__SODA_BLE_NAME__/g,
-    key => substitutions[key]
+    /__SODA_WIFI_SSID__|__SODA_WIFI_PASSWORD__|__SODA_BLE_NAME__|__SODA_SERVER_HOST__|__SODA_API_KEY__/g,
+    key => substitutions[key] ?? key
   );
 
   // 3. HEADERS 영역 교체
