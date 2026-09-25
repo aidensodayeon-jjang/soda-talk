@@ -1238,8 +1238,36 @@ class MyWriteCallbacks: public BLECharacteristicCallbacks {
   }
 };
 
+// BLE_IDENTITY_V2: 같은 보드/이름은 같은 주소, 이름 변경 시 새 주소.
+void configureSodaBleIdentity(const char* name) {
+  uint64_t hash = 14695981039346656037ULL;
+  uint64_t chip = ESP.getEfuseMac();
+  for (int i = 0; i < 6; ++i) {
+    hash = (hash ^ ((chip >> (i * 8)) & 0xff)) * 1099511628211ULL;
+  }
+  for (const char* p = name; *p; ++p) {
+    hash = (hash ^ static_cast<uint8_t>(*p)) * 1099511628211ULL;
+  }
+  uint8_t address[6];
+  for (int i = 0; i < 6; ++i) address[i] = (hash >> (i * 8)) & 0xff;
+  address[5] |= 0xc0; // NimBLE little-endian static-random address
+  address[0] = (address[0] & 0xfe) | 0x02;
+#if defined(CONFIG_NIMBLE_ENABLED)
+  bool ok = BLEDevice::setOwnAddr(address);
+  if (ok) ok = BLEDevice::setOwnAddrType(BLE_OWN_ADDR_RANDOM);
+#else
+  uint8_t reversed[6];
+  for (int i = 0; i < 6; ++i) reversed[i] = address[5 - i];
+  bool ok = BLEDevice::getAdvertising()->setDeviceAddress(reversed, BLE_ADDR_TYPE_RANDOM);
+#endif
+  Serial.printf("[BLE v2] %s / %02X:%02X:%02X:%02X:%02X:%02X / %s\n",
+    name, address[5], address[4], address[3], address[2], address[1], address[0],
+    ok ? "주소 설정 완료" : "주소 설정 실패");
+}
+
 void setupBLE() {
   BLEDevice::init(__SODA_BLE_NAME__);
+  configureSodaBleIdentity(__SODA_BLE_NAME__);
   pServer = BLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
   BLEService* service = pServer->createService(SERVICE_UUID);
@@ -1263,7 +1291,6 @@ void setupBLE() {
   // 스캔 응답 패킷에 128비트 서비스 UUID 포함
   BLEAdvertisementData scanData;
   scanData.setCompleteServices(BLEUUID(SERVICE_UUID));
-  scanData.setName(__SODA_BLE_NAME__);
   advertising->setScanResponseData(scanData);
 
   BLEDevice::startAdvertising();

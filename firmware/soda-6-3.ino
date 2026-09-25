@@ -486,7 +486,7 @@ void lookDown() {
 // 하트눈
 void heartEyes() {
   tft.fillScreen(LCD_BG_COLOR);
-  uint16_t hc = eyeColor == EYE_COLOR ? tft.color565(255, 50, 100) : 0xF9B4;
+  uint16_t hc = tft.color565(255, 50, 100);
   for (int cx : {LEX, REX}) {
     // 하트 = 원 두개 + 삼각형
     tft.fillCircle(cx - 16, EYE_Y - 8, 22, hc);
