@@ -1669,6 +1669,7 @@ void handleUserCustomFunction(const String& cmd) {
 }
 
 void executeLocalButtonAction(const String& act, const char* clickType) {
+  if (act.length() == 0 || act == "none" || act == "없음") return;
   lastActivityTime = millis();
   if (isStandbyActive) { isStandbyActive = false; }
   broadcastButtonEvent(clickType, act);
@@ -2395,8 +2396,7 @@ void setup() {
 }
 
 void loop() {
-  // 7-1에서는 버튼을 음성 Push-to-Talk 전용으로 사용한다.
-  // 기존 싱글/더블/길게 누르기 동작은 호출하지 않는다.
+  checkHardwareButton();
   uploadRecordedConversation();
   startWebServerIfReady();
   ws.cleanupClients();

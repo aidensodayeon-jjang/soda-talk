@@ -1676,6 +1676,7 @@ void handleUserCustomFunction(const String& cmd) {
 }
 
 void executeLocalButtonAction(const String& act, const char* clickType) {
+  if (act.length() == 0 || act == "none" || act == "없음") return;
   lastActivityTime = millis();
   if (isStandbyActive) { isStandbyActive = false; }
   broadcastButtonEvent(clickType, act);
@@ -2402,7 +2403,7 @@ void setup() {
 }
 
 void loop() {
-  // 버튼 음성 대화 Push-to-Talk 처리
+  checkHardwareButton();
   uploadRecordedConversation();
   startWebServerIfReady();
   ws.cleanupClients();
