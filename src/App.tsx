@@ -4,6 +4,8 @@ import React, { useState, useEffect, useRef } from "react";
 import AuthScreen from "./components/AuthScreen";
 import SodabotConnectScreen from "./components/SodabotConnectScreen";
 import SodabotSettingsScreen from "./components/SodabotSettingsScreen";
+import SodabotFriendSettingsScreen from "./components/SodabotFriendSettingsScreen";
+import SodabotWelcomeScreen from "./components/SodabotWelcomeScreen";
 import SodaAiLabScreen from "./components/SodaAiLabScreen";
 import DevCodeHubScreen from "./components/DevCodeHubScreen";
 import AdminCourseManagerModal from "./components/AdminCourseManagerModal";
@@ -19,6 +21,7 @@ import {
   Terminal,
   User,
   Cpu,
+  Bot,
   Wifi,
   WifiOff,
   Check,
@@ -93,7 +96,7 @@ export default function App() {
   // Core Data States
   const [chats, setChats] = useState<ChatRoom[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
-  const [currentView, setCurrentView] = useState<'chat' | 'sodabot' | 'settings' | 'sodabot_builder' | 'mic_circuit' | 'firmware_v4'>('sodabot');
+  const [currentView, setCurrentView] = useState<'welcome' | 'chat' | 'sodabot' | 'settings' | 'sodabot_builder' | 'mic_circuit' | 'firmware_v4' | 'firmware_v8' | 'dev'>('welcome');
   const [inputText, setInputText] = useState("");
   const [sending, setSending] = useState(false);
 
@@ -865,6 +868,7 @@ export default function App() {
     lastActivityRef.current = Date.now();
     setToken(sessionId);
     setUser(loggedInUser);
+    setCurrentView('welcome');
     
     // Check if new user has a saved robot IP
     const userKey = loggedInUser.id || loggedInUser.username;
@@ -1603,12 +1607,16 @@ export default function App() {
         {/* Top Header & Main Navigation Tabs */}
         {/* Top Header & Main Navigation Tabs */}
         <div className="p-4 pb-2 flex flex-col gap-3">
-          <div className="flex items-center gap-2 px-1">
-            <div className="w-8 h-8 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-sm">
-              <Cpu className="w-4 h-4" />
+          <div
+            onClick={() => setCurrentView('welcome')}
+            className="flex items-center gap-2 px-1 cursor-pointer group transition-transform active:scale-[0.98]"
+            title="초기화면(홈)으로 이동"
+          >
+            <div className="w-8 h-8 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 shadow-sm group-hover:bg-blue-600 group-hover:text-white transition-colors">
+              <Bot className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-sm font-black text-[#1D1D1F] tracking-tight">SODABOT STUDIO</h2>
+              <h2 className="text-sm font-black text-[#1D1D1F] tracking-tight group-hover:text-blue-600 transition-colors">SODABOT STUDIO</h2>
               <p className="text-[10px] text-[#86868B] font-medium">로봇 제작 & AI 코딩 스튜디오</p>
             </div>
           </div>
@@ -1617,9 +1625,12 @@ export default function App() {
           <div className="bg-[#EAE6DF]/70 p-1 rounded-2xl flex flex-col gap-1 shadow-inner mt-0.5">
             <button
               id="tab-btn-dev-code"
-              onClick={() => setMainNavTab("dev")}
+              onClick={() => {
+                setMainNavTab("dev");
+                setCurrentView("dev");
+              }}
               className={`w-full py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-between transition-all cursor-pointer ${
-                mainNavTab === "dev"
+                mainNavTab === "dev" && currentView !== "welcome"
                   ? "bg-white text-indigo-700 shadow-sm ring-1 ring-black/5"
                   : "text-[#5C5B57] hover:text-[#1D1D1F] hover:bg-white/50"
               }`}
@@ -1635,9 +1646,14 @@ export default function App() {
 
             <button
               id="tab-btn-chat-connect"
-              onClick={() => setMainNavTab("chat")}
+              onClick={() => {
+                setMainNavTab("chat");
+                if (currentView === "welcome" || currentView === "dev") {
+                  setCurrentView(isSodabotConnected ? "chat" : "sodabot");
+                }
+              }}
               className={`w-full py-2.5 px-3 rounded-xl text-xs font-bold flex items-center justify-between transition-all cursor-pointer ${
-                mainNavTab === "chat"
+                mainNavTab === "chat" && currentView !== "welcome"
                   ? "bg-white text-[#1D1D1F] shadow-sm ring-1 ring-black/5"
                   : "text-[#5C5B57] hover:text-[#1D1D1F] hover:bg-white/50"
               }`}
@@ -1727,9 +1743,10 @@ export default function App() {
                               onClick={() => {
                                 setSelectedDevCodeId(codeItem.id);
                                 setMainNavTab('dev');
+                                setCurrentView('dev');
                               }}
                               className={`w-full text-left px-2.5 py-1.5 rounded-xl text-xs flex items-center justify-between transition-all cursor-pointer ${
-                                isSelected
+                                isSelected && currentView === 'dev'
                                   ? 'bg-indigo-600 text-white font-bold shadow-xs'
                                   : 'text-[#5C5B57] hover:bg-[#EAE6DF]/30 hover:text-[#1D1D1F]'
                               }`}
@@ -1924,6 +1941,26 @@ export default function App() {
                             코드
                           </span>
                         </button>
+
+                        {/* 4. 소다봇 친구설정 (sodabot_builder) */}
+                        <button
+                          onClick={() => {
+                            setCurrentView('sodabot_builder');
+                          }}
+                          className={`w-full text-left px-2.5 py-1.5 rounded-xl text-xs font-medium flex items-center justify-between transition-all cursor-pointer ${
+                            currentView === 'sodabot_builder'
+                              ? 'bg-blue-50/70 text-blue-900 font-bold border border-blue-200/70 shadow-2xs'
+                              : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20 hover:text-[#1D1D1F]'
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <Users className={`w-3.5 h-3.5 shrink-0 ${currentView === 'sodabot_builder' ? 'text-blue-600' : 'text-blue-500'}`} />
+                            <span className="truncate text-xs">4. 소다봇 친구설정</span>
+                          </div>
+                          <span className="text-[8px] text-blue-700 bg-blue-50 border border-blue-200/60 px-1.5 py-0.5 rounded font-mono font-semibold shrink-0">
+                            설정
+                          </span>
+                        </button>
                       </div>
                     )}
                   </div>
@@ -1964,37 +2001,6 @@ export default function App() {
                           <span className="text-[8px] text-indigo-700 bg-indigo-50 border border-indigo-200/60 px-1.5 py-0.5 rounded font-mono font-semibold shrink-0">
                             코드
                           </span>
-                        </button>
-
-                        {/* 2. 소다봇 빌더 */}
-                        <button
-                          onClick={() => {
-                            if (!isSodabotConnected) {
-                              alert("소다봇이 연결되지 않았습니다. 상단 '소다봇 상태' 카드를 눌러 먼저 기기를 연결해 주세요.");
-                              setCurrentView('sodabot');
-                              return;
-                            }
-                            setCurrentView('sodabot_builder');
-                          }}
-                          className={`w-full text-left px-2.5 py-1.5 rounded-xl text-xs font-medium flex items-center justify-between transition-all cursor-pointer ${
-                            !isSodabotConnected
-                              ? 'text-[#A1A1A6] hover:bg-neutral-100/50 hover:text-neutral-700'
-                              : currentView === 'sodabot_builder'
-                              ? 'bg-blue-50/70 text-blue-900 font-bold border border-blue-200/70 shadow-2xs'
-                              : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20 hover:text-[#1D1D1F]'
-                          }`}
-                        >
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <Sparkles className={`w-3.5 h-3.5 shrink-0 ${isSodabotConnected ? (currentView === 'sodabot_builder' ? 'text-blue-600' : 'text-neutral-600') : 'text-slate-400'}`} />
-                            <span className="truncate text-xs">2. 소다봇 빌더</span>
-                          </div>
-                          {!isSodabotConnected ? (
-                            <Lock className="w-3 h-3 text-neutral-400 shrink-0" />
-                          ) : (
-                            <span className="text-[8px] text-blue-700 bg-blue-50 border border-blue-200/60 px-1.5 py-0.5 rounded font-mono font-semibold shrink-0">
-                              빌더
-                            </span>
-                          )}
                         </button>
                       </div>
                     )}
@@ -2177,8 +2183,10 @@ export default function App() {
         </div>
       </aside>
 
-      {/* 2. Main Body Area: Renders DevCodeHub or Chat/Connect View */}
-      {mainNavTab === "dev" ? (
+      {/* 2. Main Body Area */}
+      {currentView === 'welcome' ? (
+        <SodabotWelcomeScreen currentUser={user} />
+      ) : mainNavTab === "dev" || currentView === "dev" ? (
         <DevCodeHubScreen
           selectedCodeId={selectedDevCodeId}
           onSelectCode={setSelectedDevCodeId}
@@ -2241,7 +2249,7 @@ export default function App() {
       ) : (
         /* Normal Chat / Sodabot Connect / Builder View */
         <main className="flex-1 flex flex-col h-screen overflow-hidden bg-white relative">
-          {(!isSodabotConnected && currentView !== 'sodabot') ? (
+          {(!isSodabotConnected && currentView === 'chat') ? (
             /* Connection Required Gate View - Ultra Clean & Bold Focus */
             <div className="flex-1 flex flex-col items-center justify-center h-full bg-[#FAF9F6] p-6 text-center select-none relative overflow-hidden">
               <div className="absolute inset-0 bg-[linear-gradient(to_right,#EAE6DF_1px,transparent_1px),linear-gradient(to_bottom,#EAE6DF_1px,transparent_1px)] bg-[size:5rem_5rem] opacity-30 pointer-events-none" />
@@ -2470,7 +2478,7 @@ export default function App() {
         ) : currentView === 'sodabot' ? (
           <SodabotConnectScreen currentUser={user} />
         ) : currentView === 'sodabot_builder' ? (
-          <SodaAiLabScreen />
+          <SodabotFriendSettingsScreen currentUser={user} />
         ) : currentView === 'mic_circuit' ? (
           <div className="flex-1 flex flex-col h-screen overflow-y-auto bg-[#FAF9F6] p-4 sm:p-8 scrollbar-thin">
             <div className="max-w-4xl w-full mx-auto space-y-6 animate-fade-in">
