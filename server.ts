@@ -1970,7 +1970,21 @@ app.get("/api/chats", (req, res) => {
 
   const db = readDB();
   const isAdmin = session.role === "admin" || session.username === "admin";
-  const userChats = db.chats.filter(c => c.userId === session.id || (isAdmin && (c.userId === "user-1" || !c.userId)));
+  let userChats = db.chats.filter(c => c.userId === session.id || (isAdmin && (c.userId === "user-1" || !c.userId)));
+
+  if (userChats.length === 0) {
+    const newChat: ChatRoom = {
+      id: "chat-" + Date.now(),
+      userId: session.id,
+      title: "새로운 대화 ✨",
+      createdAt: new Date().toISOString(),
+      messages: []
+    };
+    db.chats.push(newChat);
+    writeDB(db);
+    userChats = [newChat];
+  }
+
   res.json(userChats);
 });
 
@@ -2053,11 +2067,17 @@ app.post("/api/chats/clear-all", (req, res) => {
   const session = getSession(token);
   if (!session) return res.status(401).json({ error: "세션 만료" });
 
+  const { currentChatId } = req.body || {};
   const db = readDB();
   const isAdmin = session.role === "admin" || session.username === "admin";
   
   // 기존 사용자(또는 관리자 매핑) 대화방 모두 정리
-  db.chats = db.chats.filter(c => !(c.userId === session.id || (isAdmin && (c.userId === "user-1" || !c.userId))));
+  db.chats = db.chats.filter(c => {
+    if (currentChatId && c.id === currentChatId) return false;
+    if (c.userId === session.id) return false;
+    if (isAdmin && (c.userId === "user-1" || !c.userId || c.userId === "student-1891")) return false;
+    return true;
+  });
 
   const newChat: ChatRoom = {
     id: "chat-" + Date.now(),

@@ -597,6 +597,9 @@ export default function App() {
   }, [token, user]);
 
   const handleClearChat = async () => {
+    const currentChat = chats.find(c => c.id === activeChatId) || (chats.length > 0 ? chats[0] : undefined);
+    const currentChatId = currentChat?.id;
+
     // 1. 즉시 로컬 화면을 깨끗한 1개의 대화방으로 리셋 (즉각적 반응)
     const tempChatId = "chat-" + Date.now();
     const emptyChat: ChatRoom = {
@@ -616,7 +619,8 @@ export default function App() {
         headers: { 
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}` 
-        }
+        },
+        body: JSON.stringify({ currentChatId })
       });
       const data = await res.json();
       if (res.ok && data.chat) {
