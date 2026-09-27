@@ -540,9 +540,17 @@ export default function App() {
         headers: { Authorization: `Bearer ${token}` }
       });
       const data = await res.json();
-      if (res.ok) {
-        setChats(data);
-        // Do not auto-activate first chat (per user request to start fresh)
+      if (res.ok && Array.isArray(data)) {
+        const sortedChats = [...data].sort((a: ChatRoom, b: ChatRoom) => {
+          const timeA = a.messages && a.messages.length > 0
+            ? new Date(a.messages[a.messages.length - 1].timestamp).getTime()
+            : new Date(a.createdAt).getTime();
+          const timeB = b.messages && b.messages.length > 0
+            ? new Date(b.messages[b.messages.length - 1].timestamp).getTime()
+            : new Date(b.createdAt).getTime();
+          return timeB - timeA;
+        });
+        setChats(sortedChats);
       }
     } catch (err) {
       console.error("Failed to fetch chats", err);
@@ -1016,24 +1024,49 @@ export default function App() {
 
             <div className="space-y-1 pt-4 border-t border-[#EAE6DF]">
               <div className="flex items-center justify-between px-2 mb-2">
-                <div className="text-[10px] font-bold text-[#86868B] uppercase tracking-wider">미니 대화 기록</div>
+                <div className="text-[10px] font-bold text-[#86868B] uppercase tracking-wider">대화 목록</div>
                 <button
                   onClick={handleCreateNewChat}
-                  className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold transition-colors"
+                  className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold transition-colors cursor-pointer"
                 >
                   <PlusCircle className="w-3 h-3 inline mr-0.5" />새 대화
                 </button>
               </div>
-              {chats.map(chat => (
-                <div
-                  key={chat.id}
-                  onClick={() => setActiveChatId(chat.id)}
-                  className={`w-full text-left px-3 py-2 rounded-xl text-xs font-medium truncate cursor-pointer transition-colors ${activeChatId === chat.id ? "bg-white border border-[#EAE6DF] shadow-sm text-[#1D1D1F]" : "text-[#5C5B57] hover:bg-[#EAE6DF]/50"}`}
-                >
-                  <MessageSquare className="w-3.5 h-3.5 inline mr-1.5 opacity-70" />
-                  {chat.title}
-                </div>
-              ))}
+              {chats.length === 0 ? (
+                <div className="px-2 py-2 text-[11px] text-[#86868B] text-center">대화 기록이 없습니다.</div>
+              ) : (
+                [...chats].sort((a, b) => {
+                  const timeA = a.messages && a.messages.length > 0 ? new Date(a.messages[a.messages.length - 1].timestamp).getTime() : new Date(a.createdAt).getTime();
+                  const timeB = b.messages && b.messages.length > 0 ? new Date(b.messages[b.messages.length - 1].timestamp).getTime() : new Date(b.createdAt).getTime();
+                  return timeB - timeA;
+                }).map(chat => {
+                  const isActive = (activeChatId === chat.id || (!activeChatId && chat.id === chats[0]?.id)) && currentView === 'chat';
+                  return (
+                    <div
+                      key={chat.id}
+                      onClick={() => {
+                        setActiveChatId(chat.id);
+                        setCurrentView('chat');
+                      }}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-xl text-xs font-medium flex items-center justify-between cursor-pointer transition-all ${
+                        isActive
+                          ? "bg-indigo-50/90 border border-indigo-200 text-indigo-950 font-bold shadow-xs"
+                          : "text-[#5C5B57] hover:bg-[#EAE6DF]/50 border border-transparent"
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 min-w-0 pr-1">
+                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isActive ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-300'}`} />
+                        <span className="truncate">{chat.title || '새로운 대화'}</span>
+                      </div>
+                      {isActive && (
+                        <span className="text-[9px] px-1.5 py-0.2 bg-indigo-600 text-white font-bold rounded-md shrink-0 font-mono shadow-2xs">
+                          대화중 ✨
+                        </span>
+                      )}
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
 
@@ -2125,36 +2158,56 @@ export default function App() {
                   </button>
                 </div>
 
-                {/* Chat Rooms List when in Chat View & Connected */}
-                {currentView === 'chat' && isSodabotConnected && (
-                  <div className="pt-2 border-t border-[#EAE6DF] space-y-1.5">
-                    <div className="flex items-center justify-between px-1 text-[10px] font-semibold text-[#86868B] uppercase tracking-wider font-mono">
-                      <span>대화 기록</span>
+                {/* Chat Rooms List when in Chat View */}
+                {currentView === 'chat' && (
+                  <div className="pt-2 border-t border-[#EAE6DF] space-y-1.5 animate-fade-in">
+                    <div className="flex items-center justify-between px-1 text-[10px] font-bold text-[#86868B] uppercase tracking-wider font-mono">
+                      <span>대화 기록 ({chats.length})</span>
                       <button
                         onClick={handleCreateNewChat}
-                        className="text-[10px] text-indigo-600 font-bold hover:underline cursor-pointer flex items-center gap-0.5"
+                        className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold cursor-pointer flex items-center gap-0.5 transition-colors"
+                        title="새로운 대화방 시작"
                       >
                         <Plus className="w-3 h-3" /> 새 대화
                       </button>
                     </div>
 
-                    <div className="space-y-1 max-h-[220px] overflow-y-auto">
-                      {chats.map(chat => (
-                        <button
-                          key={chat.id}
-                          onClick={() => setActiveChatId(chat.id)}
-                          className={`w-full text-left px-2.5 py-2 rounded-xl text-xs flex items-center justify-between transition-colors cursor-pointer ${
-                            activeChatId === chat.id
-                              ? 'bg-indigo-100/70 text-indigo-900 font-bold'
-                              : 'text-[#5C5B57] hover:bg-[#EAE6DF]/30'
-                          }`}
-                        >
-                          <span className="truncate">{chat.title || '새로운 대화'}</span>
-                          <span className="text-[9px] text-[#86868B] font-mono shrink-0 ml-1">
-                            {new Date(chat.createdAt).toLocaleDateString([], { month: 'numeric', day: 'numeric' })}
-                          </span>
-                        </button>
-                      ))}
+                    <div className="space-y-1 max-h-[240px] overflow-y-auto scrollbar-thin pr-0.5">
+                      {chats.length === 0 ? (
+                        <div className="p-2.5 text-center bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl text-[11px] text-[#86868B]">
+                          대화 기록이 없습니다.
+                        </div>
+                      ) : (
+                        chats.map(chat => {
+                          const isActive = activeChat?.id === chat.id;
+                          return (
+                            <button
+                              key={chat.id}
+                              onClick={() => setActiveChatId(chat.id)}
+                              className={`w-full text-left px-2.5 py-2 rounded-xl text-xs flex items-center justify-between transition-all cursor-pointer ${
+                                isActive
+                                  ? 'bg-indigo-50/90 border border-indigo-200 text-indigo-950 font-bold shadow-xs'
+                                  : 'text-[#5C5B57] hover:bg-[#EAE6DF]/40 hover:text-[#1D1D1F] border border-transparent'
+                              }`}
+                            >
+                              <div className="flex items-center gap-1.5 min-w-0 pr-1">
+                                <span className={`w-2 h-2 rounded-full shrink-0 ${isActive ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-300'}`} />
+                                <span className="truncate">{chat.title || '새로운 대화'}</span>
+                              </div>
+
+                              {isActive ? (
+                                <span className="text-[9px] px-1.5 py-0.5 bg-indigo-600 text-white font-bold rounded-md shrink-0 shadow-2xs font-mono">
+                                  대화중 ✨
+                                </span>
+                              ) : (
+                                <span className="text-[9px] text-[#86868B] font-mono shrink-0">
+                                  {new Date(chat.createdAt).toLocaleDateString([], { month: 'numeric', day: 'numeric' })}
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })
+                      )}
                     </div>
                   </div>
                 )}
