@@ -94,7 +94,7 @@ export default function SodabotConnectScreen({ currentUser }: SodabotConnectScre
     const savedName = localStorage.getItem(getScopedKey("custom_name")) || '';
     const savedSsid = localStorage.getItem(getScopedKey("wifi_ssid")) || '';
     const savedPass = localStorage.getItem(getScopedKey("wifi_password")) || '';
-    const savedIp = localStorage.getItem(getScopedKey("robot_ip"));
+    const savedIp = localStorage.getItem(getScopedKey("robot_ip")) || localStorage.getItem("sodabot_robot_ip");
     const savedDev = localStorage.getItem(getScopedKey("device_name"));
     const savedStep = localStorage.getItem(getScopedKey("connect_step"));
 
@@ -108,10 +108,14 @@ export default function SodabotConnectScreen({ currentUser }: SodabotConnectScre
       setStatus('connected');
       setStepState(3);
     } else if (savedIp) {
+      // 저장된 IP가 있으면 완료 표시를 복원하지 말고 실제 WebSocket 재연결부터 확인한다.
+      setStatus('wifi_connecting');
+      setStepState(2);
       void connectWebSocket(savedIp);
     } else {
       setStatus('idle');
-      setStepState(savedStep ? (parseInt(savedStep, 10) as 1 | 2 | 3) : 1);
+      const restoredStep = savedStep ? parseInt(savedStep, 10) : 1;
+      setStepState((restoredStep >= 3 ? 2 : Math.max(1, restoredStep)) as 1 | 2);
     }
   }, [currentUser?.id, currentUser?.username]);
 
@@ -120,7 +124,11 @@ export default function SodabotConnectScreen({ currentUser }: SodabotConnectScre
       const savedIp = localStorage.getItem(getScopedKey("robot_ip")) || localStorage.getItem("sodabot_robot_ip");
       const connected = sodabotTransport.type !== 'none';
       setStatus(connected ? 'connected' : 'idle');
-      if (connected) setStep(3);
+      setStepState(previousStep => {
+        const nextStep: 1 | 2 | 3 = connected ? 3 : (previousStep === 3 ? 2 : previousStep);
+        localStorage.setItem(getScopedKey("connect_step"), String(nextStep));
+        return nextStep;
+      });
       setRobotIp(savedIp);
       setConnectedDeviceName(localStorage.getItem(getScopedKey("device_name")) || localStorage.getItem("sodabot_device_name"));
     };

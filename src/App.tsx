@@ -183,9 +183,12 @@ export default function App() {
   const [serialPort, setSerialPort] = useState<any>(null);
   const [manualIpInput, setManualIpInput] = useState("");
   const [quickExprToast, setQuickExprToast] = useState<string | null>(null);
+  const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
   const [copiedFirmware, setCopiedFirmware] = useState(false);
 
   const isSodabotConnected = connType !== 'none';
+  // 연결이 잠시 끊겨도 저장된 IP가 있으면 명령 전송 시 Wi-Fi 자동 재연결을 시도할 수 있다.
+  const canReachSodabot = isSodabotConnected || Boolean(sodabotIp);
 
   // 1. Verify WebSocket Live Ping
   const verifyWifiConnection = async (ipToCheck?: string | null) => {
@@ -2772,28 +2775,27 @@ export default function App() {
                                 {!isUser && !isSodabotSource && (
                                   <button
                                     type="button"
-                                    disabled={!isSodabotConnected}
+                                    disabled={!canReachSodabot || speakingMessageId !== null}
                                     onClick={async () => {
-                                      if (!isSodabotConnected) return;
+                                      if (!canReachSodabot) return;
+                                      setSpeakingMessageId(msg.id);
+                                      setQuickExprToast("🔊 소다봇 음성 생성·재생 중... 잠시 기다려 주세요.");
                                       try {
-                                        await sodabotTransport.send('speak', msg.text);
-                                      } catch (e: any) {
-                                        console.warn("소다봇 직접 전송 실패, 서버 경유 전송 시도", e);
-                                        await fetch('/api/sodabot/speak', {
-                                          method: 'POST',
-                                          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                                          body: JSON.stringify({ text: msg.text })
-                                        });
+                                        await sendHardwareCommand('speak', msg.text, '음성 재생');
+                                      } finally {
+                                        setSpeakingMessageId(null);
                                       }
                                     }}
                                     className={`inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-md transition-all border ${
-                                      isSodabotConnected
+                                      canReachSodabot && speakingMessageId === null
                                         ? "text-indigo-600 bg-indigo-50 hover:bg-indigo-100 active:scale-95 border-indigo-200 cursor-pointer"
-                                        : "text-gray-400 bg-gray-50 border-gray-200 cursor-not-allowed opacity-60"
+                                        : speakingMessageId === msg.id
+                                          ? "text-indigo-600 bg-indigo-50 border-indigo-200 cursor-wait opacity-80"
+                                          : "text-gray-400 bg-gray-50 border-gray-200 cursor-not-allowed opacity-60"
                                     }`}
-                                    title={isSodabotConnected ? "이미 생성된 답변을 실물 소다봇에서 음성으로 출력합니다" : "소다봇이 연결되어 있지 않습니다"}
+                                    title={canReachSodabot ? "이미 생성된 답변을 실물 소다봇에서 음성으로 출력합니다" : "소다봇 연결 화면에서 먼저 연결해 주세요"}
                                   >
-                                    <span>🔊 소다봇으로 말하기</span>
+                                    <span>{speakingMessageId === msg.id ? "⏳ 소다봇 음성 재생 중..." : "🔊 소다봇으로 말하기"}</span>
                                   </button>
                                 )}
                               </div>

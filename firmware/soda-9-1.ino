@@ -2052,6 +2052,10 @@ void processMessage(const IncomingMessage& message) {
       renderBitmapFromDoc(doc);
     }
     sleeping = false; customExpression = true; expressionUntil = millis() + 10000;
+  } else if (action == "speak" || action == "say" || action == "tts") {
+    if (value.length() == 0 || value.length() > 1000) { sendReply("error", "speech_text_length_1_to_1000_bytes"); return; }
+    if (WiFi.status() != WL_CONNECTED) { sendReply("error", "wifi_required_for_tts"); return; }
+    if (!playReplySpeech(value)) { sendReply("error", "tts_playback_failed"); return; }
   } else if (action == "send_message" || action == "talk" || action == "set_profile" || action == "test_startup_prompt") {
     if (value.length() == 0 || value.length() > 360) { sendReply("error", "text_length_1_to_360_bytes"); return; }
     uint8_t reqSize = doc["size"] | 0;

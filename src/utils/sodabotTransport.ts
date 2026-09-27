@@ -131,10 +131,12 @@ class SodabotTransport {
     const bytes = new TextEncoder().encode(payload + '\n');
     if (bytes.length > 4096) throw new Error('명령이 너무 깁니다. 텍스트를 줄여 주세요.');
     const result = new Promise<Reply>((resolve, reject) => {
+      // TTS는 서버 음성 생성과 스트리밍 재생이 끝난 뒤 응답하므로 일반 명령보다 오래 기다린다.
+      const responseTimeoutMs = action === 'speak' || action === 'say' || action === 'tts' ? 120000 : 20000;
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new Error('소다봇 처리 응답이 없습니다. 수정된 soda-basic 펌웨어를 업로드했는지 확인하세요.'));
-      }, 20000);
+      }, responseTimeoutMs);
       this.pending.set(id, { resolve, reject, timer });
     });
     // Install rejection handler before asynchronous BLE writes finish.
