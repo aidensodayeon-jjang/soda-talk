@@ -65,3 +65,51 @@ export interface CourseContent {
   updatedAt?: string;
 }
 
+// ----------------------------------------------------
+// SODABOT Friends (친구 기능 및 1:1 메시지)
+// ----------------------------------------------------
+export interface SodabotPublicProfile {
+  userId: string;
+  botName: string;
+  nickname: string;
+  description: string;
+  avatarUrl?: string;
+  isPublic: boolean;
+  isOnline?: boolean;
+  lastSeenAt?: string;
+}
+
+export interface Friendship {
+  id: string;
+  requesterId: string;
+  receiverId: string;
+  status: "pending" | "accepted" | "rejected" | "blocked";
+  createdAt: string;
+  acceptedAt?: string;
+}
+
+export interface DirectMessage {
+  id: string;
+  senderId: string;
+  receiverId: string;
+  content: string;
+  createdAt: string;
+  status: "sent" | "delivered" | "read";
+  playedOnSodabot?: boolean;
+}
+
+export interface FriendSummaryCard {
+  userId: string;
+  botName: string;
+  nickname: string;
+  description: string;
+  avatarUrl?: string;
+  isOnline: boolean;
+  lastSeenAt?: string;
+  friendshipId?: string;
+  friendshipStatus?: "none" | "pending_sent" | "pending_received" | "accepted" | "blocked";
+  unreadCount?: number;
+  lastMessage?: DirectMessage;
+}
+
+

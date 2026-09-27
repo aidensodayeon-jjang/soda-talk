@@ -6,6 +6,7 @@ import SodabotConnectScreen from "./components/SodabotConnectScreen";
 import SodabotSettingsScreen from "./components/SodabotSettingsScreen";
 import SodabotFriendSettingsScreen from "./components/SodabotFriendSettingsScreen";
 import SodabotWelcomeScreen from "./components/SodabotWelcomeScreen";
+import { SodabotFriendsScreen } from "./components/SodabotFriendsScreen";
 import SodaAiLabScreen from "./components/SodaAiLabScreen";
 import DevCodeHubScreen from "./components/DevCodeHubScreen";
 import AdminCourseManagerModal from "./components/AdminCourseManagerModal";
@@ -170,7 +171,7 @@ export default function App() {
   // Core Data States
   const [chats, setChats] = useState<ChatRoom[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
-  const [currentView, setCurrentView] = useState<'welcome' | 'chat' | 'sodabot' | 'settings' | 'sodabot_builder' | 'mic_circuit' | 'firmware_v4' | 'firmware_v8' | 'firmware_v9' | 'dev'>('welcome');
+  const [currentView, setCurrentView] = useState<'welcome' | 'chat' | 'sodabot' | 'settings' | 'sodabot_builder' | 'mic_circuit' | 'firmware_v4' | 'firmware_v8' | 'firmware_v9' | 'dev' | 'friends'>('welcome');
   const [inputText, setInputText] = useState("");
   const [sending, setSending] = useState(false);
   const [clearingChat, setClearingChat] = useState(false);
@@ -2121,6 +2122,33 @@ export default function App() {
                   </div>
                 </button>
 
+                {/* 소다봇 친구 바로가기 버튼 */}
+                <button
+                  onClick={() => setCurrentView('friends')}
+                  className={`w-full text-left bg-white hover:bg-indigo-50/40 border rounded-2xl p-2.5 shadow-xs transition-all cursor-pointer group flex items-center justify-between ${
+                    currentView === 'friends' ? 'border-indigo-500 ring-2 ring-indigo-50 bg-indigo-50/30' : 'border-[#EAE6DF] hover:border-indigo-300'
+                  }`}
+                  title="소다봇 친구 목록 및 1:1 메시지"
+                >
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-indigo-50 border border-indigo-200 flex items-center justify-center text-sm text-indigo-600 font-bold shrink-0">
+                      <Users className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <h5 className="text-xs font-bold text-[#1D1D1F] truncate group-hover:text-indigo-600 transition-colors flex items-center gap-1.5">
+                        <span>소다봇 친구</span>
+                        <span className="px-1.5 py-0.2 bg-indigo-100 text-indigo-700 text-[9px] font-bold rounded-full font-mono">
+                          NEW
+                        </span>
+                      </h5>
+                      <p className="text-[10px] text-[#86868B] truncate">
+                        친구 찾기 및 1:1 메시지
+                      </p>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-3.5 h-3.5 text-[#86868B] group-hover:text-indigo-600 group-hover:translate-x-0.5 transition-all" />
+                </button>
+
                 {/* 6~10주차 실습 & AI 연동 메뉴 (소다봇 미연결 시 잠금 처리) */}
                 <div className="space-y-1 pb-1 pt-1 border-t border-[#EAE6DF]/70">
                   <div className="flex items-center justify-between px-2 py-1 text-[10px] font-bold text-[#86868B] uppercase tracking-wider font-mono">
@@ -2314,6 +2342,26 @@ export default function App() {
                           </div>
                           <span className="text-[8px] text-indigo-700 bg-indigo-50 border border-indigo-200/60 px-1.5 py-0.5 rounded font-mono font-semibold shrink-0">
                             8-2
+                          </span>
+                        </button>
+
+                        {/* 3. 8주차 소다봇 친구 & 1:1 메시지 (8-3) */}
+                        <button
+                          onClick={() => {
+                            setCurrentView('friends');
+                          }}
+                          className={`w-full text-left px-2.5 py-1.5 rounded-xl text-xs font-medium flex items-center justify-between transition-all cursor-pointer ${
+                            currentView === 'friends'
+                              ? 'bg-indigo-50 text-indigo-900 font-bold border border-indigo-200 shadow-2xs'
+                              : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20 hover:text-[#1D1D1F]'
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <Users className={`w-3.5 h-3.5 shrink-0 ${currentView === 'friends' ? 'text-indigo-600' : 'text-indigo-500'}`} />
+                            <span className="truncate text-xs">3. 소다봇 친구 & 메시지</span>
+                          </div>
+                          <span className="text-[8px] text-indigo-700 bg-indigo-50 border border-indigo-200/60 px-1.5 py-0.5 rounded font-mono font-semibold shrink-0">
+                            8-3
                           </span>
                         </button>
                       </div>
@@ -2870,6 +2918,13 @@ export default function App() {
           </div>
         </div>
           </>
+        ) : currentView === 'friends' ? (
+          <SodabotFriendsScreen
+            currentUser={user}
+            token={token}
+            isSodabotConnected={isSodabotConnected}
+            onBackToChat={() => setCurrentView('chat')}
+          />
         ) : currentView === 'sodabot' ? (
           <SodabotConnectScreen currentUser={user} />
         ) : currentView === 'sodabot_builder' ? (

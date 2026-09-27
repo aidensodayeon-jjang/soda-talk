@@ -427,6 +427,36 @@ const DEFAULT_COURSE_CONTENTS: CourseContent[] = [
   }
 ];
 
+export interface SodabotPublicProfile {
+  userId: string;
+  botName: string;
+  nickname: string;
+  description: string;
+  avatarUrl?: string;
+  isPublic: boolean;
+  isOnline?: boolean;
+  lastSeenAt?: string;
+}
+
+export interface Friendship {
+  id: string;
+  requesterId: string;
+  receiverId: string;
+  status: "pending" | "accepted" | "rejected" | "blocked";
+  createdAt: string;
+  acceptedAt?: string;
+}
+
+export interface DirectMessage {
+  id: string;
+  senderId: string;
+  receiverId: string;
+  content: string;
+  createdAt: string;
+  status: "sent" | "delivered" | "read";
+  playedOnSodabot?: boolean;
+}
+
 interface DBStructure {
   users: User[];
   settings: {
@@ -444,6 +474,10 @@ interface DBStructure {
   };
   chats: ChatRoom[];
   courseContents?: CourseContent[];
+  friendProfiles?: SodabotPublicProfile[];
+  friendships?: Friendship[];
+  directMessages?: DirectMessage[];
+  userPresences?: Record<string, string>; // userId -> ISO timestamp (lastSeenAt)
 }
 
 function initDB() {
@@ -480,7 +514,11 @@ function initDB() {
           ]
         }
       ],
-      courseContents: DEFAULT_COURSE_CONTENTS
+      courseContents: DEFAULT_COURSE_CONTENTS,
+      friendProfiles: [],
+      friendships: [],
+      directMessages: [],
+      userPresences: {}
     };
     fs.writeFileSync(DB_FILE, JSON.stringify(defaultDB, null, 2), "utf8");
   }
@@ -505,6 +543,22 @@ function readDB(): DBStructure {
         changed = true;
       }
     }
+  }
+  if (!db.friendProfiles || !Array.isArray(db.friendProfiles)) {
+    db.friendProfiles = [];
+    changed = true;
+  }
+  if (!db.friendships || !Array.isArray(db.friendships)) {
+    db.friendships = [];
+    changed = true;
+  }
+  if (!db.directMessages || !Array.isArray(db.directMessages)) {
+    db.directMessages = [];
+    changed = true;
+  }
+  if (!db.userPresences || typeof db.userPresences !== "object") {
+    db.userPresences = {};
+    changed = true;
   }
   if (db.users && Array.isArray(db.users)) {
     db.users.forEach(u => {
@@ -2356,6 +2410,611 @@ app.post("/api/chats/:id/messages", async (req, res) => {
     assistantMessage: assistantMsg,
     usedEmulator: false,
     chatTitle: chat.title
+  });
+});
+
+// ----------------------------------------------------
+// SODABOT Friends & Direct Messaging System
+// ----------------------------------------------------
+
+function getOrCreatePublicProfile(user: User, db: DBStructure): SodabotPublicProfile {
+  let profile = db.friendProfiles?.find(p => p.userId === user.id);
+  if (!profile) {
+    const friendSettings = user.friendSettings || {};
+    const botName = friendSettings.persona?.robotName || friendSettings.persona?.name || "소다봇";
+    const nickname = user.displayName || user.username || "소다친구";
+    
+    profile = {
+      userId: user.id,
+      botName,
+      nickname,
+      description: "코딩과 인공지능을 배우는 소다봇 친구야 ✨",
+      avatarUrl: "robot-blue",
+      isPublic: false // 기본값은 비공개(학생 프라이버시 보호)
+    };
+    if (!db.friendProfiles) db.friendProfiles = [];
+    db.friendProfiles.push(profile);
+    writeDB(db);
+  }
+  return profile;
+}
+
+function isUserOnline(userId: string, db: DBStructure): { isOnline: boolean; lastSeenAt?: string } {
+  const lastSeen = db.userPresences?.[userId];
+  if (!lastSeen) return { isOnline: false };
+  const diffMs = Date.now() - new Date(lastSeen).getTime();
+  const isOnline = diffMs < 45000; // 45초 이내 heartbeat 있으면 온라인
+  return { isOnline, lastSeenAt: lastSeen };
+}
+
+// 1. Presence Heartbeat Ping
+app.post("/api/presence/ping", (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: "인증 필요" });
+  const token = authHeader.replace("Bearer ", "");
+  const session = getSession(token);
+  if (!session) return res.status(401).json({ error: "세션 만료" });
+
+  const db = readDB();
+  if (!db.userPresences) db.userPresences = {};
+  db.userPresences[session.id] = new Date().toISOString();
+  writeDB(db);
+
+  res.json({ success: true, timestamp: db.userPresences[session.id] });
+});
+
+// 2. Get My Public Profile
+app.get("/api/friends/my-profile", (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: "인증 필요" });
+  const token = authHeader.replace("Bearer ", "");
+  const session = getSession(token);
+  if (!session) return res.status(401).json({ error: "세션 만료" });
+
+  const db = readDB();
+  const user = db.users.find(u => u.id === session.id);
+  if (!user) return res.status(404).json({ error: "사용자를 찾을 수 없습니다." });
+
+  const profile = getOrCreatePublicProfile(user, db);
+  const { isOnline, lastSeenAt } = isUserOnline(user.id, db);
+
+  res.json({ ...profile, isOnline, lastSeenAt });
+});
+
+// 3. Update My Public Profile (소다봇 공개 설정 및 프로필 변경)
+app.post("/api/friends/my-profile", (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: "인증 필요" });
+  const token = authHeader.replace("Bearer ", "");
+  const session = getSession(token);
+  if (!session) return res.status(401).json({ error: "세션 만료" });
+
+  const { isPublic, botName, nickname, description, avatarUrl } = req.body;
+  const db = readDB();
+  const user = db.users.find(u => u.id === session.id);
+  if (!user) return res.status(404).json({ error: "사용자를 찾을 수 없습니다." });
+
+  const profile = getOrCreatePublicProfile(user, db);
+
+  if (typeof isPublic === "boolean") profile.isPublic = isPublic;
+  if (typeof botName === "string" && botName.trim()) profile.botName = botName.trim().substring(0, 20);
+  if (typeof nickname === "string" && nickname.trim()) profile.nickname = nickname.trim().substring(0, 20);
+  if (typeof description === "string") profile.description = description.trim().substring(0, 80);
+  if (typeof avatarUrl === "string") profile.avatarUrl = avatarUrl;
+
+  writeDB(db);
+  const { isOnline, lastSeenAt } = isUserOnline(user.id, db);
+  res.json({ success: true, profile: { ...profile, isOnline, lastSeenAt } });
+});
+
+// 4. Search Public Friends (공개된 소다봇만 검색, 개인정보 제외)
+app.get("/api/friends/search", (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: "인증 필요" });
+  const token = authHeader.replace("Bearer ", "");
+  const session = getSession(token);
+  if (!session) return res.status(401).json({ error: "세션 만료" });
+
+  const query = ((req.query.q as string) || "").trim().toLowerCase();
+  const db = readDB();
+  const currentUserId = session.id;
+
+  // 공개 설정된 프로필만 필터링 (본인 제외)
+  const publicProfiles = (db.friendProfiles || []).filter(p => p.isPublic && p.userId !== currentUserId);
+
+  const results = publicProfiles
+    .filter(p => {
+      // 본인과 차단 관계인지 확인
+      const isBlocked = (db.friendships || []).some(
+        f => f.status === "blocked" && 
+        ((f.requesterId === currentUserId && f.receiverId === p.userId) ||
+         (f.requesterId === p.userId && f.receiverId === currentUserId))
+      );
+      if (isBlocked) return false;
+
+      if (!query) return true;
+      return (
+        p.botName.toLowerCase().includes(query) ||
+        p.nickname.toLowerCase().includes(query) ||
+        p.description.toLowerCase().includes(query)
+      );
+    })
+    .map(p => {
+      const { isOnline, lastSeenAt } = isUserOnline(p.userId, db);
+      
+      // 나와의 관계 확인
+      const friendship = (db.friendships || []).find(
+        f => (f.requesterId === currentUserId && f.receiverId === p.userId) ||
+             (f.requesterId === p.userId && f.receiverId === currentUserId)
+      );
+
+      let friendshipStatus: "none" | "pending_sent" | "pending_received" | "accepted" | "blocked" = "none";
+      if (friendship) {
+        if (friendship.status === "accepted") friendshipStatus = "accepted";
+        else if (friendship.status === "blocked") friendshipStatus = "blocked";
+        else if (friendship.status === "pending") {
+          friendshipStatus = friendship.requesterId === currentUserId ? "pending_sent" : "pending_received";
+        }
+      }
+
+      // 개인정보(실명, 학교, 학년 등)는 철저히 배제하고 안전한 정보만 반환
+      return {
+        userId: p.userId,
+        botName: p.botName,
+        nickname: p.nickname,
+        description: p.description,
+        avatarUrl: p.avatarUrl || "robot-blue",
+        isOnline,
+        lastSeenAt,
+        friendshipStatus,
+        friendshipId: friendship?.id
+      };
+    });
+
+  res.json(results);
+});
+
+// 5. Get My Friends List (내 승인된 친구 목록)
+app.get("/api/friends/list", (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: "인증 필요" });
+  const token = authHeader.replace("Bearer ", "");
+  const session = getSession(token);
+  if (!session) return res.status(401).json({ error: "세션 만료" });
+
+  const db = readDB();
+  const currentUserId = session.id;
+
+  const acceptedFriendships = (db.friendships || []).filter(
+    f => f.status === "accepted" && (f.requesterId === currentUserId || f.receiverId === currentUserId)
+  );
+
+  const friends = acceptedFriendships.map(f => {
+    const friendUserId = f.requesterId === currentUserId ? f.receiverId : f.requesterId;
+    const friendUser = db.users.find(u => u.id === friendUserId);
+    const profile = friendUser ? getOrCreatePublicProfile(friendUser, db) : null;
+    const { isOnline, lastSeenAt } = isUserOnline(friendUserId, db);
+
+    // 안 읽은 메시지 수 계산
+    const unreadCount = (db.directMessages || []).filter(
+      m => m.senderId === friendUserId && m.receiverId === currentUserId && m.status !== "read"
+    ).length;
+
+    // 최근 메시지 1개
+    const threadMessages = (db.directMessages || []).filter(
+      m => (m.senderId === currentUserId && m.receiverId === friendUserId) ||
+           (m.senderId === friendUserId && m.receiverId === currentUserId)
+    );
+    const lastMessage = threadMessages.length > 0 ? threadMessages[threadMessages.length - 1] : undefined;
+
+    return {
+      userId: friendUserId,
+      botName: profile?.botName || "소다봇",
+      nickname: profile?.nickname || friendUser?.displayName || "친구",
+      description: profile?.description || "",
+      avatarUrl: profile?.avatarUrl || "robot-blue",
+      isOnline,
+      lastSeenAt,
+      friendshipId: f.id,
+      friendshipStatus: "accepted" as const,
+      unreadCount,
+      lastMessage
+    };
+  });
+
+  // 온라인인 친구를 상단으로 정렬
+  friends.sort((a, b) => {
+    if (a.isOnline === b.isOnline) {
+      const timeA = a.lastMessage ? new Date(a.lastMessage.createdAt).getTime() : 0;
+      const timeB = b.lastMessage ? new Date(b.lastMessage.createdAt).getTime() : 0;
+      return timeB - timeA;
+    }
+    return a.isOnline ? -1 : 1;
+  });
+
+  res.json(friends);
+});
+
+// 6. Get Friend Requests (받은 요청 & 보낸 요청)
+app.get("/api/friends/requests", (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: "인증 필요" });
+  const token = authHeader.replace("Bearer ", "");
+  const session = getSession(token);
+  if (!session) return res.status(401).json({ error: "세션 만료" });
+
+  const db = readDB();
+  const currentUserId = session.id;
+
+  const incoming = (db.friendships || [])
+    .filter(f => f.receiverId === currentUserId && f.status === "pending")
+    .map(f => {
+      const requesterUser = db.users.find(u => u.id === f.requesterId);
+      const profile = requesterUser ? getOrCreatePublicProfile(requesterUser, db) : null;
+      const { isOnline, lastSeenAt } = isUserOnline(f.requesterId, db);
+      return {
+        id: f.id,
+        requesterId: f.requesterId,
+        createdAt: f.createdAt,
+        profile: {
+          userId: f.requesterId,
+          botName: profile?.botName || "소다봇",
+          nickname: profile?.nickname || requesterUser?.displayName || "친구",
+          description: profile?.description || "",
+          avatarUrl: profile?.avatarUrl || "robot-blue",
+          isOnline,
+          lastSeenAt
+        }
+      };
+    });
+
+  const outgoing = (db.friendships || [])
+    .filter(f => f.requesterId === currentUserId && f.status === "pending")
+    .map(f => {
+      const receiverUser = db.users.find(u => u.id === f.receiverId);
+      const profile = receiverUser ? getOrCreatePublicProfile(receiverUser, db) : null;
+      const { isOnline, lastSeenAt } = isUserOnline(f.receiverId, db);
+      return {
+        id: f.id,
+        receiverId: f.receiverId,
+        createdAt: f.createdAt,
+        profile: {
+          userId: f.receiverId,
+          botName: profile?.botName || "소다봇",
+          nickname: profile?.nickname || receiverUser?.displayName || "친구",
+          description: profile?.description || "",
+          avatarUrl: profile?.avatarUrl || "robot-blue",
+          isOnline,
+          lastSeenAt
+        }
+      };
+    });
+
+  res.json({ incoming, outgoing });
+});
+
+// 7. Send Friend Request (친구 요청 보내기)
+app.post("/api/friends/request", (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: "인증 필요" });
+  const token = authHeader.replace("Bearer ", "");
+  const session = getSession(token);
+  if (!session) return res.status(401).json({ error: "세션 만료" });
+
+  const { targetUserId } = req.body;
+  if (!targetUserId || targetUserId === session.id) {
+    return res.status(400).json({ error: "올바른 친구 대상을 지정해주세요." });
+  }
+
+  const db = readDB();
+  const targetUser = db.users.find(u => u.id === targetUserId);
+  if (!targetUser) return res.status(404).json({ error: "사용자를 찾을 수 없습니다." });
+
+  if (!db.friendships) db.friendships = [];
+
+  // 기존 관계 확인
+  const existing = db.friendships.find(
+    f => (f.requesterId === session.id && f.receiverId === targetUserId) ||
+         (f.requesterId === targetUserId && f.receiverId === session.id)
+  );
+
+  if (existing) {
+    if (existing.status === "accepted") {
+      return res.status(400).json({ error: "이미 친구로 등록되어 있습니다." });
+    }
+    if (existing.status === "blocked") {
+      return res.status(403).json({ error: "친구 요청을 보낼 수 없는 상태입니다." });
+    }
+    if (existing.status === "pending") {
+      if (existing.requesterId === session.id) {
+        return res.status(400).json({ error: "이미 친구 요청을 보냈습니다. 상대방의 수락을 기다려주세요." });
+      } else {
+        // 상대방이 이미 나에게 요청을 보낸 상태 -> 즉시 수락 처리!
+        existing.status = "accepted";
+        existing.acceptedAt = new Date().toISOString();
+        writeDB(db);
+        return res.json({ success: true, status: "accepted", message: "상호 친구 요청으로 즉시 친구가 되었습니다! 🎉" });
+      }
+    }
+    if (existing.status === "rejected") {
+      // 거절되었던 관계 재요청
+      existing.requesterId = session.id;
+      existing.receiverId = targetUserId;
+      existing.status = "pending";
+      existing.createdAt = new Date().toISOString();
+      writeDB(db);
+      return res.json({ success: true, status: "pending", message: "친구 요청을 보냈습니다." });
+    }
+  }
+
+  const newFriendship: Friendship = {
+    id: "fr-" + Date.now() + "-" + crypto.randomBytes(3).toString("hex"),
+    requesterId: session.id,
+    receiverId: targetUserId,
+    status: "pending",
+    createdAt: new Date().toISOString()
+  };
+
+  db.friendships.push(newFriendship);
+  writeDB(db);
+
+  res.json({ success: true, status: "pending", message: "친구 요청을 보냈습니다." });
+});
+
+// 8. Respond to Friend Request (수락 또는 거절)
+app.post("/api/friends/respond", (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: "인증 필요" });
+  const token = authHeader.replace("Bearer ", "");
+  const session = getSession(token);
+  if (!session) return res.status(401).json({ error: "세션 만료" });
+
+  const { requestId, action } = req.body;
+  if (!requestId || !["accept", "reject"].includes(action)) {
+    return res.status(400).json({ error: "올바른 요청 파라미터를 입력해주세요." });
+  }
+
+  const db = readDB();
+  const friendship = (db.friendships || []).find(f => f.id === requestId && f.receiverId === session.id);
+  if (!friendship) {
+    return res.status(404).json({ error: "대기 중인 친구 요청을 찾을 수 없습니다." });
+  }
+
+  if (action === "accept") {
+    friendship.status = "accepted";
+    friendship.acceptedAt = new Date().toISOString();
+  } else {
+    // 거절 시 목록에서 제거
+    const idx = db.friendships!.findIndex(f => f.id === requestId);
+    if (idx !== -1) db.friendships!.splice(idx, 1);
+  }
+
+  writeDB(db);
+  res.json({ success: true, action, message: action === "accept" ? "친구 요청을 수락했습니다! 🎉" : "친구 요청을 거절했습니다." });
+});
+
+// 9. Delete Friend (친구 삭제)
+app.post("/api/friends/delete", (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: "인증 필요" });
+  const token = authHeader.replace("Bearer ", "");
+  const session = getSession(token);
+  if (!session) return res.status(401).json({ error: "세션 만료" });
+
+  const { friendUserId } = req.body;
+  const db = readDB();
+  
+  const idx = (db.friendships || []).findIndex(
+    f => (f.requesterId === session.id && f.receiverId === friendUserId) ||
+         (f.requesterId === friendUserId && f.receiverId === session.id)
+  );
+
+  if (idx !== -1) {
+    db.friendships!.splice(idx, 1);
+    writeDB(db);
+    return res.json({ success: true, message: "친구를 삭제했습니다." });
+  }
+
+  res.status(404).json({ error: "등록된 친구를 찾을 수 없습니다." });
+});
+
+// 10. Block User (친구 차단)
+app.post("/api/friends/block", (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: "인증 필요" });
+  const token = authHeader.replace("Bearer ", "");
+  const session = getSession(token);
+  if (!session) return res.status(401).json({ error: "세션 만료" });
+
+  const { targetUserId } = req.body;
+  if (!targetUserId || targetUserId === session.id) {
+    return res.status(400).json({ error: "올바른 대상을 지정해주세요." });
+  }
+
+  const db = readDB();
+  if (!db.friendships) db.friendships = [];
+
+  let friendship = db.friendships.find(
+    f => (f.requesterId === session.id && f.receiverId === targetUserId) ||
+         (f.requesterId === targetUserId && f.receiverId === session.id)
+  );
+
+  if (friendship) {
+    friendship.status = "blocked";
+    friendship.requesterId = session.id;
+    friendship.receiverId = targetUserId;
+  } else {
+    db.friendships.push({
+      id: "fr-blk-" + Date.now(),
+      requesterId: session.id,
+      receiverId: targetUserId,
+      status: "blocked",
+      createdAt: new Date().toISOString()
+    });
+  }
+
+  writeDB(db);
+  res.json({ success: true, message: "사용자를 차단했습니다." });
+});
+
+// 11. Get Direct Messages with a Friend (1:1 친구 메시지 내역)
+app.get("/api/friends/messages/:friendId", (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: "인증 필요" });
+  const token = authHeader.replace("Bearer ", "");
+  const session = getSession(token);
+  if (!session) return res.status(401).json({ error: "세션 만료" });
+
+  const { friendId } = req.params;
+  const db = readDB();
+
+  // 친구 관계 검증 (승인된 친구만 메시지 열람 가능)
+  const isFriend = (db.friendships || []).some(
+    f => f.status === "accepted" &&
+    ((f.requesterId === session.id && f.receiverId === friendId) ||
+     (f.requesterId === friendId && f.receiverId === session.id))
+  );
+
+  if (!isFriend) {
+    return res.status(403).json({ error: "친구로 등록된 사용자와만 메시지를 주고받을 수 있습니다." });
+  }
+
+  const messages = (db.directMessages || []).filter(
+    m => (m.senderId === session.id && m.receiverId === friendId) ||
+         (m.senderId === friendId && m.receiverId === session.id)
+  );
+
+  // 상대방이 나에게 보낸 안읽은 메시지를 읽음 처리
+  let hasReadUpdates = false;
+  messages.forEach(m => {
+    if (m.senderId === friendId && m.receiverId === session.id && m.status !== "read") {
+      m.status = "read";
+      hasReadUpdates = true;
+    }
+  });
+
+  if (hasReadUpdates) {
+    writeDB(db);
+  }
+
+  const friendUser = db.users.find(u => u.id === friendId);
+  const friendProfile = friendUser ? getOrCreatePublicProfile(friendUser, db) : null;
+  const { isOnline, lastSeenAt } = isUserOnline(friendId, db);
+
+  res.json({
+    friend: {
+      userId: friendId,
+      botName: friendProfile?.botName || "소다봇",
+      nickname: friendProfile?.nickname || friendUser?.displayName || "친구",
+      description: friendProfile?.description || "",
+      avatarUrl: friendProfile?.avatarUrl || "robot-blue",
+      isOnline,
+      lastSeenAt
+    },
+    messages
+  });
+});
+
+// 12. Send Direct Message (1:1 메시지 전송)
+app.post("/api/friends/messages/:friendId", (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: "인증 필요" });
+  const token = authHeader.replace("Bearer ", "");
+  const session = getSession(token);
+  if (!session) return res.status(401).json({ error: "세션 만료" });
+
+  const { friendId } = req.params;
+  const { content } = req.body;
+
+  if (!content || typeof content !== "string" || !content.trim()) {
+    return res.status(400).json({ error: "메시지 내용을 입력해주세요." });
+  }
+
+  const db = readDB();
+
+  // 친구 관계 및 차단 여부 검증
+  const friendship = (db.friendships || []).find(
+    f => ((f.requesterId === session.id && f.receiverId === friendId) ||
+          (f.requesterId === friendId && f.receiverId === session.id))
+  );
+
+  if (!friendship || friendship.status !== "accepted") {
+    return res.status(403).json({ error: "친구로 등록된 사용자와만 메시지를 전송할 수 있습니다." });
+  }
+
+  if (!db.directMessages) db.directMessages = [];
+
+  const newDm: DirectMessage = {
+    id: "dm-" + Date.now() + "-" + crypto.randomBytes(3).toString("hex"),
+    senderId: session.id,
+    receiverId: friendId,
+    content: content.trim().substring(0, 500),
+    createdAt: new Date().toISOString(),
+    status: "sent",
+    playedOnSodabot: false
+  };
+
+  db.directMessages.push(newDm);
+  writeDB(db);
+
+  res.json({ success: true, message: newDm });
+});
+
+// 13. Mark Message Played on SODABOT
+app.post("/api/friends/messages/:messageId/play-sodabot", (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: "인증 필요" });
+  const token = authHeader.replace("Bearer ", "");
+  const session = getSession(token);
+  if (!session) return res.status(401).json({ error: "세션 만료" });
+
+  const { messageId } = req.params;
+  const db = readDB();
+
+  const dm = (db.directMessages || []).find(m => m.id === messageId);
+  if (!dm) return res.status(404).json({ error: "메시지를 찾을 수 없습니다." });
+
+  // 수신자 또는 발신자 본인만 발화 허용
+  if (dm.receiverId !== session.id && dm.senderId !== session.id) {
+    return res.status(403).json({ error: "권한이 없습니다." });
+  }
+
+  dm.playedOnSodabot = true;
+  writeDB(db);
+
+  const senderUser = db.users.find(u => u.id === dm.senderId);
+  const senderProfile = senderUser ? getOrCreatePublicProfile(senderUser, db) : null;
+  const senderName = senderProfile?.botName || senderUser?.displayName || "친구";
+
+  res.json({
+    success: true,
+    speechText: `${senderName}의 메시지: ${dm.content}`
+  });
+});
+
+// 14. Notifications Count (친구 요청 수 + 안읽은 DM 수)
+app.get("/api/friends/notifications/count", (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: "인증 필요" });
+  const token = authHeader.replace("Bearer ", "");
+  const session = getSession(token);
+  if (!session) return res.status(401).json({ error: "세션 만료" });
+
+  const db = readDB();
+  const currentUserId = session.id;
+
+  const pendingRequestsCount = (db.friendships || []).filter(
+    f => f.receiverId === currentUserId && f.status === "pending"
+  ).length;
+
+  const unreadMessagesCount = (db.directMessages || []).filter(
+    m => m.receiverId === currentUserId && m.status !== "read"
+  ).length;
+
+  res.json({
+    pendingRequestsCount,
+    unreadMessagesCount,
+    totalCount: pendingRequestsCount + unreadMessagesCount
   });
 });
 
