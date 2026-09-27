@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import LcdPixelEditor from './LcdPixelEditor';
 import soda63Code from '../../firmware/soda-6-3.ino?raw';
 import soda81Code from '../../firmware/soda-8-1.ino?raw';
+import soda91Code from '../../firmware/soda-9-1.ino?raw';
 import { 
   Code2, 
   Copy, 
@@ -904,6 +905,19 @@ void loop() {
     pinMap: "LCD(MOSI:11, CLK:12, CS:13, DC:7, RST:6), 버튼:4, I2S스피커(5,3,44), I2S마이크(9,10,8)",
     updatedAt: new Date().toISOString(),
     code: soda81Code
+  },
+  {
+    id: "content-week-9-firmware",
+    week: 9,
+    title: "9주차: 1. 소다봇 PCB 기본 펌웨어",
+    description: "9주차 소다봇 전용 PCB(v1.1) 실습을 위한 표준 아두이노 펌웨어입니다. SODA-AIBOT v1.1 PCB 배선 및 TX(GPIO43) 버튼 입력, I2S 스피커/마이크, ST7789 LCD 및 실시간 음성 대화 기능이 연결되어 있습니다.",
+    filename: "soda-9-1.ino",
+    language: "arduino",
+    contentType: "code",
+    tags: ["9주차", "PCB기본펌웨어", "소다봇PCB", "음성대화", "soda-9-1", "ESP32-S3"],
+    pinMap: "PCB v1.1: LCD(MOSI:11, CLK:12, CS:13, DC:7, RST:6), 버튼:GPIO43(TX), I2S스피커(5,3,44), I2S마이크(9,10,8)",
+    updatedAt: new Date().toISOString(),
+    code: soda91Code
   }
 ];
 

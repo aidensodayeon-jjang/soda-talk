@@ -12,6 +12,8 @@ export interface Message {
   text: string;
   timestamp: string;
   modelUsed?: string;
+  source?: "web" | "sodabot";
+  deviceId?: string | null;
 }
 
 export interface ChatRoom {

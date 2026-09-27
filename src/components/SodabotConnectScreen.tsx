@@ -35,8 +35,7 @@ export default function SodabotConnectScreen({ currentUser }: SodabotConnectScre
   const [copiedKey, setCopiedKey] = useState(false);
 
   const [step, setStepState] = useState<1 | 2 | 3>(() => {
-    const savedIp = localStorage.getItem(getScopedKey("robot_ip"));
-    if (sodabotTransport.type !== 'none' && savedIp) return 3;
+    if (sodabotTransport.type !== 'none') return 3;
     const savedStep = localStorage.getItem(getScopedKey("connect_step"));
     if (savedStep) {
       const parsed = parseInt(savedStep, 10);
@@ -63,12 +62,11 @@ export default function SodabotConnectScreen({ currentUser }: SodabotConnectScre
     return localStorage.getItem(getScopedKey("device_name"));
   });
   const [status, setStatus] = useState<'idle' | 'ble_connecting' | 'wifi_connecting' | 'connected' | 'error'>(() => {
-    const savedIp = localStorage.getItem(getScopedKey("robot_ip"));
-    if (sodabotTransport.type !== 'none' && savedIp) return 'connected';
+    if (sodabotTransport.type !== 'none') return 'connected';
     return 'idle';
   });
   const [robotIp, setRobotIp] = useState<string | null>(() => {
-    return localStorage.getItem(getScopedKey("robot_ip"));
+    return localStorage.getItem(getScopedKey("robot_ip")) || localStorage.getItem("sodabot_robot_ip");
   });
   const [copiedCode, setCopiedCode] = useState(false);
 
@@ -106,17 +104,12 @@ export default function SodabotConnectScreen({ currentUser }: SodabotConnectScre
     setRobotIp(savedIp);
     setConnectedDeviceName(savedDev);
 
-    if (savedIp) {
-      if (sodabotTransport.type === 'none') {
-        void connectWebSocket(savedIp);
-      } else {
-        setStatus('connected');
-        setStepState(3);
-      }
+    if (sodabotTransport.type !== 'none') {
+      setStatus('connected');
+      setStepState(3);
+    } else if (savedIp) {
+      void connectWebSocket(savedIp);
     } else {
-      if (sodabotTransport.type !== 'none') {
-        sodabotTransport.disconnect();
-      }
       setStatus('idle');
       setStepState(savedStep ? (parseInt(savedStep, 10) as 1 | 2 | 3) : 1);
     }
@@ -124,12 +117,14 @@ export default function SodabotConnectScreen({ currentUser }: SodabotConnectScre
 
   useEffect(() => {
     const update = () => {
-      const savedIp = localStorage.getItem(getScopedKey("robot_ip"));
-      const connected = sodabotTransport.type !== 'none' && !!savedIp;
+      const savedIp = localStorage.getItem(getScopedKey("robot_ip")) || localStorage.getItem("sodabot_robot_ip");
+      const connected = sodabotTransport.type !== 'none';
       setStatus(connected ? 'connected' : 'idle');
       if (connected) setStep(3);
       setRobotIp(savedIp);
+      setConnectedDeviceName(localStorage.getItem(getScopedKey("device_name")) || localStorage.getItem("sodabot_device_name"));
     };
+    update();
     window.addEventListener('sodabot-status-changed', update);
     return () => window.removeEventListener('sodabot-status-changed', update);
   }, [userKey]);

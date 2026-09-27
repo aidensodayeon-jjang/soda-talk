@@ -46,6 +46,8 @@ interface Message {
   text: string;
   timestamp: string;
   modelUsed?: string;
+  source?: "web" | "sodabot";
+  deviceId?: string | null;
 }
 
 interface ChatRoom {
@@ -67,6 +69,11 @@ interface User {
   lastGptDate?: string;
   gptUsageCount?: number;
   persona?: string;
+  friendSettings?: {
+    persona?: any;
+    profile?: any;
+    memories?: any[];
+  };
 }
 
 interface CourseContent {
@@ -391,6 +398,32 @@ const DEFAULT_COURSE_CONTENTS: CourseContent[] = [
     pinMap: "LCD(MOSI:11, CLK:12, CS:13, DC:7, RST:6), 버튼:4, I2S스피커(5,3,44), I2S마이크(9,10,8)",
     updatedAt: new Date().toISOString(),
     code: getFirmwareCode("soda-6-3.ino")
+  },
+  {
+    id: "content-week-8-firmware",
+    week: 8,
+    title: "1. 소다봇 기본 펌웨어",
+    description: "8주차 소다봇 빌더 실습을 위한 표준 아두이노 펌웨어입니다. BLE, Wi-Fi, WebSocket, 2.0인치 ST7789 LCD, MAX98357A I2S 스피커, INMP441 I2S 마이크, Push-to-Talk 실시간 음성인식, 인터넷 실시간 시계(NTP) 및 커스텀 기능이 모두 통합되어 있습니다.",
+    filename: "soda-8-1.ino",
+    language: "arduino",
+    contentType: "code",
+    tags: ["8주차", "기본펌웨어", "소다봇빌더", "음성대화", "NTP시계", "ESP32-S3", "soda-8-1"],
+    pinMap: "LCD(MOSI:11, CLK:12, CS:13, DC:7, RST:6), 버튼:4, I2S스피커(5,3,44), I2S마이크(9,10,8)",
+    updatedAt: new Date().toISOString(),
+    code: getFirmwareCode("soda-8-1.ino")
+  },
+  {
+    id: "content-week-9-firmware",
+    week: 9,
+    title: "1. 소다봇 PCB 기본 펌웨어",
+    description: "9주차 소다봇 전용 PCB(v1.1) 실습을 위한 표준 아두이노 펌웨어입니다. SODA-AIBOT v1.1 PCB 배선 및 TX(GPIO43) 버튼 입력, I2S 스피커/마이크, ST7789 LCD 및 실시간 음성 대화 기능이 연결되어 있습니다.",
+    filename: "soda-9-1.ino",
+    language: "arduino",
+    contentType: "code",
+    tags: ["9주차", "PCB기본펌웨어", "소다봇PCB", "음성대화", "soda-9-1", "ESP32-S3"],
+    pinMap: "PCB v1.1: LCD(MOSI:11, CLK:12, CS:13, DC:7, RST:6), 버튼:GPIO43(TX), I2S스피커(5,3,44), I2S마이크(9,10,8)",
+    updatedAt: new Date().toISOString(),
+    code: getFirmwareCode("soda-9-1.ino")
   }
 ];
 
@@ -525,27 +558,66 @@ function checkHybridQuotaAndRoute(user: User, db: DBStructure) {
   }
 }
 
+function buildSharedSystemPrompt(user: User, isHardwareVoice: boolean = false): string {
+  const friendSettings = user.friendSettings || {};
+  const persona = friendSettings.persona || {
+    robotName: "소다봇",
+    tone: "cute",
+    speechStyle: "friendly",
+    personality: "bright"
+  };
+  const profile = friendSettings.profile || {
+    studentName: user.displayName || "친구",
+    school: "",
+    grade: "",
+    interests: "",
+    dream: ""
+  };
+  const memories = (friendSettings.memories || []).filter((m: any) => m && m.text);
+
+  let prompt = `너는 '${profile.studentName || user.displayName || '친구'}'의 가장 친한 AI 반려 로봇 '${persona.robotName || '소다봇'}'이야.`;
+  if (persona.personality === "calm") {
+    prompt += ` 차분하고 다정하며 지혜롭게 이야기해.`;
+  } else if (persona.personality === "humorous") {
+    prompt += ` 유쾌하고 재치 넘치며 신나게 이야기해.`;
+  } else {
+    prompt += ` 밝고 따뜻하며 귀엽게 이야기해.`;
+  }
+
+  if (profile.school || profile.grade || profile.interests || profile.dream) {
+    prompt += ` [친구 정보: 이름=${profile.studentName}, 학교=${profile.school || '미입력'}, 학년=${profile.grade || '미입력'}, 관심사=${profile.interests || '미입력'}, 장래희망=${profile.dream || '미입력'}]`;
+  }
+
+  if (memories.length > 0) {
+    const memTexts = memories.map((m: any) => m.text).join(", ");
+    prompt += ` [우리가 함께 나눈 소중한 기억들: ${memTexts}]`;
+  }
+
+  if (isHardwareVoice) {
+    prompt += ` 음성으로 직접 전달되므로 친근한 한국어 존댓말 또는 반말로 1~2문장 이내(최대 50자 내외)로 짧고 생생하게 대답해. 특수문자나 이모지는 빼고 텍스트로만 말해줘.`;
+  }
+
+  return prompt;
+}
+
 function findUserByApiKey(token: string, db: DBStructure): User | undefined {
   if (!token) return undefined;
   const cleanToken = token.trim();
   const user = db.users.find(u => u.personalApiKey === cleanToken);
   if (user) return user;
 
-  // 기본 펌웨어 템플릿 키 또는 데모 키인 경우 admin/첫 번째 유저로 자동 fallback
+  // 기본 펌웨어 템플릿 키 또는 데모 키인 경우 자동 fallback
   const defaultKeys = [
     "sk-soda-9597fe97de4771e361b8a171c9aefd7b",
     "sk-soda-23fdcaabe351c318b448d8540b9bb756",
+    "sk-soda-33b8c4c9312d29b8a01f1803e890a758",
     "sk-soda-demo"
   ];
   if (defaultKeys.includes(cleanToken)) {
+    const studentUser = db.users.find(u => u.id === "student-1891") || db.users.find(u => u.displayName === "김루미" || u.displayName === "에이든");
+    if (studentUser) return studentUser;
     const defaultAdmin = db.users.find(u => u.username === "admin") || db.users[0];
-    if (defaultAdmin) {
-      if (!defaultAdmin.personalApiKey) {
-        defaultAdmin.personalApiKey = cleanToken;
-        writeDB(db);
-      }
-      return defaultAdmin;
-    }
+    return defaultAdmin;
   }
   return undefined;
 }
@@ -753,6 +825,50 @@ app.post('/api/hw/tts', express.json({ limit: '16kb' }), async (req, res) => {
   }
 });
 
+app.get('/api/user/friend-settings', (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
+
+  const token = authHeader.replace("Bearer ", "").trim();
+  const db = readDB();
+  const session = getSession(token);
+  const user = session ? db.users.find(u => u.id === session.id) : findUserByApiKey(token, db);
+  if (!user) return res.status(401).json({ error: "User not found" });
+
+  res.json({
+    persona: user.friendSettings?.persona || {
+      robotName: "소다봇",
+      tone: "cute",
+      speechStyle: "friendly",
+      personality: "bright"
+    },
+    profile: user.friendSettings?.profile || {
+      studentName: user.displayName || "친구",
+      school: "",
+      grade: "",
+      interests: "",
+      dream: ""
+    },
+    memories: user.friendSettings?.memories || []
+  });
+});
+
+app.post('/api/user/friend-settings', express.json(), (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
+
+  const token = authHeader.replace("Bearer ", "").trim();
+  const db = readDB();
+  const session = getSession(token);
+  const user = session ? db.users.find(u => u.id === session.id) : findUserByApiKey(token, db);
+  if (!user) return res.status(401).json({ error: "User not found" });
+
+  const { persona, profile, memories } = req.body;
+  user.friendSettings = { persona, profile, memories };
+  writeDB(db);
+  res.json({ success: true, friendSettings: user.friendSettings });
+});
+
 app.post('/api/hw/audio-chat', upload.single('file'), async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
@@ -771,7 +887,7 @@ app.post('/api/hw/audio-chat', upload.single('file'), async (req, res) => {
     formData.append('file', blob, 'audio.wav');
     formData.append('model', 'whisper-1');
     formData.append('language', 'ko');
-    formData.append('prompt', '소다봇에게 말하는 내용입니다.');
+    formData.append('prompt', '소다봇에게 말하는 한국어 대화입니다.');
 
     const whisperRes = await fetch("https://api.openai.com/v1/audio/transcriptions", {
       method: "POST",
@@ -796,9 +912,11 @@ app.post('/api/hw/audio-chat', upload.single('file'), async (req, res) => {
       return res.json({ text: "", reply: "음성을 인식하지 못했어요." });
     }
 
-    // 2. LLM (Text to Text)
+    // 2. LLM (Text to Text) with Unified Friend Persona
     const routeConfig = checkHybridQuotaAndRoute(user, db);
     writeDB(db);
+
+    const voiceSystemPrompt = buildSharedSystemPrompt(user, true);
 
     const openaiRes = await fetch(routeConfig.url, {
       method: "POST",
@@ -809,42 +927,50 @@ app.post('/api/hw/audio-chat', upload.single('file'), async (req, res) => {
       body: JSON.stringify({
         model: routeConfig.routedToGpt ? "gpt-4o-mini" : db.settings.modelName,
         messages: [
-          { role: "system", content: "너는 초등학생이 만든 AI 반려봇 소다봇이야. 한국어로 아주 짧고 귀엽게 말해." },
+          { role: "system", content: voiceSystemPrompt },
           { role: "user", content: transcript }
         ],
-        max_tokens: 80
+        max_tokens: 150
       })
     });
 
     const data = await openaiRes.json();
-    const replyMessage = data.choices?.[0]?.message?.content || "앗, 오류가 났어요.";
+    let replyMessage = data.choices?.[0]?.message?.content || "앗, 오류가 났어요.";
+    replyMessage = replyMessage.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, "").trim();
 
-    // 3. Save to DB
-    let chat = db.chats.find(c => c.userId === user.id && c.title === "아두이노 소다봇 대화");
+    // 3. Save to Unified DB Conversation Thread
+    let chat = db.chats.filter(c => c.userId === user.id).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
     if (!chat) {
       chat = {
-        id: "chat-hw-" + Date.now(),
+        id: "chat-" + Date.now(),
         userId: user.id,
-        title: "아두이노 소다봇 대화",
+        title: "소다와 대화하기 ✨",
         createdAt: new Date().toISOString(),
         messages: []
       };
       db.chats.push(chat);
     }
-    
-    chat.messages.push({
-      id: "msg-" + Date.now() + "1",
+
+    const hwUserMsg: Message = {
+      id: "msg-" + Date.now() + "-hw-user",
       sender: "user",
       text: transcript,
-      timestamp: new Date().toISOString()
-    });
-    chat.messages.push({
-      id: "msg-" + Date.now() + "2",
+      timestamp: new Date().toISOString(),
+      source: "sodabot",
+      deviceId: "SODABOT-01"
+    };
+
+    const hwBotMsg: Message = {
+      id: "msg-" + (Date.now() + 1) + "-hw-bot",
       sender: "assistant",
       text: replyMessage,
       timestamp: new Date().toISOString(),
-      modelUsed: data.model || "Unknown Model"
-    });
+      source: "sodabot",
+      deviceId: "SODABOT-01",
+      modelUsed: data.model || "Whisper + GPT"
+    };
+
+    chat.messages.push(hwUserMsg, hwBotMsg);
     writeDB(db);
 
     // 4. Return result

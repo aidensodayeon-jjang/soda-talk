@@ -30,6 +30,9 @@ class SodabotTransport {
     if (reply.event === 'button_pressed' || reply.event === 'button') {
       window.dispatchEvent(new CustomEvent('sodabot-button-event', { detail: reply }));
     }
+    if (reply.event === 'voice_chat_completed') {
+      window.dispatchEvent(new CustomEvent('sodabot-voice-chat', { detail: reply }));
+    }
     if (!reply.id) return;
     const entry = this.pending.get(reply.id);
     if (!entry) return;

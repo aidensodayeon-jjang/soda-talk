@@ -47,7 +47,7 @@ bool webServerStarted = false;
 #define SERVICE_UUID        "6b8a0001-4f2a-4b3c-9d5e-1a2b3c4d5e6f"
 #define CHAR_WRITE_UUID     "6b8a0002-4f2a-4b3c-9d5e-1a2b3c4d5e6f"
 #define CHAR_NOTIFY_UUID    "6b8a0003-4f2a-4b3c-9d5e-1a2b3c4d5e6f"
-const char* SODA_BLE_NAME = "SODABOT_ELLA";
+const char* SODA_BLE_NAME = "SODABOT_aiden";
 
 BLEServer* pServer = NULL;
 BLECharacteristic* pNotifyCharacteristic = NULL;

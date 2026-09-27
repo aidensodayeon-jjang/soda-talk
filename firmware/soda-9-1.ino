@@ -54,16 +54,19 @@ BLECharacteristic* pNotifyCharacteristic = NULL;
 bool deviceConnected = false;
 
 
-// === SODA-AIBOT v2 보드 핀맵 (실물 SuperMini 핀 순서 기준) ===
+// === SODA-AIBOT v1.1 PCB + J1 버튼 (soda-aibot의 실물 SuperMini 핀 순서 기준) ===
 // 실물 헤더: 좌=TX(43) RX(44) 1 2 3 4 5 6 7,  우=5V G 3V3 13 12 11 10 9 8
-// 물리 버튼 (GPIO 4, 내부 풀업 사용)
-#define BUTTON_PIN 4
+// J1.1 SIG → J5.1 → 실물 TX/GPIO43. J1.3 GND와 순간 누름 버튼 연결.
+// J1.2 3V3는 2선식 버튼에 연결하지 않는다. INPUT_PULLUP, 누르면 LOW.
+// PCB 좌측 실크 1~9와 실물 GPIO 번호는 다르므로 소스의 실물 핀 순서를 따른다.
+#define BUTTON_PIN 43
 
 #define MIC_I2S_PORT I2S_NUM_1
 
-#define MIC_SCK  9
-#define MIC_WS   10
-#define MIC_SD   8
+#define MIC_SCK  5
+#define MIC_WS   4
+#define MIC_SD   3
+#define MIC_GAIN 2  // DC 제거 후 증폭. 실측 잘림을 줄이기 위해 4배에서 낮춤
 
 #define MIC_SAMPLE_RATE 16000
 constexpr uint32_t MAX_RECORD_SECONDS = 8;
@@ -74,30 +77,24 @@ constexpr size_t MAX_RECORD_SAMPLES = MIC_SAMPLE_RATE * MAX_RECORD_SECONDS;
 // 컴퓨터 IP가 바뀌면 이 값만 고치면 된다.
 const char* SODA_SERVER_HOST = "192.168.0.171";
 const uint16_t SODA_SERVER_PORT = 7989;
-const bool SODA_SERVER_HTTPS = false;
 const char* SODA_AUDIO_CHAT_PATH = "/api/hw/audio-chat";
 const char* SODA_TTS_PATH = "/api/hw/tts";
-const char* DEFAULT_SODA_API_KEY = "sk-soda-33b8c4c9312d29b8a01f1803e890a758";
+const char* DEFAULT_SODA_API_KEY = "sk-soda-eac7b97f357ff96464d1acf8589ebc78";
 String sodaApiKey;
-
-// 3가지 음성 인터랙션 전용 표정 전방 선언
-void listeningFace();
-void thinkingFace();
-void answeringFace();
-void drawListeningFaceFrame(int waveLevel);
-void drawThinkingFaceFrame(int frame);
-void drawAnsweringFaceFrame(bool mouthOpen);
-void updateTalkingMouth(bool open);
-void renderDefaultIdleFace();
-void confusedEyes();
-extern bool customExpression;
-extern unsigned long expressionUntil;
 
 bool micReady = false;
 int16_t* voicePcm = nullptr;
+size_t voiceCapacitySamples = 0;
 volatile size_t voiceSampleCount = 0;
 std::atomic<bool> voiceUploadPending{false};
 std::atomic<bool> voiceUploadBusy{false};
+std::atomic<bool> voiceRecording{false};
+// 최근 약 0.5초의 마이크 측정값. 무음/발화 비교용이며 RMS만으로 발화를 판정하지 않는다.
+std::atomic<int> micLevelRms{0}, micLevelMean{0}, micLevelPeak{0}, micClipPermille{0};
+std::atomic<uint32_t> micLevelUpdatedAt{0};
+int32_t micRawProbe[256];
+std::atomic<int> micProbeState{0}; // 0 idle, 1 requested, 2 ready
+size_t micProbeCount = 0;
 
 void setupMicrophone() {
   i2s_config_t config = {
@@ -130,68 +127,91 @@ void setupMicrophone() {
     return;
   }
 
+  voiceCapacitySamples = MAX_RECORD_SAMPLES;
   voicePcm = static_cast<int16_t*>(heap_caps_malloc(
-    MAX_RECORD_SAMPLES * sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    voiceCapacitySamples * sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  bool externalRam = voicePcm != nullptr;
   if (!voicePcm) {
-    Serial.println("[오류] 녹음 버퍼를 만들지 못했습니다. 도구 > PSRAM을 QSPI PSRAM으로 설정해주세요.");
+    // Wi-Fi/BLE 및 서버 응답용 내부 힙을 남기고 최대 2초까지 녹음한다.
+    const uint32_t caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+    const size_t reserveBytes = 48 * 1024;
+    size_t freeBytes = heap_caps_get_free_size(caps);
+    size_t available = freeBytes > reserveBytes ? freeBytes - reserveBytes : 0;
+    available = min(available, heap_caps_get_largest_free_block(caps));
+    size_t targetSamples = min(available / sizeof(int16_t), size_t(MIC_SAMPLE_RATE * 2));
+    // 0.1초 단위로 내림. 최소 1초를 확보하지 못하면 명확하게 오류 처리한다.
+    voiceCapacitySamples = (targetSamples / 1600) * 1600;
+    if (voiceCapacitySamples >= MIC_SAMPLE_RATE) {
+      voicePcm = static_cast<int16_t*>(heap_caps_malloc(
+        voiceCapacitySamples * sizeof(int16_t), caps));
+    }
+  }
+  if (!voicePcm) {
+    voiceCapacitySamples = 0;
+    Serial.println("[오류] 녹음 메모리가 부족합니다. HARDWARE_STATUS로 메모리를 확인해주세요.");
     i2s_driver_uninstall(MIC_I2S_PORT);
     return;
   }
   micReady = true;
-  Serial.printf("[준비] 마이크와 %.0fKB 녹음 버퍼가 준비되었습니다.\n",
-                (MAX_RECORD_SAMPLES * sizeof(int16_t)) / 1024.0);
+  Serial.printf("[준비] 마이크 / %s / 최대 %.1f초 / %.0fKB 녹음 버퍼\n",
+                externalRam ? "PSRAM" : "내부 RAM (PSRAM 사용 불가)",
+                voiceCapacitySamples / float(MIC_SAMPLE_RATE),
+                (voiceCapacitySamples * sizeof(int16_t)) / 1024.0);
 }
 
 void microphoneTask(void*) {
   int32_t samples[256];
   bool lastRaw = digitalRead(BUTTON_PIN) == LOW;
-  bool pressed = false;
+  bool pressed = lastRaw;
+  bool armed = false;
   bool recording = false;
   uint32_t changedAt = millis();
   uint32_t lastStatus = millis();
   uint32_t recordStarted = 0;
   uint32_t lastLevelLog = 0;
+  int64_t levelSum = 0;
+  uint64_t levelSquares = 0;
+  size_t levelCount = 0, levelClipped = 0;
+  int32_t levelPeak = 0;
+  float previousMicInput = 0.0f, filteredMicInput = 0.0f;
+  bool micFilterInitialized = false;
   Serial.printf("[버튼 감시] GPIO%d level=%d, micReady=%d\n",
-                BUTTON_PIN, digitalRead(BUTTON_PIN), micReady);
+                BUTTON_PIN, lastRaw ? 0 : 1, micReady);
+  if (lastRaw) Serial.println("[버튼 대기] SIG-GND 연결을 한 번 끊은 뒤 다시 연결해주세요.");
 
   for (;;) {
     uint32_t now = millis();
     bool raw = digitalRead(BUTTON_PIN) == LOW;
     if (raw != lastRaw) { lastRaw = raw; changedAt = now; }
+    // 부팅/최대 길이/처리 중 눌림 뒤에는 반드시 버튼을 놓아야 다시 녹음한다.
+    if (!raw && now - changedAt >= 30) armed = true;
     if (raw != pressed && now - changedAt >= 30) {
       pressed = raw;
-      Serial.printf("[버튼 입력] GPIO%d %s\n", BUTTON_PIN, pressed ? "눌림" : "해제");
+      Serial.printf("[버튼 입력] GPIO%d level=%d (%s)\n",
+                    BUTTON_PIN, pressed ? 0 : 1, pressed ? "눌림" : "해제");
       if (pressed) {
         if (!micReady) {
-          Serial.println("[녹음 불가] 버튼 입력은 정상입니다. 부팅 시 마이크/PSRAM 오류를 확인해주세요.");
-        } else if (voiceUploadPending.load() || voiceUploadBusy.load()) {
-          Serial.println("[대기] 이전 대화를 처리 중입니다. 버튼을 놓고 다시 눌러주세요.");
-        } else {
-          recording = true;
+          Serial.println("[녹음 불가] 버튼 입력은 정상입니다. 마이크/PSRAM 초기화 오류를 확인해주세요.");
+        } else if (armed && !voiceUploadPending.load() && !voiceUploadBusy.load()) {
           voiceSampleCount = 0;
           recordStarted = now;
-          Serial.println("[버튼] 버튼 눌림을 감지했습니다.");
+          recording = true;
+          voiceRecording.store(true);
           Serial.println("[녹음 시작] 버튼을 누른 채 말해주세요.");
-          customExpression = true;
-          expressionUntil = millis() + 30000;
-          listeningFace();
+        } else if (armed) {
+          Serial.println("[대기] 이전 대화를 처리 중입니다. 버튼을 놓고 다시 눌러주세요.");
         }
+        armed = false;
       } else if (recording) {
         recording = false;
-        uint32_t duration = now - recordStarted;
-        Serial.println("[버튼] 버튼을 놓았습니다.");
-        if (duration < MIN_RECORD_MS || voiceSampleCount == 0) {
+        voiceRecording.store(false);
+        if (now - recordStarted < MIN_RECORD_MS || voiceSampleCount < (MIC_SAMPLE_RATE * MIN_RECORD_MS / 1000)) {
           voiceSampleCount = 0;
           Serial.println("[녹음 취소] 너무 짧습니다. 버튼을 조금 더 길게 누르고 말해주세요.");
-          customExpression = false;
-          renderDefaultIdleFace();
         } else {
           Serial.printf("[녹음 완료] %.2f초, %u개 샘플을 서버로 보냅니다.\n",
                         voiceSampleCount / (float)MIC_SAMPLE_RATE,
                         (unsigned)voiceSampleCount);
-          thinkingFace();
-          customExpression = true;
-          expressionUntil = millis() + 60000;
           voiceUploadPending.store(true);
         }
       }
@@ -203,29 +223,57 @@ void microphoneTask(void*) {
     }
     size_t bytesRead = 0;
     esp_err_t err = i2s_read(MIC_I2S_PORT, samples, sizeof(samples), &bytesRead, pdMS_TO_TICKS(50));
-    if (err == ESP_OK && bytesRead > 0 && recording) {
+    if (err == ESP_OK && bytesRead > 0) {
       size_t count = bytesRead / sizeof(int32_t);
-      double sum = 0;
-      for (size_t i = 0; i < count && voiceSampleCount < MAX_RECORD_SAMPLES; ++i) {
-        int32_t sample = samples[i] >> 14;
+      if (micProbeState.load() == 1) {
+        micProbeCount = min(count, size_t(256));
+        memcpy(micRawProbe, samples, micProbeCount * sizeof(int32_t));
+        micProbeState.store(2);
+      }
+      for (size_t i = 0; i < count; ++i) {
+        // DC를 증폭/포화 전에 제거한다. 약 78Hz 1차 high-pass (16kHz 기준).
+        float input = samples[i] / 65536.0f;
+        if (!micFilterInitialized) {
+          previousMicInput = input;
+          micFilterInitialized = true;
+        }
+        filteredMicInput = input - previousMicInput + 0.97f * filteredMicInput;
+        previousMicInput = input;
+        int32_t sample = int32_t(filteredMicInput * MIC_GAIN);
+        if (sample > 32767 || sample < -32768) ++levelClipped;
         sample = constrain(sample, -32768, 32767);
-        voicePcm[voiceSampleCount++] = static_cast<int16_t>(sample);
-        sum += static_cast<double>(sample) * sample;
+        levelSum += sample;
+        levelSquares += int64_t(sample) * sample;
+        levelPeak = max(levelPeak, abs(sample));
+        ++levelCount;
+        if (recording && voiceSampleCount < voiceCapacitySamples) {
+          voicePcm[voiceSampleCount++] = static_cast<int16_t>(sample);
+        }
       }
-      if (now - lastLevelLog >= 150 && count > 0) {
+      if (now - lastLevelLog >= 500 && levelCount > 0) {
         lastLevelLog = now;
-        double rms = sqrt(sum / count);
-        int waveLvl = constrain((int)(rms / 400.0), 1, 4);
-        drawListeningFaceFrame(waveLvl);
-        Serial.printf("[녹음 중] 소리가 감지되고 있습니다. (크기: %.0f, %.1f초)\n",
-                      rms, voiceSampleCount / (float)MIC_SAMPLE_RATE);
+        double mean = double(levelSum) / levelCount;
+        double variance = double(levelSquares) / levelCount - mean * mean;
+        int rms = int(sqrt(variance > 0 ? variance : 0));
+        int clipped = (levelClipped * 1000) / levelCount;
+        micLevelRms.store(rms);
+        micLevelMean.store(int(mean));
+        micLevelPeak.store(levelPeak);
+        micClipPermille.store(clipped);
+        micLevelUpdatedAt.store(now);
+        if (recording) Serial.printf("[마이크] RMS=%d DC=%d peak=%d clip=%.1f%% / %.1f초\n",
+                      rms, int(mean), levelPeak, clipped / 10.0,
+                      voiceSampleCount / float(MIC_SAMPLE_RATE));
+        levelSum = 0; levelSquares = 0; levelCount = 0; levelClipped = 0; levelPeak = 0;
       }
-      if (voiceSampleCount >= MAX_RECORD_SAMPLES) {
+      if (recording && voiceSampleCount >= voiceCapacitySamples) {
         recording = false;
-        Serial.println("[녹음 완료] 최대 8초에 도달해 자동으로 전송합니다.");
+        voiceRecording.store(false);
+        Serial.printf("[녹음 완료] 최대 %.1f초에 도달해 자동으로 전송합니다.\n",
+                      voiceCapacitySamples / float(MIC_SAMPLE_RATE));
         voiceUploadPending.store(true);
       }
-    } else if (err != ESP_OK && now - lastStatus >= 3000) {
+    } else if (err != ESP_OK && now - lastStatus >= 1000) {
       lastStatus = now;
       Serial.printf("[오류] 마이크 읽기 실패: %s\n", esp_err_to_name(err));
     }
@@ -236,7 +284,7 @@ void microphoneTask(void*) {
 
 void startMicrophoneMonitor() {
   setupMicrophone();
-  // 마이크 초기화 실패와 무관하게 버튼 입력을 진단할 수 있어야 한다.
+  // 녹음 초기화 실패 시에도 버튼 입력 진단은 계속한다.
   if (xTaskCreate(microphoneTask, "mic-monitor", 4096, nullptr, 1, nullptr) != pdPASS) {
     heap_caps_free(voicePcm);
     voicePcm = nullptr;
@@ -248,8 +296,8 @@ void startMicrophoneMonitor() {
 
 
 
-// LCD (하드웨어 SPI). 점퍼선 배선 시 CS = GPIO13, RST = GPIO6, DC = GPIO7
-#define TFT_CS   13
+// v1.1 PCB J4.7 LCD_CS → J8.2 → GPIO10 (서보용으로 사용하지 않는다).
+#define TFT_CS   10
 #define TFT_RST  6   // LCD RES = GPIO6 (좌 8번째 핀)
 #define TFT_DC   7   // LCD DC  = GPIO7 (좌 9번째 핀)
 #define TFT_MOSI 11
@@ -264,13 +312,13 @@ Adafruit_ST7789 tft = Adafruit_ST7789(&hspi, TFT_CS, TFT_DC, TFT_RST);
 #define EH      68
 #define ER      20
 
-// 스피커 (I2S_NUM_0) — MAX98357A: DIN=GPIO44(RX), LRC=GPIO3, BCLK=GPIO5
-#define I2S_SPK_BCLK 5
-#define I2S_SPK_LRC  3
+// 스피커 (I2S_NUM_0) — MAX98357A: DIN=GPIO44(RX), LRC=GPIO1, BCLK=GPIO2
+#define I2S_SPK_BCLK 2
+#define I2S_SPK_LRC  1
 #define I2S_SPK_DOUT 44
 #define TTS_SAMPLE_RATE 24000
-#define SPEAKER_VOLUME_PERCENT 110
-#define SPEAKER_SAFE_PEAK 30000
+#define SPEAKER_VOLUME_PERCENT 55
+#define SPEAKER_SAFE_PEAK 20000
 
 
 bool speakerReady = false;
@@ -342,204 +390,20 @@ void happyEyes() {
   }
 }
 
-// 둥근 사선 캡슐(알약 바) 그리기 헬퍼
-void drawThickCapsule(int x1, int y1, int x2, int y2, int r, uint16_t color) {
-  float dx = x2 - x1;
-  float dy = y2 - y1;
-  float dist = sqrtf(dx * dx + dy * dy);
-  int steps = (int)dist;
-  if (steps == 0) {
-    tft.fillCircle(x1, y1, r, color);
-    return;
-  }
-  for (int i = 0; i <= steps; ++i) {
-    float t = (float)i / steps;
-    int cx = (int)(x1 + dx * t);
-    int cy = (int)(y1 + dy * t);
-    tft.fillCircle(cx, cy, r, color);
-  }
-}
-
-// ── 1. 듣고 있어요 (내가 말하는 동안 / 버튼 누를 때: 둥근 사각형 눈 2개 + 양옆 3개 사운드 감지 파동)
-void drawListeningFaceFrame(int waveLevel) {
-  tft.fillScreen(LCD_BG_COLOR);
-  uint16_t ec = EYE_COLOR;
-
-  // 1. 중앙 둥근 사각형 눈 2개 (Squircle Eyes)
-  constexpr int EYE_W = 76;
-  constexpr int EYE_H = 68;
-  constexpr int EYE_R = 22;
-  constexpr int L_EYE_X = 110;
-  constexpr int R_EYE_X = 210;
-  constexpr int EYE_CENTER_Y = 120;
-
-  tft.fillRoundRect(L_EYE_X - EYE_W / 2, EYE_CENTER_Y - EYE_H / 2, EYE_W, EYE_H, EYE_R, ec);
-  tft.fillRoundRect(R_EYE_X - EYE_W / 2, EYE_CENTER_Y - EYE_H / 2, EYE_W, EYE_H, EYE_R, ec);
-
-  // 2. 소리 감지 파동 색상 (마이크 입력 강도에 따라 밝기 조절)
-  uint16_t waveColor = (waveLevel >= 2) ? tft.color565(56, 189, 248) : ec;
-
-  // 3. 왼쪽 사운드 감지 파동 (위 / 중간 / 아래 3개)
-  drawThickCapsule(60, 104, 38, 82, 5, waveColor);    // 위쪽 대각선 바
-  drawThickCapsule(60, 120, 32, 120, 5, waveColor);   // 중간 수평 바
-  drawThickCapsule(60, 136, 38, 158, 5, waveColor);   // 아래쪽 대각선 바
-
-  // 4. 오른쪽 사운드 감지 파동 (위 / 중간 / 아래 3개)
-  drawThickCapsule(260, 104, 282, 82, 5, waveColor);  // 위쪽 대각선 바
-  drawThickCapsule(260, 120, 288, 120, 5, waveColor); // 중간 수평 바
-  drawThickCapsule(260, 136, 282, 158, 5, waveColor); // 아래쪽 대각선 바
-}
-
-void listeningFace() {
-  drawListeningFaceFrame(3);
-}
-
+// 가로로 좁아진 눈 (녹음 중)
 void listeningEyes() {
-  listeningFace();
-}
-
-// 회전된 둥근 사각형 그리기 헬퍼
-void drawRotatedSquircle(int cx, int cy, int w, int h, int r, float angleRad, uint16_t color) {
-  float cosA = cosf(angleRad);
-  float sinA = sinf(angleRad);
-  int halfW = w / 2;
-  int halfH = h / 2;
-  int innerHalfW = halfW - r;
-  int innerHalfH = halfH - r;
-  int rSq = r * r;
-
-  // 바운딩 반경
-  int boundR = (int)(sqrtf(halfW * halfW + halfH * halfH) + 1);
-
-  for (int dy = -boundR; dy <= boundR; ++dy) {
-    for (int dx = -boundR; dx <= boundR; ++dx) {
-      float lx = dx * cosA + dy * sinA;
-      float ly = -dx * sinA + dy * cosA;
-
-      float alx = fabsf(lx);
-      float aly = fabsf(ly);
-
-      if (alx <= halfW && aly <= halfH) {
-        bool inside = true;
-        if (alx > innerHalfW && aly > innerHalfH) {
-          float cdx = alx - innerHalfW;
-          float cdy = aly - innerHalfH;
-          if (cdx * cdx + cdy * cdy > rSq) {
-            inside = false;
-          }
-        }
-        if (inside) {
-          tft.drawPixel(cx + dx, cy + dy, color);
-        }
-      }
-    }
-  }
-}
-
-// 큼직하고 둥근 귀여운 물음표 마크 그리기 헬퍼
-void drawThinkingQuestionMark(int cx, int topY, int floatOffset, uint16_t color) {
-  int cy = topY + floatOffset;
-
-  // 1. 상단 둥근 원호 (반지름 16, 중심 cx, cy+18)
-  for (int r = 16; r >= 10; --r) {
-    for (int deg = -45; deg <= 180; ++deg) {
-      float rad = deg * 3.14159265f / 180.0f;
-      int px = cx + (int)(cosf(rad) * r);
-      int py = (cy + 18) - (int)(sinf(rad) * r);
-      tft.drawPixel(px, py, color);
-      tft.drawPixel(px + 1, py, color);
-    }
-  }
-
-  // 2. 중간 꺾여서 내려오는 기둥
-  drawThickCapsule(cx + 8, cy + 18, cx, cy + 28, 4, color);
-  drawThickCapsule(cx, cy + 28, cx, cy + 36, 4, color);
-
-  // 3. 하단 둥근 점
-  tft.fillCircle(cx, cy + 48, 6, color);
-}
-
-// ── 2. 생각 중 (AI의 답을 기다리는 동안: 갸우뚱 기울어진 둥근 사각형 눈 + 상단 둥실둥실 물음표)
-void drawThinkingFaceFrame(int frame) {
   tft.fillScreen(LCD_BG_COLOR);
-  uint16_t ec = EYE_COLOR;
-
-  // 상단 물음표 부유 애니메이션 (0 -> -3 -> -6 -> -3 px)
-  int floatOffsets[] = { 0, -3, -6, -3 };
-  int dy = floatOffsets[frame % 4];
-  drawThinkingQuestionMark(160, 20, dy, ec);
-
-  // 갸우뚱 기울어진 둥근 사각형 눈 2개 (바깥쪽 아래로 기울어짐)
-  constexpr int EYE_W = 78;
-  constexpr int EYE_H = 66;
-  constexpr int EYE_R = 22;
-  constexpr int EYE_CENTER_Y = 144;
-
-  // 왼쪽 눈: 안쪽이 살짝 올라가고 바깥쪽이 내려간 기울기 (-0.19 rad ≈ -11°)
-  drawRotatedSquircle(100, EYE_CENTER_Y, EYE_W, EYE_H, EYE_R, -0.19f, ec);
-
-  // 오른쪽 눈: 안쪽이 살짝 올라가고 바깥쪽이 내려간 기울기 (+0.19 rad ≈ +11°)
-  drawRotatedSquircle(220, EYE_CENTER_Y, EYE_W, EYE_H, EYE_R, 0.19f, ec);
+  drawEye(LEX, EYE_Y, EW, EH / 2, ER, 0, 0);
+  drawEye(REX, EYE_Y, EW, EH / 2, ER, 0, 0);
 }
 
-void thinkingFace() {
-  drawThinkingFaceFrame(0);
-}
-
+// 눈 위로 굴리기 (생각 중) — 위쪽 절반 마스킹
 void thinkingEyes() {
-  thinkingFace();
-}
-
-// 입 모양 부분 갱신 (답변 중 오디오 립싱크: 꽉 찬 D자형 웃는 입 ↔ 부드러운 닫힌 미소 입)
-void updateTalkingMouth(bool open) {
-  uint16_t ec = EYE_COLOR;
-  // 입 영역만 고속 클리어 (눈 깜빡임 없이 고속 립싱크)
-  tft.fillRect(160 - 45, 150, 90, 60, LCD_BG_COLOR);
-
-  if (open) {
-    // 1. 말하는 중 (열린 입): 이미지와 1:1 일치하는 꽉 찬 D자형 반원 입
-    constexpr int MOUTH_W = 68;
-    constexpr int MOUTH_TOP_Y = 162;
-    constexpr int MOUTH_R = 34;
-
-    // 하단 둥근 반원 채우기
-    tft.fillCircle(160, MOUTH_TOP_Y, MOUTH_R, ec);
-    // 상단 반원 컷팅
-    tft.fillRect(160 - MOUTH_R - 2, MOUTH_TOP_Y - MOUTH_R - 2, (MOUTH_R + 2) * 2, MOUTH_R + 2, LCD_BG_COLOR);
-    // 상단 부드러운 직사각형 덮기
-    tft.fillRoundRect(160 - MOUTH_W / 2, MOUTH_TOP_Y, MOUTH_W, 14, 6, ec);
-  } else {
-    // 2. 닫힌 입 (음절 사이): 얇고 부드러운 둥근 미소 입
-    constexpr int MOUTH_W = 54;
-    constexpr int MOUTH_TOP_Y = 168;
-    constexpr int MOUTH_R = 27;
-
-    tft.fillCircle(160, MOUTH_TOP_Y, MOUTH_R, ec);
-    tft.fillRect(160 - MOUTH_R - 2, MOUTH_TOP_Y - MOUTH_R - 2, (MOUTH_R + 2) * 2, MOUTH_R + 2, LCD_BG_COLOR);
-    tft.fillRoundRect(160 - MOUTH_W / 2, MOUTH_TOP_Y, MOUTH_W, 10, 5, ec);
-  }
-}
-
-// ── 3. 대답해요 (답변 중일 때 화면: 부드러운 둥근 사각형 눈 ■ ■ + 꽉 찬 D자형 웃는 입)
-void drawAnsweringFaceFrame(bool mouthOpen) {
   tft.fillScreen(LCD_BG_COLOR);
-  uint16_t ec = EYE_COLOR;
-
-  // 부드러운 둥근 사각형 눈 (Squircle Eyes)
-  constexpr int EYE_W = 86;
-  constexpr int EYE_H = 70;
-  constexpr int EYE_R = 24;
-  constexpr int EYE_POS_Y = 106;
-
-  tft.fillRoundRect(LEX - EYE_W / 2, EYE_POS_Y - EYE_H / 2, EYE_W, EYE_H, EYE_R, ec);
-  tft.fillRoundRect(REX - EYE_W / 2, EYE_POS_Y - EYE_H / 2, EYE_W, EYE_H, EYE_R, ec);
-
-  // 꽉 찬 D자형 입 그리기
-  updateTalkingMouth(mouthOpen);
-}
-
-void answeringFace() {
-  drawAnsweringFaceFrame(true);
+  drawEye(LEX, EYE_Y, EW, EH, ER, 0, 0);
+  drawEye(REX, EYE_Y, EW, EH, ER, 0, 0);
+  tft.fillRect(LEX - EW/2 - 2, EYE_Y - EH/2 - 2, EW + 4, EH / 2, LCD_BG_COLOR);
+  tft.fillRect(REX - EW/2 - 2, EYE_Y - EH/2 - 2, EW + 4, EH / 2, LCD_BG_COLOR);
 }
 
 // 졸린 눈 — 화면 깜빡임 없이 Zzz 영역만 부분 갱신하여 둥실둥실 애니메이션
@@ -1046,6 +910,8 @@ void setupSpeaker() {
   if (pinResult == ESP_OK) {
     i2s_zero_dma_buffer(I2S_NUM_0);
     speakerReady = true;
+  } else if (installResult == ESP_OK) {
+    i2s_driver_uninstall(I2S_NUM_0);
   }
 }
 
@@ -1503,11 +1369,13 @@ void setupBLE() {
   advertising->setMinPreferred(0x06);
   advertising->setMinPreferred(0x12);
 
+  // 31바이트 초과 방지: 기본 광고 패킷에는 플래그와 이름을 확실하게 전송
   BLEAdvertisementData advData;
-  advData.setFlags(0x06);
+  advData.setFlags(0x06); // General Discoverable + BR/EDR Not Supported
   advData.setName(SODA_BLE_NAME);
   advertising->setAdvertisementData(advData);
 
+  // 스캔 응답 패킷에 128비트 서비스 UUID 포함
   BLEAdvertisementData scanData;
   scanData.setCompleteServices(BLEUUID(SERVICE_UUID));
   advertising->setScanResponseData(scanData);
@@ -1682,11 +1550,19 @@ unsigned long standbyTimeoutMs = 30000; // 30초 (기본값)
 unsigned long lastActivityTime = 0;
 bool isStandbyActive = false;
 
+// 물리 버튼 기본 동작
+String btnSingleAction = "random_face";
+String btnDoubleAction = "happy_face";
+String btnLongAction = "greeting";
+
 void loadSettingsFromNVS() {
   if (prefs.begin("sodabot", true)) { // 읽기 모드로 오픈
     welcomeMsg = prefs.getString("welcome", "HELLO!\nI AM LUMI :)\nNICE TO SEE YOU TODAY!");
     defaultIdleExpr = prefs.getString("idle_expr", "default");
     standbyMode = prefs.getString("standby", "default");
+    btnSingleAction = prefs.getString("btn_single", "random_face");
+    btnDoubleAction = prefs.getString("btn_double", "happy_face");
+    btnLongAction = prefs.getString("btn_long", "greeting");
     prefs.end();
   }
 }
@@ -1712,6 +1588,15 @@ void saveStandbyModeToNVS(const String& mode) {
   }
 }
 
+void saveButtonActionsToNVS(const String& s, const String& d, const String& l) {
+  if (prefs.begin("sodabot", false)) {
+    if (s.length() > 0) prefs.putString("btn_single", s);
+    if (d.length() > 0) prefs.putString("btn_double", d);
+    if (l.length() > 0) prefs.putString("btn_long", l);
+    prefs.end();
+  }
+}
+
 // ── 대기 화면 (Standby Screen) 엔진 ─────────────────────────────────────────
 void renderDefaultIdleFace() {
   if (defaultIdleExpr == "happy") happyEyes();
@@ -1728,6 +1613,81 @@ void renderDefaultIdleFace() {
   else idleEyes(); // "default" 기본 표정
   sleeping = (defaultIdleExpr == "sleepy");
   customExpression = false;
+}
+
+// Voice UI: all LCD access stays on the main loop task.
+// 0 idle, 1 listening, 2 thinking, 3 speaking. Only small regions animate.
+int voiceFacePhase = 0;
+uint32_t voiceFaceFrameAt = 0;
+uint32_t voiceFaceFrame = 0;
+
+void setVoiceFace(int phase) {
+  if (voiceFacePhase == phase) return;
+  voiceFacePhase = phase;
+  voiceFaceFrame = 0;
+  voiceFaceFrameAt = millis() - 100;
+  isStandbyActive = false;
+  customExpression = false;
+  sleeping = false;
+  lastActivityTime = millis();
+  Serial.printf("[표정] %s\n", phase == 1 ? "듣는 중" : phase == 2 ? "생각 중" : phase == 3 ? "답변 중" : "기본");
+  if (phase == 0) { renderDefaultIdleFace(); return; }
+  tft.fillScreen(LCD_BG_COLOR);
+  uint16_t shine = tft.color565(174, 248, 245);
+  uint16_t blush = tft.color565(134, 71, 115);
+  if (phase == 1) {
+    // Soft, attentive eyes with restrained highlights and a small smile.
+    for (int cx : {LEX, REX}) {
+      tft.fillRoundRect(cx-35, 78, 70, 76, 25, EYE_COLOR);
+      tft.fillRoundRect(cx-23, 89, 16, 8, 4, shine);
+      tft.fillRoundRect(cx-18, 166, 36, 7, 3, blush);
+    }
+    for (int r = 12; r >= 9; --r) tft.drawCircle(160, 145, r, EYE_COLOR);
+    tft.fillRect(146, 131, 29, 17, LCD_BG_COLOR);
+  } else if (phase == 2) {
+    // Curious upward glance, asymmetric eyes and a floating thought bubble.
+    tft.fillRoundRect(65, 89, 70, 53, 20, EYE_COLOR);
+    tft.fillRoundRect(185, 98, 70, 42, 17, EYE_COLOR);
+    tft.fillRoundRect(80, 96, 17, 7, 3, shine);
+    tft.fillRoundRect(201, 105, 17, 7, 3, shine);
+    tft.fillRoundRect(151, 156, 18, 5, 2, EYE_COLOR);
+    tft.fillCircle(260, 74, 3, shine);
+    tft.fillCircle(272, 61, 5, shine);
+    tft.drawCircle(284, 43, 10, EYE_COLOR);
+    tft.drawCircle(284, 43, 9, EYE_COLOR);
+  } else {
+    // Original soda-aibot happy face. Animate once before PCM playback begins.
+    happyEyes();
+  }
+}
+
+void updateVoiceFace() {
+  if (voiceFacePhase <= 1 && !voiceUploadBusy.load()) {
+    if (voiceRecording.load()) setVoiceFace(1);
+    else if (voiceUploadPending.load()) setVoiceFace(2);
+    else if (voiceFacePhase == 1) setVoiceFace(0); // short recording cancelled
+  }
+  if (voiceFacePhase == 0 || voiceFacePhase == 3 || millis() - voiceFaceFrameAt < 100) return;
+  voiceFaceFrameAt = millis();
+  ++voiceFaceFrame;
+  uint16_t dim = tft.color565(15, 70, 77);
+  if (voiceFacePhase == 1) {
+    // Meter responds to the microphone, without redrawing the eyes.
+    int level = constrain(micLevelRms.load() / 180, 0, 14);
+    for (int i = 0; i < 7; ++i) {
+      int x = 112 + i * 14;
+      int h = 5 + level * (4 - abs(3-i)) / 4;
+      tft.fillRect(x, 188, 8, 32, LCD_BG_COLOR);
+      tft.fillRoundRect(x, 204-h/2, 8, h, 3, EYE_COLOR);
+    }
+  } else if (voiceFacePhase == 2) {
+    for (int i = 0; i < 3; ++i) {
+      int cx = 140 + i * 20;
+      bool active = (voiceFaceFrame / 3) % 3 == unsigned(i);
+      tft.fillRect(cx-6, 195, 13, 15, LCD_BG_COLOR);
+      tft.fillCircle(cx, 203, active ? 5 : 3, active ? EYE_COLOR : dim);
+    }
+  }
 }
 
 void renderStandbyScreen() {
@@ -1767,9 +1727,6 @@ void triggerExpressionByName(const String& name) {
   else if (name == "cat") catFace();
   else if (name == "sad") sadEyes();
   else if (name == "angry") angryEyes();
-  else if (name == "listening") listeningFace();
-  else if (name == "thinking") thinkingFace();
-  else if (name == "answering" || name == "speaking") answeringFace();
   else idleEyes();
   sleeping = (name == "sleepy");
   customExpression = (name != "idle" && name != "default" && !sleeping);
@@ -1852,36 +1809,22 @@ void showTodayWeather() {
   Serial.println(result);
 }
 
-// 인터넷 실시간 시계 표시 함수
-void showClock() {
-  struct tm timeinfo;
-  char timeStr[32];
-  if (getLocalTime(&timeinfo, 500)) {
-    strftime(timeStr, sizeof(timeStr), "%H:%M", &timeinfo);
-  } else {
-    strcpy(timeStr, "12:00");
-  }
-  String msg = "TIME\n" + String(timeStr);
-  drawMessage(msg, 0);
-  sleeping = false;
-  customExpression = true;
-  expressionUntil = millis() + 5000;
-  Serial.printf("[CLOCK] 현재 시간 표시: %s\n", timeStr);
-}
-
 // === CUSTOM_FUNCTIONS_START ===
 // === CUSTOM_FUNCTIONS_END ===
 
 // 사용자 함수 슬롯 1 (SODA TALK: CUSTOM_1)
 void customFunction1() {
-  Serial.println("[MY FUNCTION] customFunction1() 실행 - 시계");
-  showClock();
+  Serial.println("[MY FUNCTION] customFunction1() 실행");
+  showTodayWeather();
 }
 
 // 사용자 함수 슬롯 2 (SODA TALK: CUSTOM_2)
 void customFunction2() {
-  Serial.println("[MY FUNCTION] customFunction2() 실행 - 날씨");
-  showTodayWeather();
+  Serial.println("[MY FUNCTION] customFunction2() 실행");
+  // [학생 실습 코딩 영역]: 예: 날씨 알리미, 카운트다운 등
+  drawMessage("MY FUNCTION 2\ncustomFunction2()", 0);
+  sleeping = false; customExpression = true; expressionUntil = millis() + 3000;
+  if (speakerReady) playToneI2S(1200, 100);
 }
 
 // 사용자 함수 슬롯 3 (SODA TALK: CUSTOM_3)
@@ -1893,7 +1836,7 @@ void customFunction3() {
   if (speakerReady) playToneI2S(1400, 100);
 }
 
-// 사용자 슬롯 명령(CUSTOM_1, CUSTOM_2, CUSTOM_3, WEATHER, CLOCK) 분기 핸들러
+// 사용자 슬롯 명령(CUSTOM_1, CUSTOM_2, CUSTOM_3, WEATHER) 분기 핸들러
 void handleUserCustomFunction(const String& cmd) {
   String upperCmd = cmd;
   upperCmd.toUpperCase();
@@ -1901,10 +1844,6 @@ void handleUserCustomFunction(const String& cmd) {
 
   if (upperCmd == "WEATHER" || upperCmd == "날씨" || upperCmd == "SHOWTODAYWEATHER") {
     showTodayWeather();
-    return;
-  }
-  if (upperCmd == "CLOCK" || upperCmd == "TIME" || upperCmd == "시계" || upperCmd == "SHOWCLOCK") {
-    showClock();
     return;
   }
 
@@ -1919,9 +1858,108 @@ void handleUserCustomFunction(const String& cmd) {
   }
 }
 
+void executeLocalButtonAction(const String& act, const char* clickType) {
+  lastActivityTime = millis();
+  if (isStandbyActive) { isStandbyActive = false; }
+  broadcastButtonEvent(clickType, act);
+
+  // 1. 사용자 정의 함수 (custom:xxx 또는 사용자 등록 함수명) 처리
+  if (act.startsWith("custom:")) {
+    String fn = act.substring(7);
+    handleUserCustomFunction(fn);
+    return;
+  }
+
+  // 2. 기본 내장 기능 처리
+  if (act == "weather" || act == "날씨") {
+    showTodayWeather();
+  } else if (act == "random_face") {
+    int count = sizeof(EXPRESSIONS_POOL) / sizeof(EXPRESSIONS_POOL[0]);
+    int r = random(0, count);
+    triggerExpressionByName(EXPRESSIONS_POOL[r]);
+    if (speakerReady) playToneI2S(1200, 50);
+  } else if (act == "next_face") {
+    int count = sizeof(EXPRESSIONS_POOL) / sizeof(EXPRESSIONS_POOL[0]);
+    exprPoolIndex = (exprPoolIndex + 1) % count;
+    triggerExpressionByName(EXPRESSIONS_POOL[exprPoolIndex]);
+    if (speakerReady) playToneI2S(1000, 50);
+  } else if (act == "happy_face" || act == "happy") {
+    triggerExpressionByName("happy");
+    if (speakerReady) playToneI2S(1000, 80);
+  } else if (act == "wink_face" || act == "wink") {
+    triggerExpressionByName("wink");
+    if (speakerReady) playToneI2S(1100, 80);
+  } else if (act == "greeting") {
+    drawMessage(welcomeMsg.length() > 0 ? welcomeMsg : "HELLO!\nI AM LUMI :)", 0);
+    sleeping = false; customExpression = true; expressionUntil = millis() + 4000;
+    if (speakerReady) { playToneI2S(523, 120); playToneI2S(659, 120); playToneI2S(784, 200); }
+  } else if (act == "play_sound") {
+    if (speakerReady) { playToneI2S(400, 100); playToneI2S(600, 150); }
+  } else if (act == "default_face" || act == "default") {
+    idleEyes();
+    customExpression = false; sleeping = false;
+    if (speakerReady) playToneI2S(800, 60);
+  } else {
+    // 등록된 사용자 함수명이 직접 전달되었거나 알 수 없는 액션일 경우 사용자 함수 핸들러로 전달
+    handleUserCustomFunction(act);
+  }
+}
+
+void checkHardwareButton() {
+  static bool lastBtnState = HIGH;
+  static unsigned long pressStartTime = 0;
+  static unsigned long lastReleaseTime = 0;
+  static int clickCount = 0;
+  static bool longPressTriggered = false;
+
+  static bool rawBtnState = HIGH;
+  static bool stableBtnState = HIGH;
+  static unsigned long rawChangedAt = 0;
+  unsigned long now = millis();
+  bool raw = digitalRead(BUTTON_PIN);
+  if (raw != rawBtnState) { rawBtnState = raw; rawChangedAt = now; }
+  if (now - rawChangedAt >= 30) stableBtnState = raw;
+  bool currentBtnState = stableBtnState;
+
+  // 버튼 눌림 시작 (Falling Edge: HIGH -> LOW)
+  if (lastBtnState == HIGH && currentBtnState == LOW) {
+    pressStartTime = now;
+    longPressTriggered = false;
+    lastActivityTime = now;
+    if (isStandbyActive) { isStandbyActive = false; idleEyes(); }
+  }
+  // 버튼 누르고 있는 중 (LOW 유지)
+  else if (lastBtnState == LOW && currentBtnState == LOW) {
+    if (!longPressTriggered && (now - pressStartTime >= 750)) {
+      longPressTriggered = true;
+      clickCount = 0;
+      executeLocalButtonAction(btnLongAction, "long");
+    }
+  }
+  // 버튼에서 손을 뗌 (Rising Edge: LOW -> HIGH)
+  else if (lastBtnState == LOW && currentBtnState == HIGH) {
+    unsigned long pressDuration = now - pressStartTime;
+    if (!longPressTriggered && pressDuration >= 20 && pressDuration < 750) {
+      clickCount++;
+      lastReleaseTime = now;
+      if (clickCount >= 2) {
+        executeLocalButtonAction(btnDoubleAction, "double");
+        clickCount = 0;
+      }
+    }
+  }
+
+  // 1회 클릭 후 더블 클릭 대기 시간(320ms) 만료 시 싱글 클릭 확정 실행
+  if (clickCount == 1 && (now - lastReleaseTime > 320)) {
+    executeLocalButtonAction(btnSingleAction, "single");
+    clickCount = 0;
+  }
+
+  lastBtnState = currentBtnState;
+}
+
 void startWebServerIfReady() {
   if (!webServerStarted && WiFi.status() == WL_CONNECTED) {
-    configTime(9 * 3600, 0, "pool.ntp.org", "time.nist.gov");
     server.begin();
     webServerStarted = true;
     Serial.println("명령 수신 주소: ws://" + WiFi.localIP().toString() + ":8080/soda/ws");
@@ -2031,6 +2069,20 @@ void processMessage(const IncomingMessage& message) {
     saveWelcomeMsgToNVS(welcomeMsg);
     drawMessage(welcomeMsg, 0);
     sleeping = false; customExpression = true; expressionUntil = millis() + 4000;
+  } else if (action == "set_button_action") {
+    if (value.startsWith("{")) {
+      DynamicJsonDocument btnDoc(512);
+      if (!deserializeJson(btnDoc, value)) {
+        if (btnDoc.containsKey("single")) btnSingleAction = btnDoc["single"].as<String>();
+        if (btnDoc.containsKey("double")) btnDoubleAction = btnDoc["double"].as<String>();
+        if (btnDoc.containsKey("long")) btnLongAction = btnDoc["long"].as<String>();
+      }
+    } else {
+      if (doc.containsKey("single")) btnSingleAction = doc["single"].as<String>();
+      if (doc.containsKey("double")) btnDoubleAction = doc["double"].as<String>();
+      if (doc.containsKey("long")) btnLongAction = doc["long"].as<String>();
+    }
+    saveButtonActionsToNVS(btnSingleAction, btnDoubleAction, btnLongAction);
   } else if (action == "set_standby" || action == "set_standby_mode" || action == "set_default_expression" || action == "set_default_expr") {
     if (value.startsWith("{")) {
       DynamicJsonDocument sbDoc(512);
@@ -2106,6 +2158,7 @@ bool writeAll(WiFiClient& client, const uint8_t* data, size_t length) {
   size_t sent = 0;
   uint32_t lastProgress = millis();
   while (sent < length && client.connected()) {
+    updateVoiceFace();
     size_t written = client.write(data + sent, min((size_t)4096, length - sent));
     if (written > 0) {
       sent += written;
@@ -2121,6 +2174,7 @@ bool writeAll(WiFiClient& client, const uint8_t* data, size_t length) {
 bool readHttpBytes(WiFiClient& client, String& output, size_t length) {
   uint32_t lastProgress = millis();
   while (length > 0) {
+    updateVoiceFace();
     while (client.available() && length > 0) {
       output += static_cast<char>(client.read());
       --length;
@@ -2209,10 +2263,8 @@ bool readAndPlayPcmBytes(WiFiClient& client, size_t length,
                          bool& hasLowByte, uint8_t& lowByte, size_t& receivedBytes) {
   uint8_t buffer[1024];
   uint32_t lastProgress = millis();
-  static uint32_t lastLipSyncTime = 0;
-  static bool lipSyncMouthOpen = false;
-
   while (length > 0) {
+    updateVoiceFace();
     int available = client.available();
     if (available <= 0) {
       if (!client.connected() || millis() - lastProgress > 90000) return false;
@@ -2223,14 +2275,6 @@ bool readAndPlayPcmBytes(WiFiClient& client, size_t length,
     int bytesRead = client.read(buffer, toRead);
     if (bytesRead <= 0) continue;
     if (!writePcmToSpeaker(buffer, bytesRead, hasLowByte, lowByte, receivedBytes)) return false;
-
-    // 말하기 립싱크 애니메이션 (180ms 주기 부분 갱신)
-    if (millis() - lastLipSyncTime >= 180) {
-      lipSyncMouthOpen = !lipSyncMouthOpen;
-      updateTalkingMouth(lipSyncMouthOpen);
-      lastLipSyncTime = millis();
-    }
-
     length -= bytesRead;
     lastProgress = millis();
   }
@@ -2271,21 +2315,9 @@ bool playReplySpeech(const String& text) {
   String requestBody;
   serializeJson(requestDoc, requestBody);
 
-  WiFiClient plainClient;
-  WiFiClientSecure secureClient;
-  WiFiClient* clientPtr = nullptr;
-  if (SODA_SERVER_HTTPS || SODA_SERVER_PORT == 443) {
-    secureClient.setInsecure();
-    clientPtr = &secureClient;
-  } else {
-    clientPtr = &plainClient;
-  }
-  WiFiClient& client = *clientPtr;
+  WiFiClient client;
   client.setTimeout(90000);
-
-  Serial.printf("[음성 생성] 서버(%s://%s:%u)에 답변 목소리를 요청합니다.\n",
-                (SODA_SERVER_HTTPS || SODA_SERVER_PORT == 443) ? "https" : "http",
-                SODA_SERVER_HOST, SODA_SERVER_PORT);
+  Serial.println("[음성 생성] 서버에 답변 목소리를 요청합니다.");
   if (!client.connect(SODA_SERVER_HOST, SODA_SERVER_PORT)) {
     Serial.println("[음성 출력 실패] TTS 서버에 연결하지 못했습니다.");
     return false;
@@ -2304,7 +2336,7 @@ bool playReplySpeech(const String& text) {
   }
 
   uint32_t waitStarted = millis();
-  while (!client.available() && client.connected() && millis() - waitStarted < 90000) delay(10);
+  while (!client.available() && client.connected() && millis() - waitStarted < 90000) { updateVoiceFace(); delay(10); }
   if (!client.available()) {
     Serial.println("[음성 출력 실패] TTS 서버가 90초 안에 응답하지 않았습니다.");
     client.stop();
@@ -2338,6 +2370,7 @@ bool playReplySpeech(const String& text) {
     return false;
   }
 
+  if (voiceUploadBusy.load()) setVoiceFace(3);
   Serial.println("[음성 출력] 음성을 받으면서 바로 재생합니다.");
   i2s_zero_dma_buffer(I2S_NUM_0);
   bool hasLowByte = false;
@@ -2371,14 +2404,40 @@ void saveSodaApiKey(const String& key) {
 }
 
 void loadSodaApiKey() {
-  // 7-1은 코드에 지정된 키로 바로 동작한다. NVS의 예전 빈 값이 덮어쓰지 않게 한다.
   sodaApiKey = DEFAULT_SODA_API_KEY;
-  Serial.println("[서버 설정] SODA API 키가 코드에 설정되어 있습니다.");
+  Preferences voicePrefs;
+  if (voicePrefs.begin("soda-voice", true)) {
+    String savedKey = voicePrefs.getString("api-key", "");
+    voicePrefs.end();
+    if (savedKey.length() >= 16) sodaApiKey = savedKey;
+  }
+  Serial.printf("[서버 설정] SODA API 키: %s\n", sodaApiKey.length() ? "설정됨" : "없음");
+}
+
+void printMicrophoneStatus() {
+  uint32_t updated = micLevelUpdatedAt.load();
+  Serial.printf("[MIC_STATUS] ready=%d RMS=%d DC=%d peak=%d clip=%.1f%% age=%ums\n",
+                micReady, micLevelRms.load(), micLevelMean.load(), micLevelPeak.load(),
+                micClipPermille.load() / 10.0, unsigned(millis() - updated));
+}
+
+void printHardwareStatus() {
+  Serial.printf("[펌웨어] J1-voice-faces-original-happy / build=%s %s / pending=%d busy=%d\n",
+                __DATE__, __TIME__, voiceUploadPending.load(), voiceUploadBusy.load());
+  Serial.printf("[PCB] SODA-AIBOT v1.1 + J1 button / chip=%s / flash=%u / PSRAM=%u / freePSRAM=%u\n",
+                ESP.getChipModel(), ESP.getFlashChipSize(), ESP.getPsramSize(), ESP.getFreePsram());
+  Serial.printf("[메모리] freeHeap=%u largestInternal=%u recordMax=%.1f초\n",
+                ESP.getFreeHeap(), (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+                voiceCapacitySamples / float(MIC_SAMPLE_RATE));
+  Serial.printf("[LCD] CS=%d RST=%d DC=%d MOSI=%d CLK=%d\n",
+                TFT_CS, TFT_RST, TFT_DC, TFT_MOSI, TFT_CLK);
+  Serial.printf("[MIC] ready=%d SCK=%d WS=%d SD=%d / button=%d level=%d\n",
+                micReady, MIC_SCK, MIC_WS, MIC_SD, BUTTON_PIN, digitalRead(BUTTON_PIN));
+  Serial.printf("[SPK] ready=%d BCLK=%d LRC=%d DIN=%d\n",
+                speakerReady, I2S_SPK_BCLK, I2S_SPK_LRC, I2S_SPK_DOUT);
 }
 
 void printServerStatus() {
-  Serial.printf("[버튼 상태] GPIO%d level=%d (해제=1, 눌림=0) / micReady=%d / PSRAM=%u바이트\n",
-                BUTTON_PIN, digitalRead(BUTTON_PIN), micReady, (unsigned)ESP.getPsramSize());
   Serial.printf("[서버 설정] http://%s:%u%s\n", SODA_SERVER_HOST,
                 SODA_SERVER_PORT, SODA_AUDIO_CHAT_PATH);
   Serial.printf("[Wi-Fi] %s", WiFi.status() == WL_CONNECTED ? "연결됨" : "연결 안 됨");
@@ -2389,10 +2448,14 @@ void printServerStatus() {
 
 void uploadRecordedConversation() {
   if (!voiceUploadPending.load()) return;
-  // pending을 내리기 전에 busy를 올려 녹음 버퍼의 재사용을 막는다.
+  // pending 해제 전에 busy를 설정하여 녹음 버퍼 재사용을 막는다.
   voiceUploadBusy.store(true);
   voiceUploadPending.store(false);
   const size_t samplesToSend = voiceSampleCount;
+  setVoiceFace(2);
+  struct FaceReset {
+    ~FaceReset() { setVoiceFace(0); }
+  } faceReset;
 
   if (samplesToSend == 0) {
     Serial.println("[전송 취소] 녹음 데이터가 없습니다.");
@@ -2420,22 +2483,10 @@ void uploadRecordedConversation() {
   uint8_t wavHeader[44];
   makeWavHeader(wavHeader, pcmBytes);
 
-  WiFiClient plainClient;
-  WiFiClientSecure secureClient;
-  WiFiClient* clientPtr = nullptr;
-  if (SODA_SERVER_HTTPS || SODA_SERVER_PORT == 443) {
-    secureClient.setInsecure();
-    clientPtr = &secureClient;
-  } else {
-    clientPtr = &plainClient;
-  }
-  WiFiClient& client = *clientPtr;
+  WiFiClient client;
   client.setTimeout(90000);
-
-  Serial.printf("[서버 전송] %u바이트 음성을 %s://%s:%u로 전송합니다.\n",
-                (unsigned)pcmBytes,
-                (SODA_SERVER_HTTPS || SODA_SERVER_PORT == 443) ? "https" : "http",
-                SODA_SERVER_HOST, SODA_SERVER_PORT);
+  Serial.printf("[서버 전송] %u바이트 음성을 %s:%u로 전송합니다.\n",
+                (unsigned)pcmBytes, SODA_SERVER_HOST, SODA_SERVER_PORT);
   if (!client.connect(SODA_SERVER_HOST, SODA_SERVER_PORT)) {
     Serial.println("[서버 연결 실패] soda-talk 서버가 실행 중인지, 컴퓨터와 보드가 같은 Wi-Fi인지 확인하세요.");
     voiceUploadBusy.store(false);
@@ -2461,18 +2512,9 @@ void uploadRecordedConversation() {
   }
 
   uint32_t waitStarted = millis();
-  int thinkFrame = 0;
-  uint32_t lastAnimTime = 0;
-  while (!client.available() && client.connected() && millis() - waitStarted < 90000) {
-    if (millis() - lastAnimTime >= 200) {
-      drawThinkingFaceFrame(thinkFrame++);
-      lastAnimTime = millis();
-    }
-    delay(10);
-  }
+  while (!client.available() && client.connected() && millis() - waitStarted < 90000) { updateVoiceFace(); delay(10); }
   if (!client.available()) {
     Serial.println("[응답 실패] 서버가 90초 안에 응답하지 않았습니다.");
-    confusedEyes();
     client.stop();
     voiceUploadBusy.store(false);
     return;
@@ -2522,14 +2564,12 @@ void uploadRecordedConversation() {
   Serial.println("[음성 인식 결과] " + recognized);
   Serial.println("[소다봇 답변] " + reply);
   Serial.println("──────────────────────────────");
-
-  // 텍스트 대신 '대답해요' 표정(■ ■ 눈과 ◡ 웃는 입)으로 화면 전환
-  answeringFace();
-  if (reply.length() > 0) playReplySpeech(reply);
-  sleeping = false;
-  customExpression = true;
-  expressionUntil = millis() + 6000;
-  lastActivityTime = millis();
+  if (reply.length() > 0) {
+    // Keep the thinking face during TTS generation; switch when PCM arrives.
+    playReplySpeech(reply);
+  }
+  // The screen stays expressive: no answer text or post-answer text timeout.
+  setVoiceFace(0);
   voiceUploadBusy.store(false);
 }
 
@@ -2538,9 +2578,8 @@ void setup() {
   uint32_t serialStarted = millis();
   while (!Serial && millis() - serialStarted < 2000) delay(10);
   Serial.println("소다봇: 마이크 및 음성 대화 펌웨어");
+  Serial0.end(); // UART0를 먼저 해제: GPIO43=J1 버튼, GPIO44=스피커. USB CDC는 유지.
   pinMode(BUTTON_PIN, INPUT_PULLUP);
-  Serial.printf("[버튼 배선] GPIO%d와 GND 사이에 버튼을 연결하세요. 현재 level=%d\n",
-                BUTTON_PIN, digitalRead(BUTTON_PIN));
   incomingQueue = xQueueCreate(6, sizeof(IncomingMessage));
   if (!incomingQueue) { Serial.println("큐 생성 실패"); while (true) delay(1000); }
   
@@ -2553,7 +2592,6 @@ void setup() {
   tft.init(240, 320); tft.setSPISpeed(40000000); tft.setRotation(3); tft.invertDisplay(true);
 
   // 3. 스피커 초기화
-  Serial0.end(); // USB CDC Serial 유지, GPIO44는 스피커
   setupSpeaker();
 
   // 4. 부팅 시 환영인사 화면 표시 + 부팅 멜로디 출력
@@ -2576,15 +2614,26 @@ void setup() {
   if (ssid && ssid[0]) WiFi.begin(ssid, password);
   startMicrophoneMonitor();
   Serial.println("SODABOT BASIC protocol=1 준비 완료");
-  Serial.println("[사용 방법] 버튼을 누른 채 말하고, 다 말하면 버튼을 놓으세요.");
+  Serial.println("[사용 방법] J1 SIG-GND 버튼을 누른 채 말하고, 다 말하면 버튼을 놓으세요.");
   Serial.println("[시리얼 명령] SERVER_STATUS 또는 SET_API_KEY=발급키 (115200 baud, 새 줄)");
   printServerStatus();
+  printHardwareStatus();
 
   // === CUSTOM_SETUP_START ===
   // === CUSTOM_SETUP_END ===
 }
 
 void loop() {
+  if (micProbeState.load() == 2) {
+    Serial.printf("[MIC_RAW_BEGIN] %u\n", unsigned(micProbeCount));
+    for (size_t i = 0; i < micProbeCount; ++i) {
+      Serial.printf("%08lx%c", (unsigned long)(uint32_t)micRawProbe[i], (i % 8 == 7) ? '\n' : ' ');
+    }
+    Serial.println("\n[MIC_RAW_END]");
+    micProbeState.store(0);
+  }
+  // LCD는 이 작업에서만 갱신. 마이크 작업은 상태만 전달한다.
+  updateVoiceFace();
   uploadRecordedConversation();
   startWebServerIfReady();
   ws.cleanupClients();
@@ -2599,6 +2648,13 @@ void loop() {
         key.trim();
         if (key.length() >= 16) saveSodaApiKey(key);
         else Serial.println("[설정 오류] API 키가 너무 짧습니다.");
+      } else if (!serialOverflow && serialInput == "MIC_RAW") {
+        if (micReady && micProbeState.load() == 0) micProbeState.store(1);
+        else Serial.println("[MIC_RAW] 마이크 준비 안 됨 또는 진단 진행 중");
+      } else if (!serialOverflow && serialInput == "MIC_STATUS") {
+        printMicrophoneStatus();
+      } else if (!serialOverflow && serialInput == "HARDWARE_STATUS") {
+        printHardwareStatus();
       } else if (!serialOverflow && serialInput == "SERVER_STATUS") {
         printServerStatus();
       } else if (!serialOverflow && serialInput.length() > 0) {
@@ -2613,26 +2669,26 @@ void loop() {
     }
   }
   IncomingMessage message;
-  if (xQueueReceive(incomingQueue, &message, 0) == pdTRUE) {
+  if (voiceFacePhase == 0 && !voiceRecording.load() && xQueueReceive(incomingQueue, &message, 0) == pdTRUE) {
     lastActivityTime = millis();
     if (isStandbyActive) { isStandbyActive = false; }
     processMessage(message);
   }
-  if (customExpression && (int32_t)(millis() - expressionUntil) >= 0) {
+  if (voiceFacePhase == 0 && customExpression && (int32_t)(millis() - expressionUntil) >= 0) {
     customExpression = false;
     if (isStandbyActive) renderStandbyScreen();
     else renderDefaultIdleFace();
   }
   
   // 대기 시간 초과 시 대기 화면 자동 전환
-  if (!customExpression && !sleeping && !isStandbyActive && (millis() - lastActivityTime >= standbyTimeoutMs)) {
+  if (voiceFacePhase == 0 && !voiceRecording.load() && !customExpression && !sleeping && !isStandbyActive && (millis() - lastActivityTime >= standbyTimeoutMs)) {
     isStandbyActive = true;
     renderStandbyScreen();
   }
 
   // 기본 표정 대기 중일 때만 주기적 눈 깜빡임 (default 눈일 때만 깜빡임)
   static unsigned long lastBlink = 0;
-  if (!customExpression && !sleeping && (defaultIdleExpr == "default" || defaultIdleExpr == "idle") && (!isStandbyActive || standbyMode == "default" || standbyMode.indexOf("기본") >= 0) && millis() - lastBlink > 5000) {
+  if (voiceFacePhase == 0 && !voiceRecording.load() && !customExpression && !sleeping && (defaultIdleExpr == "default" || defaultIdleExpr == "idle") && (!isStandbyActive || standbyMode == "default" || standbyMode.indexOf("기본") >= 0) && millis() - lastBlink > 5000) {
     blinkOnce();
     lastBlink = millis();
   }
