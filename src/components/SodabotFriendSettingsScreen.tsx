@@ -141,8 +141,8 @@ export default function SodabotFriendSettingsScreen({ currentUser }: SodabotFrie
   const profileCardRef = useRef<HTMLDivElement>(null);
   const memoryCardRef = useRef<HTMLDivElement>(null);
 
-  // Synchronize to localStorage whenever changes occur
-  const saveAllSettings = () => {
+  // Synchronize to localStorage & Backend whenever changes occur
+  const saveAllSettings = async () => {
     localStorage.setItem(getScopedKey("friend_persona"), JSON.stringify(persona));
     localStorage.setItem(getScopedKey("friend_profile"), JSON.stringify(profile));
     localStorage.setItem(getScopedKey("friend_memories"), JSON.stringify(memories));
@@ -155,6 +155,25 @@ export default function SodabotFriendSettingsScreen({ currentUser }: SodabotFrie
     // AI Chat persona sync string
     const personaSummary = `[소다봇 친구설정]\n• 봇 이름: ${persona.name} (${persona.intro})\n• 역할: ${persona.role}, 말투: ${persona.tone}, 성격: ${persona.personality}\n• 사용자: ${profile.userName} (${profile.school})\n• 사용자 호칭: ${persona.callSign}\n• 관심사: ${profile.interests.join(", ")}\n• 목표: ${profile.goal}\n• 기억하고 있는 내용:\n${memories.map((m, idx) => `  ${idx + 1}. ${m.text}`).join("\n")}`;
     localStorage.setItem(getScopedKey("persona_summary"), personaSummary);
+
+    // Sync to backend DB
+    const token = localStorage.getItem("authSessionId");
+    if (token) {
+      try {
+        await fetch("/api/user/friend-settings", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({ persona, profile, memories })
+        });
+      } catch (err) {
+        console.error("Failed to sync friend settings to server", err);
+      }
+    }
+
+    window.dispatchEvent(new CustomEvent('sodabot-settings-updated', { detail: { persona, profile, memories } }));
 
     setSaveToast(true);
     setTimeout(() => setSaveToast(false), 2500);

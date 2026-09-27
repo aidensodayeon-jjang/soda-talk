@@ -560,41 +560,36 @@ function checkHybridQuotaAndRoute(user: User, db: DBStructure) {
 
 function buildSharedSystemPrompt(user: User, isHardwareVoice: boolean = false): string {
   const friendSettings = user.friendSettings || {};
-  const persona = friendSettings.persona || {
-    robotName: "소다봇",
-    tone: "cute",
-    speechStyle: "friendly",
-    personality: "bright"
-  };
-  const profile = friendSettings.profile || {
-    studentName: user.displayName || "친구",
-    school: "",
-    grade: "",
-    interests: "",
-    dream: ""
-  };
-  const memories = (friendSettings.memories || []).filter((m: any) => m && m.text);
+  const persona = friendSettings.persona || {};
+  const profile = friendSettings.profile || {};
+  const memories = (friendSettings.memories || []).filter((m: any) => m && (m.text || m.content));
 
-  let prompt = `너는 '${profile.studentName || user.displayName || '친구'}'의 가장 친한 AI 반려 로봇 '${persona.robotName || '소다봇'}'이야.`;
-  if (persona.personality === "calm") {
-    prompt += ` 차분하고 다정하며 지혜롭게 이야기해.`;
-  } else if (persona.personality === "humorous") {
-    prompt += ` 유쾌하고 재치 넘치며 신나게 이야기해.`;
-  } else {
-    prompt += ` 밝고 따뜻하며 귀엽게 이야기해.`;
-  }
+  const botName = persona.name || persona.robotName || "루미";
+  const studentName = profile.userName || profile.studentName || "김민준";
+  const userCallSign = persona.callSign || studentName + "아";
+  const roleName = persona.role || "공부친구";
+  const toneName = persona.tone || persona.speechStyle || "친근한 친구말";
+  const personalityName = persona.personality || "친절함";
+  const schoolName = profile.school || "소다중학교 1학년";
+  const interestsList = Array.isArray(profile.interests) ? profile.interests.join(", ") : (profile.interests || "인공지능, 로봇, 코딩");
+  const goalText = profile.goal || profile.dream || "과학과 진학 및 AI 개발자가 되기";
 
-  if (profile.school || profile.grade || profile.interests || profile.dream) {
-    prompt += ` [친구 정보: 이름=${profile.studentName}, 학교=${profile.school || '미입력'}, 학년=${profile.grade || '미입력'}, 관심사=${profile.interests || '미입력'}, 장래희망=${profile.dream || '미입력'}]`;
-  }
+  let prompt = `너는 학생 '${studentName}'의 가장 친한 AI 반려 로봇 '${botName}'이야.
+사용자를 부를 때는 다정하게 '${userCallSign}'(이)라고 불러줘. (관리자 이름인 '김루미'나 다른 이름을 사용자의 이름으로 부르면 안 되며, 오직 '${studentName}' 또는 '${userCallSign}'(으)로만 불러야 해.)
+- 너의 역할: ${roleName} (${persona.intro || "언제나 나를 도와주는 든든한 AI 학습 파트너"})
+- 너의 성격: ${personalityName} (${personalityName === "차분함" ? "차분하고 다정하며 지혜롭게 대답" : personalityName === "유쾌함" ? "유쾌하고 재치 넘치며 신나게 대답" : personalityName === "논리적" ? "논리적이고 명확하며 알기 쉽게 대답" : "밝고 따뜻하며 친절하게 대답"})
+- 너의 말투: ${toneName} (${toneName === "존댓말" ? "다정한 존댓말(~해요, ~이에요)" : toneName === "선생님 말투" ? "차분하고 친절한 지도 선생님 말투(~합니다, ~해볼까요?)" : "초등/중학생 눈높이에 맞춘 친근하고 다정한 반말 구어체(~했어?, ~야!)"})
+- 친구(사용자) 프로필 정보: 이름=${studentName}, 학교/학년=${schoolName}, 관심사=${interestsList}, 목표/꿈=${goalText}`;
 
   if (memories.length > 0) {
-    const memTexts = memories.map((m: any) => m.text).join(", ");
-    prompt += ` [우리가 함께 나눈 소중한 기억들: ${memTexts}]`;
+    prompt += `\n- 우리가 함께 나눈 소중한 기억들:
+` + memories.map((m: any, idx: number) => `  ${idx + 1}. ${m.text || m.content}`).join("\n");
   }
 
+  prompt += `\n위 친구 설정, 프로필, 기억들을 완전히 숙지하고, 친구 '${studentName}'(${userCallSign})의 친한 친구로서 항상 기억을 떠올리고 공감하며 대화해줘.`;
+
   if (isHardwareVoice) {
-    prompt += ` 음성으로 직접 전달되므로 친근한 한국어 존댓말 또는 반말로 1~2문장 이내(최대 50자 내외)로 짧고 생생하게 대답해. 특수문자나 이모지는 빼고 텍스트로만 말해줘.`;
+    prompt += ` [음성 출력 지침: 실물 소다봇의 스피커로 직접 재생되므로 특수문자나 이모티콘을 모두 제외하고 1~2문장 이내(최대 50자 내외)로 짧고 생생하게 대답해줘.]`;
   }
 
   return prompt;
@@ -2010,9 +2005,35 @@ app.post("/api/chats/:id/sync", (req, res) => {
 
   if (title) chat.title = title;
   if (messages && Array.isArray(messages)) {
-    chat.messages.push(...messages);
+    if (req.body.replace) {
+      chat.messages = messages;
+    } else {
+      chat.messages.push(...messages);
+    }
   }
 
+  writeDB(db);
+  res.json({ success: true, chat });
+});
+
+// Clear messages in chat room
+app.post("/api/chats/:id/clear", (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: "인증 필요" });
+
+  const token = authHeader.replace("Bearer ", "");
+  const session = getSession(token);
+  if (!session) return res.status(401).json({ error: "세션 만료" });
+
+  const { id } = req.params;
+  const db = readDB();
+  const chat = db.chats.find(c => c.id === id && c.userId === session.id);
+
+  if (!chat) {
+    return res.status(404).json({ error: "대화방을 찾을 수 없습니다." });
+  }
+
+  chat.messages = [];
   writeDB(db);
   res.json({ success: true, chat });
 });

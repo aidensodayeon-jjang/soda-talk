@@ -60,13 +60,67 @@ import {
   Copy,
   Download,
   Palette,
-  ExternalLink
+  ExternalLink,
+  RotateCcw,
+  Edit3
 } from "lucide-react";
 import { ChatRoom, Message, LMStudioConfig, CourseContent } from "./types";
 
 export default function App() {
   const [token, setToken] = useState<string | null>(localStorage.getItem("authSessionId"));
-  const [user, setUser] = useState<{ id: string; username: string; displayName: string; role?: string; canAccessChat?: boolean; personalApiKey?: string } | null>(null);
+  const [user, setUser] = useState<{ id: string; username: string; displayName: string; role?: string; canAccessChat?: boolean; personalApiKey?: string; friendSettings?: any } | null>(null);
+  const [settingsVersion, setSettingsVersion] = useState<number>(0);
+
+  // Helper: Always fetch latest Friend Settings, Profile, and Memories
+  const getLatestFriendSettings = () => {
+    const userKey = user?.id || user?.username || 'default';
+    let persona: any = {
+      name: "루미",
+      intro: "언제나 나를 도와주는 든든한 AI 학습 파트너",
+      role: "공부친구",
+      tone: "친근한 친구말",
+      personality: "친절함",
+      callSign: "민준아"
+    };
+    let profile: any = {
+      userName: "김민준",
+      school: "소다중학교 1학년",
+      interests: ["인공지능", "우주", "과학"],
+      goal: "과학과 진학 및 AI 개발자가 되기"
+    };
+    let memories: any[] = [
+      { id: "mem_1", text: "민준이는 축구와 코딩을 좋아한다." },
+      { id: "mem_2", text: "강아지 이름은 초코 (푸들종)." },
+      { id: "mem_3", text: "목표는 과학과 진학 및 소다봇 개발자가 되는 것이다." }
+    ];
+
+    try {
+      const savedPersona = localStorage.getItem(`sodabot_${userKey}_friend_persona`) || localStorage.getItem("soda_ailab_persona");
+      if (savedPersona) persona = { ...persona, ...JSON.parse(savedPersona) };
+
+      const savedProfile = localStorage.getItem(`sodabot_${userKey}_friend_profile`) || localStorage.getItem("soda_ailab_profile");
+      if (savedProfile) profile = { ...profile, ...JSON.parse(savedProfile) };
+
+      const savedMemories = localStorage.getItem(`sodabot_${userKey}_friend_memories`) || localStorage.getItem("soda_ailab_memories");
+      if (savedMemories) {
+        const parsed = JSON.parse(savedMemories);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          memories = parsed.map((m: any) => ({ id: m.id, text: m.text || m.content || "" })).filter((m: any) => m.text);
+        }
+      }
+    } catch (e) {}
+
+    // Fallback/Merge with user.friendSettings from backend
+    if (user?.friendSettings) {
+      if (user.friendSettings.persona) persona = { ...persona, ...user.friendSettings.persona };
+      if (user.friendSettings.profile) profile = { ...profile, ...user.friendSettings.profile };
+      if (user.friendSettings.memories && user.friendSettings.memories.length > 0) {
+        memories = user.friendSettings.memories.map((m: any) => ({ id: m.id, text: m.text || m.content || "" })).filter((m: any) => m.text);
+      }
+    }
+
+    return { persona, profile, memories };
+  };
 
   // Main Navigation Tab: 'dev' (수업 & 펌웨어 개발실) vs 'chat' (소다봇 제어 & AI 코딩)
   const [mainNavTab, setMainNavTab] = useState<'dev' | 'chat'>('dev');
@@ -509,13 +563,38 @@ export default function App() {
     const handleVoiceCompleted = () => {
       fetchChats();
     };
+    const handleSettingsUpdated = () => {
+      setSettingsVersion(v => v + 1);
+      if (token) verifySession(token);
+    };
+
     window.addEventListener('sodabot-voice-chat', handleVoiceCompleted);
+    window.addEventListener('sodabot-settings-updated', handleSettingsUpdated);
 
     return () => {
       clearInterval(interval);
       window.removeEventListener('sodabot-voice-chat', handleVoiceCompleted);
+      window.removeEventListener('sodabot-settings-updated', handleSettingsUpdated);
     };
   }, [token, user]);
+
+  const handleClearChat = async () => {
+    if (!activeChatId) {
+      handleCreateNewChat();
+      return;
+    }
+    if (!window.confirm("현재 대화 내용을 모두 초기화할까요?")) return;
+
+    try {
+      await fetch(`/api/chats/${activeChatId}/clear`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setChats(prev => prev.map(c => c.id === activeChatId ? { ...c, messages: [] } : c));
+    } catch (err) {
+      console.error("Failed to clear chat", err);
+    }
+  };
 
   const verifySession = async (sessionToken: string) => {
     try {
@@ -730,40 +809,31 @@ export default function App() {
         content: m.text
       }));
 
-      // Build Shared Friend Persona identical to Hardware
-      const friendSettings = user?.friendSettings || {};
-      const persona = friendSettings.persona || {
-        robotName: "소다봇",
-        tone: "cute",
-        speechStyle: "friendly",
-        personality: "bright"
-      };
-      const profile = friendSettings.profile || {
-        studentName: user?.displayName || "친구",
-        school: "",
-        grade: "",
-        interests: "",
-        dream: ""
-      };
-      const memories = (friendSettings.memories || []).filter((m: any) => m && m.text);
+      // Build Shared Friend Persona identical to Hardware & Settings
+      const { persona, profile, memories } = getLatestFriendSettings();
 
-      let sodabotPersona = `너는 '${profile.studentName || user?.displayName || '친구'}'의 가장 친한 AI 반려 로봇 '${persona.robotName || '소다봇'}'이야.`;
-      if (persona.personality === "calm") {
-        sodabotPersona += ` 차분하고 다정하며 지혜롭게 이야기해.`;
-      } else if (persona.personality === "humorous") {
-        sodabotPersona += ` 유쾌하고 재치 넘치며 신나게 이야기해.`;
-      } else {
-        sodabotPersona += ` 밝고 따뜻하며 귀엽게 이야기해.`;
-      }
+      const botName = persona.name || persona.robotName || "루미";
+      const studentName = profile.userName || profile.studentName || "김민준";
+      const userCallSign = persona.callSign || studentName + "아";
+      const roleName = persona.role || "공부친구";
+      const toneName = persona.tone || persona.speechStyle || "친근한 친구말";
+      const personalityName = persona.personality || "친절함";
+      const schoolName = profile.school || "소다중학교 1학년";
+      const interestsList = Array.isArray(profile.interests) ? profile.interests.join(", ") : (profile.interests || "인공지능, 로봇, 코딩");
+      const goalText = profile.goal || profile.dream || "과학과 진학 및 AI 개발자가 되기";
 
-      if (profile.school || profile.grade || profile.interests || profile.dream) {
-        sodabotPersona += ` [친구 정보: 이름=${profile.studentName}, 학교=${profile.school || '미입력'}, 학년=${profile.grade || '미입력'}, 관심사=${profile.interests || '미입력'}, 장래희망=${profile.dream || '미입력'}]`;
-      }
+      let sodabotPersona = `너는 학생 '${studentName}'의 가장 친한 AI 반려 로봇 '${botName}'이야.
+사용자를 부를 때는 다정하게 '${userCallSign}'(이)라고 불러줘. (관리자 이름인 '김루미'나 다른 이름을 사용자의 이름으로 부르면 안 되며, 오직 '${studentName}' 또는 '${userCallSign}'(으)로만 불러야 해.)
+- 너의 역할: ${roleName} (${persona.intro || "언제나 나를 도와주는 든든한 AI 학습 파트너"})
+- 너의 성격: ${personalityName} (${personalityName === "차분함" ? "차분하고 다정하며 지혜롭게 대답" : personalityName === "유쾌함" ? "유쾌하고 재치 넘치며 신나게 대답" : personalityName === "논리적" ? "논리적이고 명확하며 알기 쉽게 대답" : "밝고 따뜻하며 친절하게 대답"})
+- 너의 말투: ${toneName} (${toneName === "존댓말" ? "다정한 존댓말(~해요, ~이에요)" : toneName === "선생님 말투" ? "차분하고 친절한 지도 선생님 말투(~합니다, ~해볼까요?)" : "초등/중학생 눈높이에 맞춘 친근하고 다정한 반말 구어체(~했어?, ~야!)"})
+- 친구(사용자) 프로필 정보: 이름=${studentName}, 학교/학년=${schoolName}, 관심사=${interestsList}, 목표/꿈=${goalText}`;
 
       if (memories.length > 0) {
-        const memTexts = memories.map((m: any) => m.text).join(", ");
-        sodabotPersona += ` [우리가 함께 나눈 소중한 기억들: ${memTexts}]`;
+        sodabotPersona += `\n- 우리가 함께 나눈 소중한 기억들:\n` + memories.map((m: any, idx: number) => `  ${idx + 1}. ${m.text || m.content}`).join("\n");
       }
+
+      sodabotPersona += `\n위 친구 설정, 프로필, 기억들을 완전히 숙지하고, 친구 '${studentName}'(${userCallSign})의 친한 친구로서 항상 기억을 떠올리고 공감하며 대화해줘.`;
 
       const res = await fetch(`/api/lmstudio/stream`, {
         method: "POST",
@@ -2405,49 +2475,75 @@ export default function App() {
           {currentView === 'chat' ? (
             <>
               {/* Apple/Muji style Minimal Header */}
-              <header className="min-h-14 py-2 border-b border-[#EAE6DF] bg-white flex flex-wrap items-center justify-between px-6 shrink-0 z-10 select-none gap-3">
-                <div className="flex flex-wrap items-center gap-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-[#1D1D1F] tracking-tight">
-                      소다와 대화하기
-                    </span>
-                    <span className="text-[#86868B] text-xs font-medium font-mono">
-                      {activeChat ? `· ${activeChat.title}` : ""}
-                    </span>
-                  </div>
+              {(() => {
+                const latestSettings = getLatestFriendSettings();
+                const botName = latestSettings.persona.name || "루미";
+                const studentName = latestSettings.profile.userName || "김민준";
+                const roleName = latestSettings.persona.role || "공부친구";
+                const toneName = latestSettings.persona.tone || "친근한 친구말";
+                const memoryCount = latestSettings.memories.length;
 
-                  <span className="text-[#EAE6DF] text-sm hidden sm:inline">/</span>
+                return (
+                  <header className="min-h-14 py-2 border-b border-[#EAE6DF] bg-white flex flex-wrap items-center justify-between px-6 shrink-0 z-10 select-none gap-3">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-[#1D1D1F] tracking-tight">
+                          소다와 대화하기
+                        </span>
+                        <span className="text-[#86868B] text-xs font-medium font-mono">
+                          {activeChat ? `· ${activeChat.title}` : ""}
+                        </span>
+                      </div>
 
-                  {/* Friend Persona & Profile Summary Badge */}
-                  <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#FAF9F6] border border-[#EAE6DF] text-[11px] text-[#5C5B57]">
-                    <span className="font-semibold text-indigo-700">
-                      {user?.friendSettings?.persona?.robotName || "루미"}
-                    </span>
-                    <span className="text-[#B0ACA5]">·</span>
-                    <span>{user?.friendSettings?.persona?.role || "공부 & 반려 친구"}</span>
-                    <span className="text-[#B0ACA5]">·</span>
-                    <span>{user?.friendSettings?.persona?.speechStyle === "polite" ? "예의 바른 존댓말" : "친근한 친구말"}</span>
-                    <span className="text-[#B0ACA5]">·</span>
-                    <span className="font-mono text-indigo-600 font-medium">기억 {(user?.friendSettings?.memories || []).length}개</span>
-                  </div>
-                </div>
+                      <span className="text-[#EAE6DF] text-sm hidden sm:inline">/</span>
 
-                {/* SODABOT Connection Status */}
-                <div className="flex items-center gap-2">
-                  <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium transition-all ${
-                    isSodabotConnected
-                      ? "bg-emerald-50 border border-emerald-200 text-emerald-700"
-                      : "bg-[#FAF9F6] border border-[#EAE6DF] text-[#86868B]"
-                  }`}>
-                    <span className={`w-2 h-2 rounded-full ${isSodabotConnected ? "bg-emerald-500 animate-pulse" : "bg-gray-300"}`} />
-                    <span>
-                      {isSodabotConnected
-                        ? `SODABOT · ${user?.friendSettings?.persona?.robotName || user?.displayName || '소다봇'} 연결됨`
-                        : "SODABOT 연결 안 됨"}
-                    </span>
-                  </div>
-                </div>
-              </header>
+                      {/* Friend Persona & Profile Summary Badge (Click to open settings) */}
+                      <button
+                        onClick={() => setCurrentView('settings')}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#FAF9F6] hover:bg-indigo-50/60 border border-[#EAE6DF] hover:border-indigo-300 text-[11px] text-[#5C5B57] hover:text-indigo-900 transition-all cursor-pointer shadow-2xs"
+                        title="클릭하면 소다봇 친구 설정 및 프로필/기억 관리 화면으로 이동합니다"
+                      >
+                        <span className="font-semibold text-indigo-700">
+                          {botName}
+                        </span>
+                        <span className="text-[#B0ACA5]">·</span>
+                        <span>{roleName}</span>
+                        <span className="text-[#B0ACA5]">·</span>
+                        <span>{toneName}</span>
+                        <span className="text-[#B0ACA5]">·</span>
+                        <span className="font-mono text-indigo-600 font-semibold">기억 {memoryCount}개</span>
+                        <Edit3 className="w-3 h-3 text-indigo-500 ml-0.5" />
+                      </button>
+                    </div>
+
+                    {/* Actions: Clear Chat & SODABOT Connection Status */}
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleClearChat}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-[#5C5B57] hover:text-rose-700 bg-[#FAF9F6] hover:bg-rose-50 border border-[#EAE6DF] hover:border-rose-200 rounded-full transition-all cursor-pointer shadow-2xs active:scale-95"
+                        title="현재 대화방의 메시지 기록을 모두 초기화합니다"
+                      >
+                        <RotateCcw className="w-3 h-3 text-[#86868B] group-hover:text-rose-600" />
+                        <span>대화 초기화</span>
+                      </button>
+
+                      <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium transition-all ${
+                        isSodabotConnected
+                          ? "bg-emerald-50 border border-emerald-200 text-emerald-700"
+                          : "bg-[#FAF9F6] border border-[#EAE6DF] text-[#86868B]"
+                      }`}>
+                        <span className={`w-2 h-2 rounded-full ${isSodabotConnected ? "bg-emerald-500 animate-pulse" : "bg-gray-300"}`} />
+                        <span>
+                          {isSodabotConnected
+                            ? `SODABOT · ${botName} 연결됨`
+                            : "SODABOT 연결 안 됨"}
+                        </span>
+                      </div>
+                    </div>
+                  </header>
+                );
+              })()}
 
               {/* Scrollable Conversation Arena */}
               <div className="flex-1 overflow-y-auto px-6 py-8 bg-[#FAF9F6]/50 relative">
@@ -2467,7 +2563,7 @@ export default function App() {
                           <Sparkles className="w-5 h-5 animate-pulse" />
                         </div>
                         <h1 className="text-xl font-bold text-[#1D1D1F] tracking-tight">
-                          안녕하세요, {user?.displayName}님!
+                          안녕하세요, {getLatestFriendSettings().profile.userName || user?.displayName || "친구"}님!
                         </h1>
                         <p className="text-xs text-[#86868B] leading-relaxed">
                           웹 채팅과 실물 소다봇 음성 대화가 하나의 친구 기억으로 연결되어 있어요.<br />
