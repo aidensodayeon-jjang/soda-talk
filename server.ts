@@ -2032,7 +2032,7 @@ app.post("/api/chats/:id/sync", (req, res) => {
   const { messages, title } = req.body;
 
   const db = readDB();
-  const chat = db.chats.find(c => c.id === id && c.userId === session.id);
+  const chat = db.chats.find(c => c.id === id && (c.userId === session.id || session.role === "admin" || session.username === "admin"));
 
   if (!chat) {
     return res.status(404).json({ error: "대화방을 찾을 수 없습니다." });
@@ -2062,7 +2062,7 @@ app.post("/api/chats/:id/clear", (req, res) => {
 
   const { id } = req.params;
   const db = readDB();
-  const chat = db.chats.find(c => c.id === id && c.userId === session.id);
+  const chat = db.chats.find(c => c.id === id && (c.userId === session.id || session.role === "admin" || session.username === "admin"));
 
   if (!chat) {
     return res.status(404).json({ error: "대화방을 찾을 수 없습니다." });

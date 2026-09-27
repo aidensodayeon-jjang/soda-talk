@@ -597,20 +597,26 @@ export default function App() {
   }, [token, user]);
 
   const handleClearChat = async () => {
-    if (!activeChatId) {
+    const targetChat = chats.find(c => c.id === activeChatId) || chats[0];
+    if (!targetChat) {
       handleCreateNewChat();
       return;
     }
-    if (!window.confirm("현재 대화 내용을 모두 초기화할까요?")) return;
 
+    const targetId = targetChat.id;
+    setActiveChatId(targetId);
+
+    // 1. 즉시 로컬 화면 메시지 비우기 (즉각적 반응)
+    setChats(prev => prev.map(c => c.id === targetId ? { ...c, messages: [] } : c));
+
+    // 2. 백엔드 동기화 (서버 비우기)
     try {
-      await fetch(`/api/chats/${activeChatId}/clear`, {
+      await fetch(`/api/chats/${targetId}/clear`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` }
       });
-      setChats(prev => prev.map(c => c.id === activeChatId ? { ...c, messages: [] } : c));
     } catch (err) {
-      console.error("Failed to clear chat", err);
+      console.error("Failed to clear chat on backend", err);
     }
   };
 
