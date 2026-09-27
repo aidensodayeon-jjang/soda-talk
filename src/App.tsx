@@ -173,6 +173,7 @@ export default function App() {
   const [currentView, setCurrentView] = useState<'welcome' | 'chat' | 'sodabot' | 'settings' | 'sodabot_builder' | 'mic_circuit' | 'firmware_v4' | 'firmware_v8' | 'firmware_v9' | 'dev'>('welcome');
   const [inputText, setInputText] = useState("");
   const [sending, setSending] = useState(false);
+  const [clearingChat, setClearingChat] = useState(false);
 
   // Real Hardware Connection States
   const [sodabotIp, setSodabotIp] = useState<string | null>(localStorage.getItem("sodabot_robot_ip"));
@@ -500,6 +501,10 @@ export default function App() {
 
 
   const chatEndRef = useRef<HTMLDivElement>(null);
+  // 폴링 응답이 대화 초기화 결과를 덮어쓰지 못하도록 진행 중 요청과 세대를 추적한다.
+  const chatFetchAbortRef = useRef<AbortController | null>(null);
+  const chatFetchGenerationRef = useRef(0);
+  const isClearingChatRef = useRef(false);
   const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000; // 30분 무동작 시 세션 아웃
   const lastActivityRef = useRef<number>(
     parseInt(localStorage.getItem("soda_last_activity") || String(Date.now()), 10)
@@ -591,15 +596,25 @@ export default function App() {
 
     return () => {
       clearInterval(interval);
+      chatFetchAbortRef.current?.abort();
       window.removeEventListener('sodabot-voice-chat', handleVoiceCompleted);
       window.removeEventListener('sodabot-settings-updated', handleSettingsUpdated);
     };
-  }, [token, user]);
+  }, [token, user?.id]);
 
   const handleClearChat = async () => {
+    if (isClearingChatRef.current || !user) return;
+
     const currentChat = chats.find(c => c.id === activeChatId) || (chats.length > 0 ? chats[0] : undefined);
     const currentChatId = currentChat?.id;
     const allChatIds = chats.map(c => c.id);
+
+    // 초기화 전에 시작된 GET 응답은 abort를 지원하지 않는 환경에서도 세대 검사로 무시된다.
+    isClearingChatRef.current = true;
+    setClearingChat(true);
+    chatFetchGenerationRef.current += 1;
+    chatFetchAbortRef.current?.abort();
+    chatFetchAbortRef.current = null;
 
     // 1. 즉시 로컬 화면을 깨끗한 1개의 대화방으로 리셋 (즉각적 반응)
     const tempChatId = "chat-" + Date.now();
@@ -624,12 +639,25 @@ export default function App() {
         body: JSON.stringify({ currentChatId, chatIds: allChatIds })
       });
       const data = await res.json();
-      if (res.ok && data.chat) {
-        setChats([data.chat]);
-        setActiveChatId(data.chat.id);
+      if (!res.ok || !data.chat) {
+        throw new Error(data.error || "대화 초기화에 실패했습니다.");
       }
+
+      setChats([data.chat]);
+      setActiveChatId(data.chat.id);
     } catch (err) {
       console.error("Failed to clear chat on backend", err);
+      alert("대화를 초기화하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+      // 낙관적으로 비운 화면을 서버의 실제 상태로 되돌린다.
+      isClearingChatRef.current = false;
+      setClearingChat(false);
+      await fetchChats();
+      return;
+    } finally {
+      if (isClearingChatRef.current) {
+        isClearingChatRef.current = false;
+        setClearingChat(false);
+      }
     }
   };
 
@@ -651,11 +679,27 @@ export default function App() {
   };
 
   const fetchChats = async () => {
+    // 느린 네트워크에서도 1.5초마다 이전 요청을 끊지 않도록 조회는 하나만 유지한다.
+    if (isClearingChatRef.current || chatFetchAbortRef.current) return;
+
+    const requestGeneration = chatFetchGenerationRef.current;
+    const controller = new AbortController();
+    chatFetchAbortRef.current = controller;
+
     try {
       const res = await fetch("/api/chats", {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
+        signal: controller.signal
       });
       const data = await res.json();
+
+      // 초기화 도중이거나 초기화 전에 출발한 요청이면 절대 화면 상태를 갱신하지 않는다.
+      if (
+        controller.signal.aborted ||
+        isClearingChatRef.current ||
+        requestGeneration !== chatFetchGenerationRef.current
+      ) return;
+
       if (res.ok && Array.isArray(data)) {
         if (data.length === 0) return;
         const sortedChats = [...data].sort((a: ChatRoom, b: ChatRoom) => {
@@ -674,8 +718,13 @@ export default function App() {
           return exists ? prev : sortedChats[0].id;
         });
       }
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.name === "AbortError") return;
       console.error("Failed to fetch chats", err);
+    } finally {
+      if (chatFetchAbortRef.current === controller) {
+        chatFetchAbortRef.current = null;
+      }
     }
   };
 
@@ -854,6 +903,24 @@ export default function App() {
 
       // Build Shared Friend Persona identical to Hardware & Settings
       const { persona, profile, memories } = getLatestFriendSettings();
+
+      // 웹에서 실제 사용 중인 최신 로컬 프로필을 서버에도 먼저 저장해
+      // 다음 소다봇 음성 요청이 완전히 같은 사용자/페르소나를 사용하게 한다.
+      try {
+        const settingsRes = await fetch("/api/user/friend-settings", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({ persona, profile, memories })
+        });
+        if (!settingsRes.ok) {
+          console.warn("Failed to sync web friend settings:", await settingsRes.text());
+        }
+      } catch (settingsError) {
+        console.warn("Failed to sync web friend settings", settingsError);
+      }
 
       const botName = persona.name || persona.robotName || "루미";
       const studentName = profile.userName || profile.studentName || "김민준";
@@ -2580,11 +2647,12 @@ export default function App() {
                       <button
                         type="button"
                         onClick={handleClearChat}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-[#5C5B57] hover:text-rose-700 bg-[#FAF9F6] hover:bg-rose-50 border border-[#EAE6DF] hover:border-rose-200 rounded-full transition-all cursor-pointer shadow-2xs active:scale-95"
+                        disabled={clearingChat}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold text-[#5C5B57] hover:text-rose-700 bg-[#FAF9F6] hover:bg-rose-50 border border-[#EAE6DF] hover:border-rose-200 rounded-full transition-all cursor-pointer shadow-2xs active:scale-95 disabled:cursor-wait disabled:opacity-60"
                         title="현재 대화방의 메시지 기록을 모두 초기화합니다"
                       >
-                        <RotateCcw className="w-3 h-3 text-[#86868B] group-hover:text-rose-600" />
-                        <span>대화 초기화</span>
+                        <RotateCcw className={`w-3 h-3 text-[#86868B] group-hover:text-rose-600 ${clearingChat ? "animate-spin" : ""}`} />
+                        <span>{clearingChat ? "초기화 중" : "대화 초기화"}</span>
                       </button>
 
                       <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium transition-all ${

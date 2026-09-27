@@ -581,7 +581,9 @@ function buildSharedSystemPrompt(user: User, isHardwareVoice: boolean = false): 
   const memories = (friendSettings.memories || []).filter((m: any) => m && (m.text || m.content));
 
   const botName = persona.name || persona.robotName || "루미봇";
-  const studentName = profile.userName || profile.studentName || user.displayName || "에이든";
+  // 웹 대화의 기본 프로필 규칙과 동일하게 유지한다.
+  const defaultStudentName = user.displayName && user.displayName !== "김루미" ? user.displayName : "에이든";
+  const studentName = profile.userName || profile.studentName || defaultStudentName;
   const userCallSign = persona.callSign || studentName;
   const roleName = persona.role || "공부친구";
   const toneName = persona.tone || persona.speechStyle || "친근한 친구말";
@@ -625,6 +627,38 @@ function buildSharedSystemPrompt(user: User, isHardwareVoice: boolean = false): 
   }
 
   return prompt;
+}
+
+function buildDeterministicIdentityReply(user: User, message: string): string | null {
+  const normalized = message.replace(/[^\p{L}\p{N}]/gu, "").toLowerCase();
+  const friendSettings = user.friendSettings || {};
+  const persona = friendSettings.persona || {};
+  const profile = friendSettings.profile || {};
+  const defaultStudentName = user.displayName && user.displayName !== "김루미" ? user.displayName : "에이든";
+  const studentName = profile.userName || profile.studentName || defaultStudentName;
+  const botName = persona.name || persona.robotName || "루미봇";
+  const userCallSign = persona.callSign || studentName;
+  const roleName = persona.role || "공부친구";
+  const schoolName = profile.school || "소다중학교 1학년";
+  const interestsList = Array.isArray(profile.interests)
+    ? profile.interests.join(", ")
+    : (profile.interests || "인공지능, 우주, 과학");
+
+  const asksAboutUser = [
+    "나는누구", "난누구", "내가누구", "내이름", "내취미", "내가좋아하는"
+  ].some(pattern => normalized.includes(pattern));
+  if (asksAboutUser) {
+    return `안녕 ${studentName}! 너는 내 가장 소중한 친구 ${studentName}잖아! ${schoolName}에 다니고 있고, 취미는 ${interestsList}이지!`;
+  }
+
+  const asksAboutBot = [
+    "너는누구", "넌누구", "네이름", "니이름", "자기소개"
+  ].some(pattern => normalized.includes(pattern));
+  if (asksAboutBot) {
+    return `안녕 ${userCallSign}! 나는 너의 ${roleName} ${getJosa(botName, "이야")}! 오늘 어떤 이야기를 해볼까?`;
+  }
+
+  return null;
 }
 
 function findUserByApiKey(token: string, db: DBStructure): User | undefined {
@@ -942,34 +976,63 @@ app.post('/api/hw/audio-chat', upload.single('file'), async (req, res) => {
       return res.json({ text: "", reply: "음성을 인식하지 못했어요." });
     }
 
-    // 2. LLM (Text to Text) with Unified Friend Persona
-    const routeConfig = checkHybridQuotaAndRoute(user, db);
-    writeDB(db);
-
+    // 2. 웹과 동일한 대화방 문맥 및 친구 프로필 사용
     const voiceSystemPrompt = buildSharedSystemPrompt(user, true);
+    let chat = db.chats
+      .filter(c => c.userId === user.id)
+      .sort((a, b) => {
+        const lastA = a.messages[a.messages.length - 1]?.timestamp || a.createdAt;
+        const lastB = b.messages[b.messages.length - 1]?.timestamp || b.createdAt;
+        return new Date(lastB).getTime() - new Date(lastA).getTime();
+      })[0];
 
-    const openaiRes = await fetch(routeConfig.url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": routeConfig.auth
-      },
-      body: JSON.stringify({
-        model: routeConfig.routedToGpt ? "gpt-4o-mini" : db.settings.modelName,
-        messages: [
-          { role: "system", content: voiceSystemPrompt },
-          { role: "user", content: transcript }
-        ],
-        max_tokens: 150
-      })
-    });
+    const recentHistory = (chat?.messages || [])
+      .filter(m => !m.text.includes("로컬 엔진이 잠시 쉬고 있어"))
+      .slice(-19)
+      .map(m => ({
+        role: m.sender === "user" ? "user" : "assistant",
+        content: m.text
+      }));
 
-    const data = await openaiRes.json();
-    let replyMessage = data.choices?.[0]?.message?.content || "앗, 오류가 났어요.";
+    // 신원 질문은 작은 로컬 모델의 대명사 혼동을 피하고 웹과 완전히 같은 프로필 답변을 보장한다.
+    let replyMessage = buildDeterministicIdentityReply(user, transcript);
+    let modelUsed = "SODA Profile";
+
+    if (!replyMessage) {
+      const routeConfig = checkHybridQuotaAndRoute(user, db);
+      writeDB(db);
+
+      const openaiRes = await fetch(routeConfig.url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": routeConfig.auth
+        },
+        body: JSON.stringify({
+          model: routeConfig.routedToGpt ? "gpt-4o-mini" : db.settings.modelName,
+          messages: [
+            { role: "system", content: voiceSystemPrompt },
+            ...recentHistory,
+            { role: "user", content: transcript }
+          ],
+          temperature: db.settings.temperature ?? 0.7,
+          max_tokens: Math.min(db.settings.maxTokens || 1024, 1024)
+        })
+      });
+
+      if (!openaiRes.ok) {
+        const errorText = await openaiRes.text();
+        throw new Error(`Chat completion failed: ${openaiRes.status} ${errorText}`);
+      }
+
+      const data = await openaiRes.json();
+      replyMessage = data.choices?.[0]?.message?.content || "앗, 오류가 났어요.";
+      modelUsed = data.model || (routeConfig.routedToGpt ? "gpt-4o-mini" : db.settings.modelName);
+    }
+
     replyMessage = replyMessage.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, "").trim();
 
     // 3. Save to Unified DB Conversation Thread
-    let chat = db.chats.filter(c => c.userId === user.id).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
     if (!chat) {
       chat = {
         id: "chat-" + Date.now(),
@@ -997,7 +1060,7 @@ app.post('/api/hw/audio-chat', upload.single('file'), async (req, res) => {
       timestamp: new Date().toISOString(),
       source: "sodabot",
       deviceId: "SODABOT-01",
-      modelUsed: data.model || "Whisper + GPT"
+      modelUsed
     };
 
     chat.messages.push(hwUserMsg, hwBotMsg);
