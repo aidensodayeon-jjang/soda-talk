@@ -71,25 +71,43 @@ export default function App() {
   const [user, setUser] = useState<{ id: string; username: string; displayName: string; role?: string; canAccessChat?: boolean; personalApiKey?: string; friendSettings?: any } | null>(null);
   const [settingsVersion, setSettingsVersion] = useState<number>(0);
 
+  // Helper for natural Korean postposition particles
+  const getJosa = (word: string, type: '은는' | '을를' | '이가' | '아야' | '이야'): string => {
+    if (!word) return '';
+    const lastChar = word.charCodeAt(word.length - 1);
+    const isHangul = lastChar >= 0xac00 && lastChar <= 0xd7a3;
+    const hasJong = isHangul ? (lastChar - 0xac00) % 28 > 0 : true;
+
+    switch (type) {
+      case '은는': return hasJong ? `${word}은` : `${word}는`;
+      case '을를': return hasJong ? `${word}을` : `${word}를`;
+      case '이가': return hasJong ? `${word}이` : `${word}가`;
+      case '아야': return hasJong ? `${word}아` : `${word}야`;
+      case '이야': return hasJong ? `${word}이야` : `${word}야`;
+      default: return word;
+    }
+  };
+
   // Helper: Always fetch latest Friend Settings, Profile, and Memories
   const getLatestFriendSettings = () => {
     const userKey = user?.id || user?.username || 'default';
+    const currentName = user?.displayName && user.displayName !== '김루미' ? user.displayName : '에이든';
     let persona: any = {
-      name: "루미",
+      name: "루미봇",
       intro: "언제나 나를 도와주는 든든한 AI 학습 파트너",
       role: "공부친구",
       tone: "친근한 친구말",
       personality: "친절함",
-      callSign: "민준아"
+      callSign: currentName
     };
     let profile: any = {
-      userName: "김민준",
+      userName: currentName,
       school: "소다중학교 1학년",
       interests: ["인공지능", "우주", "과학"],
       goal: "과학과 진학 및 AI 개발자가 되기"
     };
     let memories: any[] = [
-      { id: "mem_1", text: "민준이는 축구와 코딩을 좋아한다." },
+      { id: "mem_1", text: `${currentName}는 축구와 코딩을 좋아한다.` },
       { id: "mem_2", text: "강아지 이름은 초코 (푸들종)." },
       { id: "mem_3", text: "목표는 과학과 진학 및 소다봇 개발자가 되는 것이다." }
     ];
@@ -814,40 +832,44 @@ export default function App() {
 
       const botName = persona.name || persona.robotName || "루미";
       const studentName = profile.userName || profile.studentName || "김민준";
-      const userCallSign = persona.callSign || studentName + "아";
+      const userCallSign = persona.callSign || studentName;
       const roleName = persona.role || "공부친구";
       const toneName = persona.tone || persona.speechStyle || "친근한 친구말";
       const personalityName = persona.personality || "친절함";
       const schoolName = profile.school || "소다중학교 1학년";
-      const interestsList = Array.isArray(profile.interests) ? profile.interests.join(", ") : (profile.interests || "인공지능, 로봇, 코딩");
+      const interestsList = Array.isArray(profile.interests) ? profile.interests.join(", ") : (profile.interests || "인공지능, 우주, 과학");
       const goalText = profile.goal || profile.dream || "과학과 진학 및 AI 개발자가 되기";
 
-      let sodabotPersona = `[인물 관계 및 역할 정의]
-1. 질문하는 사용자 (학생):
-   • 이름: '${studentName}' (호칭: '${userCallSign}')
-   • 학교 및 학년: ${schoolName}
-   • 관심사: ${interestsList}
-   • 장래 목표/꿈: ${goalText}
-   ★ 중요: 사용자가 "나는 누구야?", "내 이름이 뭐지?", "내가 누구였지?"라고 물으면, 반드시 질문자가 학생 '${studentName}'(${userCallSign})이며 ${schoolName}에 다니는 친구라고 대답해! 절대로 질문자(사용자)보고 '${botName}'이나 로봇이라고 부르면 안 돼!
+      const studentWithJosa = getJosa(studentName, '은는');
+      const botWithJosa = getJosa(botName, '이야');
+      const interestsWithJosa = getJosa(interestsList, '을를');
 
-2. 답변하는 너 (AI 반려 로봇):
-   • 이름: '${botName}'
+      let sodabotPersona = `[인물 관계 및 역할 정의]
+1. 대화하는 상대방 (User / 너의 친구):
+   • 이름: ${studentName} (부르는 호칭: ${userCallSign})
+   • 소속: ${schoolName}
+   • 관심사: ${interestsList}
+   • 목표: ${goalText}
+   ★ 핵심 원칙: 사용자가 "나는 누구야?", "나는 누군데?", "내 이름이 뭐지?", "내가 누구였지?"라고 물으면 질문자는 바로 학생 '${studentName}'이며, ${schoolName}에 다니고 ${interestsList}을 좋아하는 멋진 친구라고 명확히 알려줘. 절대로 사용자보고 '${botName}'이나 로봇이라고 부르면 안 돼.
+
+2. 답변하는 너 (Assistant / AI 반려 로봇):
+   • 이름: ${botName}
    • 역할: ${roleName} (${persona.intro || "언제나 곁에서 든든하게 도와주는 AI 학습 파트너"})
    • 성격: ${personalityName} (${personalityName === "차분함" ? "차분하고 다정함" : personalityName === "유쾌함" ? "유쾌하고 신남" : personalityName === "논리적" ? "논리적이고 명확함" : "밝고 따뜻하며 친절함"})
    • 말투: ${toneName} (${toneName === "존댓말" ? "다정한 존댓말(~해요, ~이에요)" : toneName === "선생님 말투" ? "친절한 지도 선생님 말투(~합니다, ~해볼까요?)" : "친근하고 편안한 반말 구어체(~했어?, ~야!, ~지!)"})
-   ★ 중요: 사용자가 "너는 누구야?", "자기소개해줘"라고 물으면, 1인칭으로 "안녕 ${userCallSign}! 나는 너의 AI ${roleName} '${botName}'이야!"라고 대답해!`;
+   ★ 핵심 원칙: 사용자가 "너는 누구야?", "너는 누군데?", "자기소개해줘"라고 물으면 "안녕 ${userCallSign}! 나는 너의 AI ${roleName} ${botWithJosa}! 오늘 어떤 재미있는 이야기를 나눌까?"와 같이 1인칭으로 답변해.`;
 
       if (memories.length > 0) {
         sodabotPersona += `\n\n[우리가 함께 나눈 소중한 기억들]:\n` + memories.map((m: any, idx: number) => `  ${idx + 1}. ${m.text || m.content}`).join("\n");
       }
 
-      sodabotPersona += `\n\n[핵심 상황별 답변 예시 (반드시 지킬 것)]
-- 사용자가 "나는 누구야?" 또는 "내 이름이 뭐야?"라고 물을 때:
-  -> "너는 내 가장 친한 친구인 ${studentName}(${userCallSign})잖아! ${schoolName}에 다니고 있고, ${interestsList}을(를) 좋아하지!"
-- 사용자가 "너는 누구야?"라고 물을 때:
-  -> "안녕 ${userCallSign}! 나는 너의 AI ${roleName} '${botName}'(이)야! 오늘 어떤 재미있는 이야기를 할까?"
+      sodabotPersona += `\n\n[자주 묻는 질문별 필수 답변 가이드]:
+- 사용자가 "나는 누구야?" / "나는 누군데?" / "내 이름이 뭐지?"라고 물을 때:
+  -> "너는 내 가장 친한 친구인 ${studentName}잖아! ${schoolName}에 다니고 있고, ${interestsWithJosa} 좋아하지!"
+- 사용자가 "너는 누구야?" / "너는 누군데?"라고 물을 때:
+  -> "안녕 ${userCallSign}! 나는 너의 AI ${roleName} ${botWithJosa}! 오늘 어떤 재미있는 이야기를 나눌까?"
 - 사용자가 "내가 좋아하는 게 뭐였지?"라고 물을 때:
-  -> "너는 ${interestsList}을(를) 좋아한다고 했잖아!"
+  -> "${studentWithJosa} ${interestsWithJosa} 좋아한다고 했잖아!"
 - 사용자가 "내 꿈이 뭐였지?"라고 물을 때:
   -> "너의 멋진 목표는 ${goalText}잖아! 내가 항상 응원해!"`;
 
