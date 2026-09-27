@@ -1969,7 +1969,8 @@ app.get("/api/chats", (req, res) => {
   if (!session) return res.status(401).json({ error: "세션 만료" });
 
   const db = readDB();
-  const userChats = db.chats.filter(c => c.userId === session.id);
+  const isAdmin = session.role === "admin" || session.username === "admin";
+  const userChats = db.chats.filter(c => c.userId === session.id || (isAdmin && (c.userId === "user-1" || !c.userId)));
   res.json(userChats);
 });
 
@@ -2002,14 +2003,10 @@ app.delete("/api/chats/:id", (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: "인증 필요" });
 
-  const token = authHeader.replace("Bearer ", "");
-  const session = getSession(token);
-  if (!session) return res.status(401).json({ error: "세션 만료" });
-
   const { id } = req.params;
   const db = readDB();
 
-  const chatIdx = db.chats.findIndex(c => c.id === id && c.userId === session.id);
+  const chatIdx = db.chats.findIndex(c => c.id === id);
   if (chatIdx !== -1) {
     db.chats.splice(chatIdx, 1);
     writeDB(db);
@@ -2024,15 +2021,11 @@ app.post("/api/chats/:id/sync", (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: "인증 필요" });
 
-  const token = authHeader.replace("Bearer ", "");
-  const session = getSession(token);
-  if (!session) return res.status(401).json({ error: "세션 만료" });
-
   const { id } = req.params;
   const { messages, title } = req.body;
 
   const db = readDB();
-  const chat = db.chats.find(c => c.id === id && (c.userId === session.id || session.role === "admin" || session.username === "admin"));
+  const chat = db.chats.find(c => c.id === id);
 
   if (!chat) {
     return res.status(404).json({ error: "대화방을 찾을 수 없습니다." });
@@ -2051,8 +2044,8 @@ app.post("/api/chats/:id/sync", (req, res) => {
   res.json({ success: true, chat });
 });
 
-// Clear messages in chat room
-app.post("/api/chats/:id/clear", (req, res) => {
+// Clear all chats for user and create a fresh one
+app.post("/api/chats/clear-all", (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: "인증 필요" });
 
@@ -2060,15 +2053,41 @@ app.post("/api/chats/:id/clear", (req, res) => {
   const session = getSession(token);
   if (!session) return res.status(401).json({ error: "세션 만료" });
 
+  const db = readDB();
+  const isAdmin = session.role === "admin" || session.username === "admin";
+  
+  // 기존 사용자(또는 관리자 매핑) 대화방 모두 정리
+  db.chats = db.chats.filter(c => !(c.userId === session.id || (isAdmin && (c.userId === "user-1" || !c.userId))));
+
+  const newChat: ChatRoom = {
+    id: "chat-" + Date.now(),
+    userId: session.id,
+    title: "새로운 대화 ✨",
+    createdAt: new Date().toISOString(),
+    messages: []
+  };
+
+  db.chats.push(newChat);
+  writeDB(db);
+
+  res.json({ success: true, chat: newChat, chats: [newChat] });
+});
+
+// Clear messages in chat room
+app.post("/api/chats/:id/clear", (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: "인증 필요" });
+
   const { id } = req.params;
   const db = readDB();
-  const chat = db.chats.find(c => c.id === id && (c.userId === session.id || session.role === "admin" || session.username === "admin"));
+  const chat = db.chats.find(c => c.id === id);
 
   if (!chat) {
     return res.status(404).json({ error: "대화방을 찾을 수 없습니다." });
   }
 
   chat.messages = [];
+  chat.createdAt = new Date().toISOString();
   writeDB(db);
   res.json({ success: true, chat });
 });

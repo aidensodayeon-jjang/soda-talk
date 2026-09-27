@@ -597,24 +597,32 @@ export default function App() {
   }, [token, user]);
 
   const handleClearChat = async () => {
-    const targetChat = chats.find(c => c.id === activeChatId) || chats[0];
-    if (!targetChat) {
-      handleCreateNewChat();
-      return;
-    }
+    // 1. 즉시 로컬 화면을 깨끗한 1개의 대화방으로 리셋 (즉각적 반응)
+    const tempChatId = "chat-" + Date.now();
+    const emptyChat: ChatRoom = {
+      id: tempChatId,
+      userId: user.id,
+      title: "새로운 대화 ✨",
+      createdAt: new Date().toISOString(),
+      messages: []
+    };
+    setChats([emptyChat]);
+    setActiveChatId(tempChatId);
 
-    const targetId = targetChat.id;
-    setActiveChatId(targetId);
-
-    // 1. 즉시 로컬 화면 메시지 비우기 (즉각적 반응)
-    setChats(prev => prev.map(c => c.id === targetId ? { ...c, messages: [] } : c));
-
-    // 2. 백엔드 동기화 (서버 비우기)
+    // 2. 백엔드 동기화 (서버 대화 전체 리셋 및 새 대화방 생성)
     try {
-      await fetch(`/api/chats/${targetId}/clear`, {
+      const res = await fetch("/api/chats/clear-all", {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { 
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}` 
+        }
       });
+      const data = await res.json();
+      if (res.ok && data.chat) {
+        setChats([data.chat]);
+        setActiveChatId(data.chat.id);
+      }
     } catch (err) {
       console.error("Failed to clear chat on backend", err);
     }
