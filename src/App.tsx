@@ -681,7 +681,8 @@ export default function App() {
       id: "msg-" + Date.now() + "-user",
       sender: "user",
       text: textToSend,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      source: "web"
     };
 
     let updatedChats = chats;
@@ -712,7 +713,7 @@ export default function App() {
       if (c.id === targetChatId) {
         return {
           ...c,
-          messages: [...c.messages, { id: assistantMsgId, sender: "assistant", text: "", timestamp: new Date().toISOString() }]
+          messages: [...c.messages, { id: assistantMsgId, sender: "assistant", text: "", timestamp: new Date().toISOString(), source: "web" }]
         };
       }
       return c;
@@ -729,7 +730,40 @@ export default function App() {
         content: m.text
       }));
 
-      const sodabotPersona = "코딩 학원 '디랩(D-Lab)'의 인공지능 코딩 반려봇 '소다봇'이야. 초등학생 눈높이의 친근한 한국어 반말 구어체(~했어?, ~야!)와 이모지를 적극 사용해. 에러에는 깊이 공감해주고, 코딩 질문에는 정답 대신 단계별 힌트만 줘.";
+      // Build Shared Friend Persona identical to Hardware
+      const friendSettings = user?.friendSettings || {};
+      const persona = friendSettings.persona || {
+        robotName: "소다봇",
+        tone: "cute",
+        speechStyle: "friendly",
+        personality: "bright"
+      };
+      const profile = friendSettings.profile || {
+        studentName: user?.displayName || "친구",
+        school: "",
+        grade: "",
+        interests: "",
+        dream: ""
+      };
+      const memories = (friendSettings.memories || []).filter((m: any) => m && m.text);
+
+      let sodabotPersona = `너는 '${profile.studentName || user?.displayName || '친구'}'의 가장 친한 AI 반려 로봇 '${persona.robotName || '소다봇'}'이야.`;
+      if (persona.personality === "calm") {
+        sodabotPersona += ` 차분하고 다정하며 지혜롭게 이야기해.`;
+      } else if (persona.personality === "humorous") {
+        sodabotPersona += ` 유쾌하고 재치 넘치며 신나게 이야기해.`;
+      } else {
+        sodabotPersona += ` 밝고 따뜻하며 귀엽게 이야기해.`;
+      }
+
+      if (profile.school || profile.grade || profile.interests || profile.dream) {
+        sodabotPersona += ` [친구 정보: 이름=${profile.studentName}, 학교=${profile.school || '미입력'}, 학년=${profile.grade || '미입력'}, 관심사=${profile.interests || '미입력'}, 장래희망=${profile.dream || '미입력'}]`;
+      }
+
+      if (memories.length > 0) {
+        const memTexts = memories.map((m: any) => m.text).join(", ");
+        sodabotPersona += ` [우리가 함께 나눈 소중한 기억들: ${memTexts}]`;
+      }
 
       const res = await fetch(`/api/lmstudio/stream`, {
         method: "POST",
@@ -2370,228 +2404,238 @@ export default function App() {
         <main className="flex-1 flex flex-col h-screen overflow-hidden bg-white relative">
           {currentView === 'chat' ? (
             <>
-              {/* Apple style Minimal Header */}
-              <header className="h-14 border-b border-[#EAE6DF] bg-white flex items-center justify-between px-6 shrink-0 z-10 select-none">
-            <div className="flex items-center gap-3">
-              <span className="text-xs font-semibold text-[#1D1D1F] tracking-tight font-mono">
-                {activeChat ? activeChat.title : "새로운 대화"}
-              </span>
-              <span className="text-[#EAE6DF] text-sm">/</span>
-              <div className="flex items-center gap-1.5 text-xs">
-                <span className={`w-2 h-2 rounded-full ${isSodabotConnected ? "bg-emerald-500 animate-pulse" : "bg-gray-300"}`} />
-                <span className="text-[11px] font-medium text-[#5C5B57]">
-                  {isSodabotConnected ? `SODABOT · ${user?.displayName || '소다봇'} 연결됨` : "SODABOT 연결 안 됨"}
-                </span>
-              </div>
-            {user?.username === 'admin' && (
-              <>
-                <span className="text-[#EAE6DF] text-sm">/</span>
-                <div className="flex items-center gap-1.5 text-xs text-[#86868B]">
-                  <span className={`w-1.5 h-1.5 rounded-full ${lmStudioConnected ? "bg-emerald-500" : "bg-amber-500"}`} />
-                  <span className="font-mono text-[11px] text-[#5C5B57]">
-                    {lmStudioConnected ? "AI Engine Connected" : "AI Engine Standby"}
-                  </span>
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* Fallback Mode indicator (Admin only) */}
-          {user?.username === 'admin' && (
-            <div className="flex items-center gap-2">
-              <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-medium ${fallbackMode
-                  ? "bg-amber-50 border border-amber-100 text-amber-700"
-                  : "bg-emerald-50 border border-emerald-100 text-emerald-700"
-                }`}>
-                {fallbackMode ? "에뮬레이터 대기 상태" : "로컬 Direct 접속 전용"}
-              </span>
-            </div>
-          )}
-        </header>
-
-        {/* Scrollable Conversation Arena */}
-        <div className="flex-1 overflow-y-auto px-6 py-8 bg-[#FAF9F6]/50 relative">
-
-          {/* Subtle elegant grid background lines */}
-          <div className="absolute inset-0 bg-[linear-gradient(to_right,#EAE6DF_1px,transparent_1px),linear-gradient(to_bottom,#EAE6DF_1px,transparent_1px)] bg-[size:5rem_5rem] opacity-20 pointer-events-none" />
-
-          <div className="max-w-3xl mx-auto space-y-6 relative z-10 pb-8">
-
-            {/* A. If no active chat or chat message is completely empty, render a beautifully designed welcome screen (Muji + Apple) */}
-            {(!activeChat || activeChat.messages.length === 0) ? (
-              <div className="py-12 space-y-8 animate-fade-in">
-
-                {/* Visual Accent Title */}
-                <div className="text-center space-y-3 max-w-lg mx-auto">
-                  <div className="inline-flex items-center justify-center w-12 h-12 bg-white border border-[#EAE6DF] rounded-2xl text-[#9C282C] shadow-sm mb-1">
-                    <Sparkles className="w-5 h-5 animate-pulse" />
+              {/* Apple/Muji style Minimal Header */}
+              <header className="min-h-14 py-2 border-b border-[#EAE6DF] bg-white flex flex-wrap items-center justify-between px-6 shrink-0 z-10 select-none gap-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-[#1D1D1F] tracking-tight">
+                      소다와 대화하기
+                    </span>
+                    <span className="text-[#86868B] text-xs font-medium font-mono">
+                      {activeChat ? `· ${activeChat.title}` : ""}
+                    </span>
                   </div>
-                  <h1 className="text-xl font-bold text-[#1D1D1F] tracking-tight">
-                    안녕하세요, {user.displayName}님.
-                  </h1>
-                  <p className="text-xs text-[#86868B] leading-relaxed">
-                    오늘 어떤 깊은 생각이나 질문을 안고 오셨나요? 정성스럽게 답변해 드릴게요.
-                  </p>
-                </div>
 
-                {/* Grid Suggestions */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4">
-                  {suggestionCards.map((card, idx) => (
-                    <div
-                      key={idx}
-                      onClick={() => handleSendMessage(undefined, card.prompt)}
-                      className="bg-white border border-[#EAE6DF] hover:border-[#9C282C] rounded-2xl p-4 shadow-sm hover:shadow-[0_4px_16px_rgba(156,40,44,0.03)] transition-all cursor-pointer text-left space-y-2 group active:scale-[0.99] hover:scale-[1.01]"
-                    >
-                      <h3 className="text-xs font-semibold text-[#1D1D1F] flex items-center justify-between">
-                        {card.title}
-                        <ArrowRight className="w-3.5 h-3.5 text-[#B0ACA5] group-hover:text-[#9C282C] transition-colors" />
-                      </h3>
-                      <p className="text-[11px] text-[#86868B] leading-normal">{card.desc}</p>
-                    </div>
-                  ))}
-                </div>
+                  <span className="text-[#EAE6DF] text-sm hidden sm:inline">/</span>
 
-                {/* Connection Status Callout */}
-                <div className="p-4 bg-white border border-[#EAE6DF] rounded-2xl flex items-start gap-3 text-xs text-[#5C5B57] leading-relaxed">
-                  <Cpu className="w-4 h-4 text-[#9C282C] shrink-0 mt-0.5" />
-                  <div>
-                    <span className="font-semibold text-[#1D1D1F]">안정적인 연동 지능 제공</span>
-                    <p className="text-[11px] text-[#86868B] mt-0.5">
-                      로컬 AI 엔진이 꺼져 있거나 접근 불가능할 시,
-                      <strong>Gemini가 고도로 훈련된 Llama-3 가상 코어로 즉각 스왑</strong>되어 대화를 안전하게 완수합니다. 안심하고 사용하세요.
-                    </p>
+                  {/* Friend Persona & Profile Summary Badge */}
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#FAF9F6] border border-[#EAE6DF] text-[11px] text-[#5C5B57]">
+                    <span className="font-semibold text-indigo-700">
+                      {user?.friendSettings?.persona?.robotName || "루미"}
+                    </span>
+                    <span className="text-[#B0ACA5]">·</span>
+                    <span>{user?.friendSettings?.persona?.role || "공부 & 반려 친구"}</span>
+                    <span className="text-[#B0ACA5]">·</span>
+                    <span>{user?.friendSettings?.persona?.speechStyle === "polite" ? "예의 바른 존댓말" : "친근한 친구말"}</span>
+                    <span className="text-[#B0ACA5]">·</span>
+                    <span className="font-mono text-indigo-600 font-medium">기억 {(user?.friendSettings?.memories || []).length}개</span>
                   </div>
                 </div>
 
-              </div>
-            ) : (
+                {/* SODABOT Connection Status */}
+                <div className="flex items-center gap-2">
+                  <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium transition-all ${
+                    isSodabotConnected
+                      ? "bg-emerald-50 border border-emerald-200 text-emerald-700"
+                      : "bg-[#FAF9F6] border border-[#EAE6DF] text-[#86868B]"
+                  }`}>
+                    <span className={`w-2 h-2 rounded-full ${isSodabotConnected ? "bg-emerald-500 animate-pulse" : "bg-gray-300"}`} />
+                    <span>
+                      {isSodabotConnected
+                        ? `SODABOT · ${user?.friendSettings?.persona?.robotName || user?.displayName || '소다봇'} 연결됨`
+                        : "SODABOT 연결 안 됨"}
+                    </span>
+                  </div>
+                </div>
+              </header>
 
-              /* B. Render actual message timeline */
-              <div className="space-y-6 animate-fade-in">
-                {activeChat.messages.map((msg) => {
-                  const isUser = msg.sender === "user";
-                  const isSodabot = msg.source === "sodabot";
-                  return (
-                    <div
-                      key={msg.id}
-                      className={`flex ${isUser ? "justify-end" : "justify-start"} items-start gap-3`}
-                    >
-                      {/* Avatar for AI */}
-                      {!isUser && (
-                        <div className="w-8 h-8 rounded-xl bg-white border border-[#EAE6DF] flex items-center justify-center text-[#9C282C] shrink-0 shadow-sm font-bold font-mono text-xs">
-                          {isSodabot ? '🤖' : 'M'}
+              {/* Scrollable Conversation Arena */}
+              <div className="flex-1 overflow-y-auto px-6 py-8 bg-[#FAF9F6]/50 relative">
+
+                {/* Subtle elegant grid background lines */}
+                <div className="absolute inset-0 bg-[linear-gradient(to_right,#EAE6DF_1px,transparent_1px),linear-gradient(to_bottom,#EAE6DF_1px,transparent_1px)] bg-[size:5rem_5rem] opacity-20 pointer-events-none" />
+
+                <div className="max-w-3xl mx-auto space-y-6 relative z-10 pb-8">
+
+                  {/* A. Welcome Card */}
+                  {(!activeChat || activeChat.messages.length === 0) ? (
+                    <div className="py-12 space-y-8 animate-fade-in">
+
+                      {/* Visual Accent Title */}
+                      <div className="text-center space-y-3 max-w-lg mx-auto">
+                        <div className="inline-flex items-center justify-center w-12 h-12 bg-white border border-[#EAE6DF] rounded-2xl text-indigo-600 shadow-sm mb-1">
+                          <Sparkles className="w-5 h-5 animate-pulse" />
                         </div>
-                      )}
-
-                      {/* Message Box */}
-                      <div className={`max-w-[80%] rounded-2xl p-4 text-xs leading-relaxed ${isUser
-                          ? (isSodabot ? "bg-gradient-to-r from-indigo-950 to-[#2A2927] text-white rounded-tr-sm shadow-sm border border-indigo-500/20" : "bg-[#2A2927] text-white rounded-tr-sm shadow-sm")
-                          : "bg-white border border-[#EAE6DF] text-[#2A2927] rounded-tl-sm shadow-sm space-y-2"
-                        }`}>
-
-                        {/* Source Badge */}
-                        <div className="flex items-center gap-1.5 mb-1.5">
-                          <span className={`text-[9px] px-1.5 py-0.5 rounded-md font-bold tracking-wider ${
-                            isSodabot
-                              ? "bg-indigo-500/20 text-indigo-300 border border-indigo-400/30"
-                              : "bg-zinc-500/20 text-zinc-300"
-                          }`}>
-                            {isSodabot ? "🎙 SODABOT" : "⌨ WEB"}
-                          </span>
-                        </div>
-
-                        {/* Message Text */}
-                        <div className="whitespace-pre-wrap font-sans break-words antialiased">
-                          {msg.text}
-                        </div>
-
-                        {/* Bottom Bar: Timestamp, Model, and Speak on Sodabot Button */}
-                        <div className="flex items-center justify-between text-[10px] text-[#86868B] font-mono border-t border-[#FAF9F6] pt-1.5 mt-2 gap-2 flex-wrap">
-                          <div className="flex items-center gap-2">
-                            <span>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                            {user?.username === 'admin' && msg.modelUsed && <span className="text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded truncate max-w-[120px]">🤖 {msg.modelUsed}</span>}
-                          </div>
-
-                          {!isUser && !isSodabot && (
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                try {
-                                  await sodabotTransport.send('speak', msg.text);
-                                } catch (e: any) {
-                                  console.error("소다봇 음성 출력 실패:", e);
-                                  alert("소다봇이 연결되어 있지 않거나 전송할 수 없습니다.");
-                                }
-                              }}
-                              className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 active:scale-95 rounded-md transition-colors cursor-pointer border border-indigo-200"
-                              title="기존 생성된 답변을 실물 소다봇에서 음성으로 출력합니다"
-                            >
-                              <span>🔊 소다봇으로 말하기</span>
-                            </button>
-                          )}
-                        </div>
+                        <h1 className="text-xl font-bold text-[#1D1D1F] tracking-tight">
+                          안녕하세요, {user?.displayName}님!
+                        </h1>
+                        <p className="text-xs text-[#86868B] leading-relaxed">
+                          웹 채팅과 실물 소다봇 음성 대화가 하나의 친구 기억으로 연결되어 있어요.<br />
+                          오늘 어떤 이야기를 나누고 싶나요?
+                        </p>
                       </div>
 
-                      {/* Avatar for User */}
-                      {isUser && (
-                        <div className={`w-8 h-8 rounded-xl border flex items-center justify-center shrink-0 font-bold font-mono text-[10px] ${
-                          isSodabot
-                            ? "bg-indigo-900 border-indigo-600 text-indigo-200"
-                            : "bg-[#FAF9F6] border-[#EAE6DF] text-[#5C5B57]"
-                        }`}>
-                          {isSodabot ? '🎙' : user.displayName.substring(0, 1)}
+                      {/* Grid Suggestions */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4">
+                        {suggestionCards.map((card, idx) => (
+                          <div
+                            key={idx}
+                            onClick={() => handleSendMessage(undefined, card.prompt)}
+                            className="bg-white border border-[#EAE6DF] hover:border-indigo-400 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all cursor-pointer text-left space-y-2 group active:scale-[0.99] hover:scale-[1.01]"
+                          >
+                            <h3 className="text-xs font-semibold text-[#1D1D1F] flex items-center justify-between">
+                              {card.title}
+                              <ArrowRight className="w-3.5 h-3.5 text-[#B0ACA5] group-hover:text-indigo-600 transition-colors" />
+                            </h3>
+                            <p className="text-[11px] text-[#86868B] leading-normal">{card.desc}</p>
+                          </div>
+                        ))}
+                      </div>
+
+                    </div>
+                  ) : (
+
+                    /* B. Unified Conversation Timeline */
+                    <div className="space-y-6 animate-fade-in">
+                      {activeChat.messages.map((msg) => {
+                        const isUser = msg.sender === "user";
+                        const isSodabotSource = msg.source === "sodabot";
+                        const botName = user?.friendSettings?.persona?.robotName || "소다봇";
+
+                        return (
+                          <div
+                            key={msg.id}
+                            className={`flex ${isUser ? "justify-end" : "justify-start"} items-start gap-3`}
+                          >
+                            {/* Avatar for AI Friend */}
+                            {!isUser && (
+                              <div className="w-8 h-8 rounded-xl bg-white border border-indigo-200 flex items-center justify-center text-indigo-600 shrink-0 shadow-xs font-bold text-xs">
+                                🤖
+                              </div>
+                            )}
+
+                            {/* Message Bubble Box */}
+                            <div className={`max-w-[80%] rounded-2xl p-3.5 text-xs leading-relaxed ${
+                              isUser
+                                ? "bg-[#2A2927] text-white rounded-tr-sm shadow-sm"
+                                : "bg-white border border-[#EAE6DF] text-[#2A2927] rounded-tl-sm shadow-sm space-y-2"
+                            }`}>
+
+                              {/* Source Badge (Only for User Messages) */}
+                              {isUser && (
+                                <div className="flex items-center gap-1.5 mb-1.5">
+                                  <span className={`text-[9px] px-1.5 py-0.5 rounded-md font-bold tracking-wider font-mono ${
+                                    isSodabotSource
+                                      ? "bg-indigo-500/30 text-indigo-200 border border-indigo-400/40"
+                                      : "bg-zinc-700 text-zinc-300 border border-zinc-600"
+                                  }`}>
+                                    {isSodabotSource ? "🎙 SODABOT" : "⌨ WEB"}
+                                  </span>
+                                </div>
+                              )}
+
+                              {/* Message Text */}
+                              <div className="whitespace-pre-wrap font-sans break-words antialiased leading-relaxed">
+                                {msg.text}
+                              </div>
+
+                              {/* Bottom Metadata & Actions */}
+                              <div className="flex items-center justify-between text-[10px] text-[#86868B] font-mono border-t border-[#FAF9F6] pt-1.5 mt-2 gap-2 flex-wrap">
+                                <span>
+                                  {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+
+                                {/* Speak on Sodabot Button: Only for web-generated AI responses */}
+                                {!isUser && !isSodabotSource && (
+                                  <button
+                                    type="button"
+                                    disabled={!isSodabotConnected}
+                                    onClick={async () => {
+                                      if (!isSodabotConnected) return;
+                                      try {
+                                        await sodabotTransport.send('speak', msg.text);
+                                      } catch (e: any) {
+                                        console.warn("소다봇 직접 전송 실패, 서버 경유 전송 시도", e);
+                                        await fetch('/api/sodabot/speak', {
+                                          method: 'POST',
+                                          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                                          body: JSON.stringify({ text: msg.text })
+                                        });
+                                      }
+                                    }}
+                                    className={`inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded-md transition-all border ${
+                                      isSodabotConnected
+                                        ? "text-indigo-600 bg-indigo-50 hover:bg-indigo-100 active:scale-95 border-indigo-200 cursor-pointer"
+                                        : "text-gray-400 bg-gray-50 border-gray-200 cursor-not-allowed opacity-60"
+                                    }`}
+                                    title={isSodabotConnected ? "이미 생성된 답변을 실물 소다봇에서 음성으로 출력합니다" : "소다봇이 연결되어 있지 않습니다"}
+                                  >
+                                    <span>🔊 소다봇으로 말하기</span>
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Avatar for User */}
+                            {isUser && (
+                              <div className={`w-8 h-8 rounded-xl border flex items-center justify-center shrink-0 font-bold font-mono text-[10px] ${
+                                isSodabotSource
+                                  ? "bg-indigo-900 border-indigo-600 text-indigo-200"
+                                  : "bg-[#FAF9F6] border-[#EAE6DF] text-[#5C5B57]"
+                              }`}>
+                                {isSodabotSource ? '🎙' : (user?.displayName || '나').substring(0, 1)}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+
+                      {/* Typing Loading Indicator */}
+                      {sending && (
+                        <div className="flex justify-start items-start gap-3">
+                          <div className="w-8 h-8 rounded-xl bg-white border border-indigo-200 flex items-center justify-center text-indigo-600 shrink-0 shadow-xs animate-pulse font-bold text-xs">
+                            🤖
+                          </div>
+                          <div className="bg-white border border-[#EAE6DF] rounded-2xl p-3.5 text-xs text-[#86868B] font-mono leading-relaxed shadow-sm flex items-center gap-2">
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin text-indigo-600" />
+                            <span>소다봇이 생각하고 있어요...</span>
+                          </div>
                         </div>
                       )}
-                    </div>
-                  );
-                })}
 
-                {/* Typing Loading Indicator */}
-                {sending && (
-                  <div className="flex justify-start items-start gap-3">
-                    <div className="w-8 h-8 rounded-xl bg-white border border-[#EAE6DF] flex items-center justify-center text-[#9C282C] shrink-0 shadow-sm animate-pulse font-bold font-mono text-xs">
-                      M
+                      <div ref={chatEndRef} />
                     </div>
-                    <div className="bg-white border border-[#EAE6DF] rounded-2xl p-4 text-xs text-[#86868B] font-mono leading-relaxed shadow-sm flex items-center gap-2">
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#9C282C]" />
-                      <span>추론을 진행하고 있습니다. 잠시만 기다려 주세요...</span>
-                    </div>
-                  </div>
-                )}
+                  )}
 
-                <div ref={chatEndRef} />
+                </div>
               </div>
-            )}
 
-          </div>
-        </div>
+              {/* C. Bottom Input Area */}
+              <div className="p-4 border-t border-[#EAE6DF] bg-white z-10">
+                <div className="max-w-3xl mx-auto space-y-2">
 
-        {/* C. Bottom Input Area (ChatGPT Style Bar) */}
-        <div className="p-4 border-t border-[#EAE6DF] bg-white z-10">
-          <div className="max-w-3xl mx-auto space-y-2">
+                  <form onSubmit={handleSendMessage} className="relative flex items-center">
+                    <input
+                      id="main-chat-input"
+                      type="text"
+                      required
+                      disabled={sending}
+                      value={inputText}
+                      onChange={(e) => setInputText(e.target.value)}
+                      placeholder="메시지를 입력하세요."
+                      className="w-full pl-4 pr-12 py-3.5 bg-[#FAF9F6] border border-[#EAE6DF] focus:border-indigo-500 rounded-2xl text-xs font-sans focus:outline-none transition-all placeholder:text-[#B0ACA5] shadow-inner"
+                    />
 
-            <form onSubmit={handleSendMessage} className="relative flex items-center">
-              <input
-                id="main-chat-input"
-                type="text"
-                required
-                disabled={sending}
-                value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
-                placeholder={sending ? "AI 응답을 안전하게 기다리고 있습니다..." : "비서에게 질문을 남겨보세요... (Shift + Enter 줄바꿈)"}
-                className="w-full pl-4 pr-12 py-3.5 bg-[#FAF9F6] border border-[#EAE6DF] focus:border-[#2A2927] rounded-2xl text-xs font-sans focus:outline-none transition-all placeholder:text-[#B0ACA5] shadow-inner"
-              />
-
-              <button
-                id="send-message-btn"
-                type="submit"
-                disabled={!inputText.trim() || sending}
-                className="absolute right-2 p-2 bg-[#2A2927] hover:bg-[#9C282C] disabled:bg-[#FAF9F6] text-white disabled:text-[#B0ACA5] rounded-xl transition-all cursor-pointer shadow-sm"
-                title="메시지 보내기"
-              >
-                <Send className="w-3.5 h-3.5" />
-              </button>
-            </form>
+                    <button
+                      id="send-message-btn"
+                      type="submit"
+                      disabled={!inputText.trim() || sending}
+                      className="absolute right-2 p-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-[#FAF9F6] text-white disabled:text-[#B0ACA5] rounded-xl transition-all cursor-pointer shadow-sm"
+                      title="메시지 보내기"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                    </button>
+                  </form>
 
             {/* Subtle footer credit notes */}
             <div className="flex justify-between items-center text-[10px] text-[#86868B] font-mono select-none px-1">

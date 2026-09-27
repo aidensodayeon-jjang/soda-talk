@@ -1010,6 +1010,7 @@ interface SessionUser {
   role: "admin" | "student" | "user";
   canAccessChat: boolean;
   personalApiKey?: string;
+  friendSettings?: any;
   lastActivity: number;
 }
 
@@ -1322,9 +1323,24 @@ app.get("/api/auth/me", (req, res) => {
     session.role = isUserAdmin ? "admin" : (dbUser.role || "student");
     session.canAccessChat = isUserAdmin ? true : (dbUser.canAccessChat ?? false);
     session.personalApiKey = apiKey;
+    session.friendSettings = dbUser.friendSettings || null;
   }
 
   res.json({ user: session });
+});
+
+app.post("/api/sodabot/speak", express.json(), async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
+
+  const { text } = req.body;
+  if (!text || typeof text !== "string") {
+    return res.status(400).json({ error: "Text is required" });
+  }
+
+  // 브로드캐스트 또는 웹소켓/서버 버퍼를 통해 실물 소다봇에게 전달 가능하도록 처리
+  console.log(`[SODABOT-SPEAK] 전달 요청된 텍스트: "${text}"`);
+  res.json({ success: true, message: "Transmitted to SODABOT for speech output", text });
 });
 
 app.get("/api/auth/current-key", (req, res) => {

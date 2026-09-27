@@ -1,9 +1,29 @@
+export interface FriendSettings {
+  persona?: {
+    robotName?: string;
+    role?: string;
+    tone?: string;
+    speechStyle?: string;
+    personality?: string;
+  };
+  profile?: {
+    studentName?: string;
+    school?: string;
+    grade?: string;
+    interests?: string;
+    dream?: string;
+  };
+  memories?: Array<{ id: string; text: string; date?: string }>;
+}
+
 export interface User {
   id: string;
   username: string;
   displayName: string;
   role?: "admin" | "student" | "user";
   canAccessChat?: boolean;
+  personalApiKey?: string;
+  friendSettings?: FriendSettings;
 }
 
 export interface Message {
