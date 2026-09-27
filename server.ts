@@ -2067,15 +2067,19 @@ app.post("/api/chats/clear-all", (req, res) => {
   const session = getSession(token);
   if (!session) return res.status(401).json({ error: "세션 만료" });
 
-  const { currentChatId } = req.body || {};
+  const { currentChatId, chatIds } = req.body || {};
   const db = readDB();
   const isAdmin = session.role === "admin" || session.username === "admin";
   
-  // 기존 사용자(또는 관리자 매핑) 대화방 모두 정리
+  const idsToRemove = new Set<string>();
+  if (currentChatId) idsToRemove.add(currentChatId);
+  if (Array.isArray(chatIds)) chatIds.forEach((id: string) => idsToRemove.add(id));
+
+  // 모든 관련 대화방 삭제 (세션 유저, 넘겨받은 chatIds, 관리자인 경우 전체 방 정리)
   db.chats = db.chats.filter(c => {
-    if (currentChatId && c.id === currentChatId) return false;
+    if (idsToRemove.has(c.id)) return false;
     if (c.userId === session.id) return false;
-    if (isAdmin && (c.userId === "user-1" || !c.userId || c.userId === "student-1891")) return false;
+    if (isAdmin) return false;
     return true;
   });
 

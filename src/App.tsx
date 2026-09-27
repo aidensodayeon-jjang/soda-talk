@@ -599,6 +599,7 @@ export default function App() {
   const handleClearChat = async () => {
     const currentChat = chats.find(c => c.id === activeChatId) || (chats.length > 0 ? chats[0] : undefined);
     const currentChatId = currentChat?.id;
+    const allChatIds = chats.map(c => c.id);
 
     // 1. 즉시 로컬 화면을 깨끗한 1개의 대화방으로 리셋 (즉각적 반응)
     const tempChatId = "chat-" + Date.now();
@@ -620,7 +621,7 @@ export default function App() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}` 
         },
-        body: JSON.stringify({ currentChatId })
+        body: JSON.stringify({ currentChatId, chatIds: allChatIds })
       });
       const data = await res.json();
       if (res.ok && data.chat) {
@@ -656,6 +657,7 @@ export default function App() {
       });
       const data = await res.json();
       if (res.ok && Array.isArray(data)) {
+        if (data.length === 0) return;
         const sortedChats = [...data].sort((a: ChatRoom, b: ChatRoom) => {
           const timeA = a.messages && a.messages.length > 0
             ? new Date(a.messages[a.messages.length - 1].timestamp).getTime()
@@ -666,6 +668,11 @@ export default function App() {
           return timeB - timeA;
         });
         setChats(sortedChats);
+        setActiveChatId(prev => {
+          if (!prev) return sortedChats[0].id;
+          const exists = sortedChats.some(c => c.id === prev);
+          return exists ? prev : sortedChats[0].id;
+        });
       }
     } catch (err) {
       console.error("Failed to fetch chats", err);
