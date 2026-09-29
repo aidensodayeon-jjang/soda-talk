@@ -98,6 +98,44 @@ export interface DirectMessage {
   playedOnSodabot?: boolean;
 }
 
+export interface GroupChatMember {
+  userId: string;
+  botName: string;
+  nickname: string;
+  avatarUrl?: string;
+  isOnline: boolean;
+  role?: "creator" | "member";
+}
+
+export interface GroupChatRoom {
+  id: string;
+  name: string;
+  creatorId: string;
+  memberIds: string[];
+  members?: GroupChatMember[];
+  createdAt: string;
+  unreadCount?: number;
+  lastMessage?: {
+    id: string;
+    content: string;
+    senderId: string;
+    senderName: string;
+    createdAt: string;
+  };
+}
+
+export interface GroupChatMessage {
+  id: string;
+  roomId: string;
+  senderId: string;
+  senderName: string;
+  senderAvatar?: string;
+  content: string;
+  createdAt: string;
+  readBy: string[];
+  playedOnSodabot?: boolean;
+}
+
 export interface FriendSummaryCard {
   userId: string;
   botName: string;

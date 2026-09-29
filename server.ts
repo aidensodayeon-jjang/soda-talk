@@ -457,6 +457,33 @@ export interface DirectMessage {
   playedOnSodabot?: boolean;
 }
 
+export interface GroupChatRoom {
+  id: string;
+  name: string;
+  creatorId: string;
+  memberIds: string[];
+  createdAt: string;
+  lastMessage?: {
+    id: string;
+    content: string;
+    senderId: string;
+    senderName: string;
+    createdAt: string;
+  };
+}
+
+export interface GroupChatMessage {
+  id: string;
+  roomId: string;
+  senderId: string;
+  senderName: string;
+  senderAvatar?: string;
+  content: string;
+  createdAt: string;
+  readBy: string[];
+  playedOnSodabot?: boolean;
+}
+
 interface DBStructure {
   users: User[];
   settings: {
@@ -477,6 +504,8 @@ interface DBStructure {
   friendProfiles?: SodabotPublicProfile[];
   friendships?: Friendship[];
   directMessages?: DirectMessage[];
+  groupChatRooms?: GroupChatRoom[];
+  groupChatMessages?: GroupChatMessage[];
   userPresences?: Record<string, string>; // userId -> ISO timestamp (lastSeenAt)
 }
 
@@ -2992,7 +3021,7 @@ app.post("/api/friends/messages/:messageId/play-sodabot", (req, res) => {
   });
 });
 
-// 14. Notifications Count (친구 요청 수 + 안읽은 DM 수)
+// 14. Notifications Count (친구 요청 수 + 안읽은 1:1 DM 수 + 안읽은 그룹 메시지 수)
 app.get("/api/friends/notifications/count", (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: "인증 필요" });
@@ -3007,14 +3036,356 @@ app.get("/api/friends/notifications/count", (req, res) => {
     f => f.receiverId === currentUserId && f.status === "pending"
   ).length;
 
-  const unreadMessagesCount = (db.directMessages || []).filter(
+  const unreadDmCount = (db.directMessages || []).filter(
     m => m.receiverId === currentUserId && m.status !== "read"
   ).length;
 
+  const unreadGroupCount = (db.groupChatRooms || [])
+    .filter(r => (r.memberIds || []).includes(currentUserId))
+    .reduce((total, room) => {
+      const roomUnread = (db.groupChatMessages || []).filter(
+        m => m.roomId === room.id && !(m.readBy || []).includes(currentUserId)
+      ).length;
+      return total + roomUnread;
+    }, 0);
+
+  const totalUnreadMessages = unreadDmCount + unreadGroupCount;
+
   res.json({
     pendingRequestsCount,
-    unreadMessagesCount,
-    totalCount: pendingRequestsCount + unreadMessagesCount
+    unreadMessagesCount: totalUnreadMessages,
+    unreadDmCount,
+    unreadGroupCount,
+    totalCount: pendingRequestsCount + totalUnreadMessages
+  });
+});
+
+// 15. Group Chat - List User's Groups
+app.get("/api/friends/groups", (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: "인증 필요" });
+  const token = authHeader.replace("Bearer ", "");
+  const session = getSession(token);
+  if (!session) return res.status(401).json({ error: "세션 만료" });
+
+  const db = readDB();
+  if (!db.groupChatRooms) db.groupChatRooms = [];
+  if (!db.groupChatMessages) db.groupChatMessages = [];
+
+  const currentUserId = session.id;
+  const userRooms = db.groupChatRooms.filter(r => (r.memberIds || []).includes(currentUserId));
+
+  const enrichedRooms = userRooms.map(room => {
+    const members = (room.memberIds || []).map(mId => {
+      const u = db.users.find(user => user.id === mId);
+      const p = u ? getOrCreatePublicProfile(u, db) : null;
+      return {
+        userId: mId,
+        botName: p?.botName || u?.displayName || "소다봇",
+        nickname: p?.nickname || u?.displayName || "친구",
+        avatarUrl: p?.avatarUrl || "soda_smile",
+        isOnline: Boolean(u && isUserOnline(mId, db).isOnline),
+        role: room.creatorId === mId ? "creator" : "member"
+      };
+    });
+
+    const unreadCount = db.groupChatMessages.filter(
+      m => m.roomId === room.id && !(m.readBy || []).includes(currentUserId)
+    ).length;
+
+    return {
+      ...room,
+      members,
+      unreadCount
+    };
+  });
+
+  res.json({ groups: enrichedRooms });
+});
+
+// 16. Group Chat - Create New Group Room
+app.post("/api/friends/groups", (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: "인증 필요" });
+  const token = authHeader.replace("Bearer ", "");
+  const session = getSession(token);
+  if (!session) return res.status(401).json({ error: "세션 만료" });
+
+  const { name, memberIds } = req.body;
+  if (!name || !name.trim()) return res.status(400).json({ error: "그룹 이름을 입력하세요." });
+
+  const db = readDB();
+  if (!db.groupChatRooms) db.groupChatRooms = [];
+  if (!db.groupChatMessages) db.groupChatMessages = [];
+
+  const currentUserId = session.id;
+  const allMemberIds = Array.from(new Set([currentUserId, ...(Array.isArray(memberIds) ? memberIds : [])]));
+
+  const newRoomId = `group_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const currentUser = db.users.find(u => u.id === currentUserId);
+  const currentProfile = currentUser ? getOrCreatePublicProfile(currentUser, db) : null;
+  const creatorName = currentProfile?.botName || currentUser?.displayName || "소다봇";
+
+  const newRoom = {
+    id: newRoomId,
+    name: name.trim().substring(0, 40),
+    creatorId: currentUserId,
+    memberIds: allMemberIds,
+    createdAt: new Date().toISOString(),
+    lastMessage: {
+      id: `sys_${Date.now()}`,
+      content: `${creatorName}님이 그룹 대화방을 생성했습니다.`,
+      senderId: "system",
+      senderName: "시스템",
+      createdAt: new Date().toISOString()
+    }
+  };
+
+  db.groupChatRooms.unshift(newRoom);
+
+  // Add initial system message
+  db.groupChatMessages.push({
+    id: `msg_${Date.now()}_sys`,
+    roomId: newRoomId,
+    senderId: "system",
+    senderName: "시스템",
+    senderAvatar: "soda_smile",
+    content: `${creatorName}님이 그룹 대화방을 생성했습니다.`,
+    createdAt: new Date().toISOString(),
+    readBy: [currentUserId]
+  });
+
+  writeDB(db);
+
+  res.json({ success: true, room: newRoom });
+});
+
+// 17. Group Chat - Get Messages & Mark as Read
+app.get("/api/friends/groups/:roomId/messages", (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: "인증 필요" });
+  const token = authHeader.replace("Bearer ", "");
+  const session = getSession(token);
+  if (!session) return res.status(401).json({ error: "세션 만료" });
+
+  const { roomId } = req.params;
+  const db = readDB();
+  if (!db.groupChatRooms) db.groupChatRooms = [];
+  if (!db.groupChatMessages) db.groupChatMessages = [];
+
+  const room = db.groupChatRooms.find(r => r.id === roomId);
+  if (!room) return res.status(404).json({ error: "그룹 대화방을 찾을 수 없습니다." });
+
+  const currentUserId = session.id;
+  if (!room.memberIds.includes(currentUserId)) {
+    return res.status(403).json({ error: "이 그룹 대화방의 멤버가 아닙니다." });
+  }
+
+  // Mark all unread messages as read by current user
+  let changed = false;
+  db.groupChatMessages.forEach(m => {
+    if (m.roomId === roomId && !(m.readBy || []).includes(currentUserId)) {
+      if (!m.readBy) m.readBy = [];
+      m.readBy.push(currentUserId);
+      changed = true;
+    }
+  });
+
+  if (changed) writeDB(db);
+
+  const roomMessages = db.groupChatMessages
+    .filter(m => m.roomId === roomId)
+    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+  const members = room.memberIds.map(mId => {
+    const u = db.users.find(user => user.id === mId);
+    const p = u ? getOrCreatePublicProfile(u, db) : null;
+    return {
+      userId: mId,
+      botName: p?.botName || u?.displayName || "소다봇",
+      nickname: p?.nickname || u?.displayName || "친구",
+      avatarUrl: p?.avatarUrl || "soda_smile",
+      isOnline: Boolean(u && isUserOnline(mId, db).isOnline),
+      role: room.creatorId === mId ? "creator" : "member"
+    };
+  });
+
+  res.json({
+    room,
+    members,
+    messages: roomMessages
+  });
+});
+
+// 18. Group Chat - Send Message
+app.post("/api/friends/groups/:roomId/messages", (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: "인증 필요" });
+  const token = authHeader.replace("Bearer ", "");
+  const session = getSession(token);
+  if (!session) return res.status(401).json({ error: "세션 만료" });
+
+  const { roomId } = req.params;
+  const { content } = req.body;
+  if (!content || !content.trim()) return res.status(400).json({ error: "메시지 내용을 입력하세요." });
+
+  const db = readDB();
+  if (!db.groupChatRooms) db.groupChatRooms = [];
+  if (!db.groupChatMessages) db.groupChatMessages = [];
+
+  const room = db.groupChatRooms.find(r => r.id === roomId);
+  if (!room) return res.status(404).json({ error: "그룹 대화방을 찾을 수 없습니다." });
+
+  const currentUserId = session.id;
+  if (!room.memberIds.includes(currentUserId)) {
+    return res.status(403).json({ error: "이 그룹 대화방의 멤버가 아닙니다." });
+  }
+
+  const currentUser = db.users.find(u => u.id === currentUserId);
+  const currentProfile = currentUser ? getOrCreatePublicProfile(currentUser, db) : null;
+  const senderName = currentProfile?.botName || currentUser?.displayName || "소다봇";
+  const senderAvatar = currentProfile?.avatarUrl || "soda_smile";
+
+  const newMsg = {
+    id: `gmsg_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+    roomId,
+    senderId: currentUserId,
+    senderName,
+    senderAvatar,
+    content: content.trim().substring(0, 500),
+    createdAt: new Date().toISOString(),
+    readBy: [currentUserId],
+    playedOnSodabot: false
+  };
+
+  db.groupChatMessages.push(newMsg);
+  room.lastMessage = {
+    id: newMsg.id,
+    content: newMsg.content,
+    senderId: currentUserId,
+    senderName,
+    createdAt: newMsg.createdAt
+  };
+
+  writeDB(db);
+
+  res.json({ success: true, message: newMsg });
+});
+
+// 19. Group Chat - Invite Members
+app.post("/api/friends/groups/:roomId/invite", (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: "인증 필요" });
+  const token = authHeader.replace("Bearer ", "");
+  const session = getSession(token);
+  if (!session) return res.status(401).json({ error: "세션 만료" });
+
+  const { roomId } = req.params;
+  const { memberIds } = req.body;
+  if (!Array.isArray(memberIds) || memberIds.length === 0) {
+    return res.status(400).json({ error: "초대할 친구를 선택하세요." });
+  }
+
+  const db = readDB();
+  const room = (db.groupChatRooms || []).find(r => r.id === roomId);
+  if (!room) return res.status(404).json({ error: "그룹 대화방을 찾을 수 없습니다." });
+
+  const currentUserId = session.id;
+  if (!room.memberIds.includes(currentUserId)) {
+    return res.status(403).json({ error: "권한이 없습니다." });
+  }
+
+  const newMembersToAdd = memberIds.filter(id => !room.memberIds.includes(id));
+  if (newMembersToAdd.length === 0) {
+    return res.json({ success: true, room });
+  }
+
+  room.memberIds.push(...newMembersToAdd);
+
+  const currentUser = db.users.find(u => u.id === currentUserId);
+  const currentProfile = currentUser ? getOrCreatePublicProfile(currentUser, db) : null;
+  const inviterName = currentProfile?.botName || currentUser?.displayName || "소다봇";
+
+  db.groupChatMessages.push({
+    id: `sys_${Date.now()}`,
+    roomId,
+    senderId: "system",
+    senderName: "시스템",
+    senderAvatar: "soda_smile",
+    content: `${inviterName}님이 새 친구를 초대했습니다.`,
+    createdAt: new Date().toISOString(),
+    readBy: [currentUserId]
+  });
+
+  writeDB(db);
+
+  res.json({ success: true, room });
+});
+
+// 20. Group Chat - Leave Room
+app.post("/api/friends/groups/:roomId/leave", (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: "인증 필요" });
+  const token = authHeader.replace("Bearer ", "");
+  const session = getSession(token);
+  if (!session) return res.status(401).json({ error: "세션 만료" });
+
+  const { roomId } = req.params;
+  const db = readDB();
+  const room = (db.groupChatRooms || []).find(r => r.id === roomId);
+  if (!room) return res.status(404).json({ error: "그룹 대화방을 찾을 수 없습니다." });
+
+  const currentUserId = session.id;
+  room.memberIds = room.memberIds.filter(id => id !== currentUserId);
+
+  const currentUser = db.users.find(u => u.id === currentUserId);
+  const currentProfile = currentUser ? getOrCreatePublicProfile(currentUser, db) : null;
+  const leaverName = currentProfile?.botName || currentUser?.displayName || "소다봇";
+
+  if (room.memberIds.length === 0) {
+    db.groupChatRooms = db.groupChatRooms.filter(r => r.id !== roomId);
+    db.groupChatMessages = (db.groupChatMessages || []).filter(m => m.roomId !== roomId);
+  } else {
+    if (room.creatorId === currentUserId) {
+      room.creatorId = room.memberIds[0];
+    }
+    db.groupChatMessages.push({
+      id: `sys_${Date.now()}`,
+      roomId,
+      senderId: "system",
+      senderName: "시스템",
+      senderAvatar: "soda_smile",
+      content: `${leaverName}님이 방을 나갔습니다.`,
+      createdAt: new Date().toISOString(),
+      readBy: []
+    });
+  }
+
+  writeDB(db);
+
+  res.json({ success: true });
+});
+
+// 21. Group Chat - Play On Sodabot
+app.post("/api/friends/groups/messages/:messageId/play-sodabot", (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: "인증 필요" });
+  const token = authHeader.replace("Bearer ", "");
+  const session = getSession(token);
+  if (!session) return res.status(401).json({ error: "세션 만료" });
+
+  const { messageId } = req.params;
+  const db = readDB();
+
+  const msg = (db.groupChatMessages || []).find(m => m.id === messageId);
+  if (!msg) return res.status(404).json({ error: "메시지를 찾을 수 없습니다." });
+
+  msg.playedOnSodabot = true;
+  writeDB(db);
+
+  res.json({
+    success: true,
+    speechText: `${msg.senderName}의 메시지: ${msg.content}`
   });
 });
 

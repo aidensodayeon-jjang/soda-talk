@@ -296,6 +296,73 @@ export default function App() {
     };
   }, [serialPort]);
 
+  // ----------------------------------------------------
+  // 소다봇 미확인 메시지 도착 상태 주기적 체크 및 알림 연동
+  // ----------------------------------------------------
+  const lastUnreadCountRef = useRef<number>(0);
+  const [unreadFriendMessages, setUnreadFriendMessages] = useState<number>(0);
+  const lastNotifyTimeRef = useRef<number>(0);
+
+  useEffect(() => {
+    if (!token) return;
+
+    const checkUnreadMessages = async () => {
+      try {
+        const res = await fetch('/api/friends/notifications/count', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const unreadCount: number = data.unreadMessagesCount || 0;
+        setUnreadFriendMessages(unreadCount);
+
+        const isRobotActive = sodabotTransport.type !== 'none' || Boolean(localStorage.getItem('sodabot_robot_ip'));
+        const now = Date.now();
+
+        // 1. 미확인 메시지가 있을 때: 소다봇 화면에 도착 표시를 유지 (펌웨어 10초 타임아웃 방지를 위해 6초마다 갱신)
+        if (unreadCount > 0) {
+          const isNewArrival = unreadCount !== lastUnreadCountRef.current;
+          const shouldRefreshDisplay = (now - lastNotifyTimeRef.current) >= 6000;
+
+          if (isRobotActive && (isNewArrival || shouldRefreshDisplay)) {
+            lastNotifyTimeRef.current = now;
+            try {
+              // 깔끔한 영문 텍스트로 알림 전송
+              const msgText = unreadCount === 1 
+                ? 'NEW MESSAGE\n1 UNREAD' 
+                : `NEW MESSAGES\n${unreadCount} UNREAD`;
+              await sodabotTransport.send('send_message', msgText);
+              if (isNewArrival) {
+                await sodabotTransport.send('play_sound', 'BEEP').catch(() => {});
+              }
+            } catch (err) {
+              console.warn('소다봇 메시지 알림 전송 실패:', err);
+            }
+          }
+          lastUnreadCountRef.current = unreadCount;
+        } 
+        // 2. 웹에서 메시지를 모두 확인했을 때 (안 읽은 메시지 0개): 소다봇 알림 화면 해제 -> 기본 평온 표정
+        else if (unreadCount === 0 && lastUnreadCountRef.current > 0) {
+          lastUnreadCountRef.current = 0;
+          lastNotifyTimeRef.current = 0;
+          if (isRobotActive) {
+            try {
+              await sodabotTransport.send('set_expression', 'default');
+            } catch (err) {
+              console.warn('소다봇 기본 표정 복구 실패:', err);
+            }
+          }
+        }
+      } catch {
+        // network or auth error
+      }
+    };
+
+    checkUnreadMessages();
+    const interval = setInterval(checkUnreadMessages, 3000);
+    return () => clearInterval(interval);
+  }, [token]);
+
   // Settings Panel State
   const [showSettings, setShowSettings] = useState(false);
   const [aiProvider, setAiProvider] = useState("local");
@@ -2137,9 +2204,15 @@ export default function App() {
                     <div className="min-w-0">
                       <h5 className="text-xs font-bold text-[#1D1D1F] truncate group-hover:text-indigo-600 transition-colors flex items-center gap-1.5">
                         <span>소다봇 친구</span>
-                        <span className="px-1.5 py-0.2 bg-indigo-100 text-indigo-700 text-[9px] font-bold rounded-full font-mono">
-                          NEW
-                        </span>
+                        {unreadFriendMessages > 0 ? (
+                          <span className="px-1.5 py-0.2 bg-rose-500 text-white text-[9px] font-bold rounded-full font-mono animate-pulse">
+                            {unreadFriendMessages}
+                          </span>
+                        ) : (
+                          <span className="px-1.5 py-0.2 bg-indigo-100 text-indigo-700 text-[9px] font-bold rounded-full font-mono">
+                            NEW
+                          </span>
+                        )}
                       </h5>
                       <p className="text-[10px] text-[#86868B] truncate">
                         친구 찾기 및 1:1 메시지
