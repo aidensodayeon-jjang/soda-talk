@@ -121,6 +121,7 @@ export const SodabotFriendsScreen: React.FC<SodabotFriendsScreenProps> = ({
 
   // Notifications
   const [unreadTotal, setUnreadTotal] = useState(0);
+  const [unreadDmTotal, setUnreadDmTotal] = useState(0);
   const [unreadGroupTotal, setUnreadGroupTotal] = useState(0);
   const [pendingTotal, setPendingTotal] = useState(0);
 
@@ -207,12 +208,13 @@ export const SodabotFriendsScreen: React.FC<SodabotFriendsScreenProps> = ({
       });
       if (res.ok) {
         const data = await res.json();
-        setMyProfile(data.profile);
-        setEditIsPublic(data.profile.isPublic);
-        setEditBotName(data.profile.botName);
-        setEditNickname(data.profile.nickname);
-        setEditDescription(data.profile.description || '');
-        setEditAvatarUrl(data.profile.avatarUrl || 'robot-blue');
+        const profileData = data.profile || data;
+        setMyProfile(profileData);
+        setEditIsPublic(Boolean(profileData.isPublic));
+        setEditBotName(profileData.botName || '');
+        setEditNickname(profileData.nickname || '');
+        setEditDescription(profileData.description || '');
+        setEditAvatarUrl(profileData.avatarUrl || 'robot-blue');
       }
     } catch (err) {
       console.error('Failed to fetch profile', err);
@@ -226,9 +228,10 @@ export const SodabotFriendsScreen: React.FC<SodabotFriendsScreenProps> = ({
       });
       if (res.ok) {
         const data = await res.json();
-        setFriends(data.friends || []);
+        const list: FriendSummaryCard[] = Array.isArray(data) ? data : (data.friends || []);
+        setFriends(list);
         if (selectedFriend) {
-          const updated = (data.friends || []).find((f: FriendSummaryCard) => f.userId === selectedFriend.userId);
+          const updated = list.find((f: FriendSummaryCard) => f.userId === selectedFriend.userId);
           if (updated) setSelectedFriend(updated);
         }
       }
@@ -244,9 +247,10 @@ export const SodabotFriendsScreen: React.FC<SodabotFriendsScreenProps> = ({
       });
       if (res.ok) {
         const data = await res.json();
-        setGroupRooms(data.groups || []);
+        const list: GroupChatRoom[] = Array.isArray(data) ? data : (data.groups || []);
+        setGroupRooms(list);
         if (selectedGroup) {
-          const updated = (data.groups || []).find((g: GroupChatRoom) => g.id === selectedGroup.id);
+          const updated = list.find((g: GroupChatRoom) => g.id === selectedGroup.id);
           if (updated) setSelectedGroup(updated);
         }
       }
@@ -279,6 +283,7 @@ export const SodabotFriendsScreen: React.FC<SodabotFriendsScreenProps> = ({
         const data = await res.json();
         setPendingTotal(data.pendingRequestsCount || 0);
         setUnreadTotal(data.unreadMessagesCount || 0);
+        setUnreadDmTotal(data.unreadDmCount || 0);
         setUnreadGroupTotal(data.unreadGroupCount || 0);
       }
     } catch (err) {
@@ -370,7 +375,7 @@ export const SodabotFriendsScreen: React.FC<SodabotFriendsScreenProps> = ({
       });
       if (res.ok) {
         const data = await res.json();
-        setMyProfile(data.profile);
+        setMyProfile(data.profile || data);
         setShowEditProfileModal(false);
       }
     } catch (err) {
@@ -393,7 +398,7 @@ export const SodabotFriendsScreen: React.FC<SodabotFriendsScreenProps> = ({
       });
       if (res.ok) {
         const data = await res.json();
-        setMyProfile(data.profile);
+        setMyProfile(data.profile || data);
       }
     } catch (err) {
       console.error('Failed to toggle public state', err);
@@ -1071,53 +1076,70 @@ export const SodabotFriendsScreen: React.FC<SodabotFriendsScreenProps> = ({
         <div className="flex-1 flex flex-col h-full overflow-hidden bg-[#FAF9F6]">
           
           {/* Header & My Profile Card */}
-          <header className="p-6 bg-white border-b border-[#EAE6DF] shrink-0 space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="text-xl font-extrabold text-[#1D1D1F] tracking-tight flex items-center gap-2">
-                    <Users className="w-5 h-5 text-indigo-600" />
-                    소다봇 친구 & 그룹 대화방
-                  </h1>
-                  <span className="px-2 py-0.5 bg-indigo-50 border border-indigo-200 text-indigo-700 text-[10px] font-bold rounded-full">
-                    SODABOT STUDIO
-                  </span>
+          <header className="px-6 py-4 bg-white border-b border-[#EAE6DF] shrink-0 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-indigo-50 border border-indigo-200/80 flex items-center justify-center text-indigo-600 shadow-2xs shrink-0">
+                  <Users className="w-4 h-4" />
                 </div>
-                <p className="text-xs text-[#86868B] mt-0.5">
-                  반 친구들과 1:1 메시지 및 그룹 대화방을 만들고 실시간으로 소통해 보세요.
-                </p>
+                <h1 className="text-lg font-bold text-[#1D1D1F] tracking-tight">
+                  소다봇 친구 & 메시지
+                </h1>
               </div>
 
-              {/* My Profile Mini Badge & Public Switch */}
+              {/* My Profile Mini Card with Sleek Toggle Switch */}
               {myProfile && (
-                <div className="flex items-center gap-3 bg-[#FAF9F6] border border-[#EAE6DF] p-2 rounded-2xl shadow-2xs">
-                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-base border ${getAvatarInfo(myProfile.avatarUrl).bg}`}>
-                    {getAvatarInfo(myProfile.avatarUrl).emoji}
-                  </div>
-                  <div className="text-left">
+                <div className="flex items-center gap-3 bg-[#FAF9F6] border border-[#EAE6DF] hover:border-indigo-200 px-3 py-2 rounded-2xl shadow-2xs transition-all">
+                  {/* Clickable Avatar to Open Profile Modal */}
+                  <button
+                    onClick={() => setShowEditProfileModal(true)}
+                    className="relative cursor-pointer group"
+                    title="프로필 및 아바타 수정"
+                  >
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-base border transition-transform group-hover:scale-105 shadow-2xs ${getAvatarInfo(myProfile.avatarUrl).bg}`}>
+                      {getAvatarInfo(myProfile.avatarUrl).emoji}
+                    </div>
+                    <div className="absolute -bottom-1 -right-1 bg-white p-0.5 rounded-full shadow-2xs">
+                      <Settings className="w-2.5 h-2.5 text-indigo-600" />
+                    </div>
+                  </button>
+
+                  {/* Profile Info */}
+                  <div className="text-left pr-1">
                     <div className="flex items-center gap-1.5">
                       <span className="text-xs font-bold text-[#1D1D1F]">{myProfile.botName}</span>
                       <span className="text-[10px] text-[#86868B] font-mono">@{myProfile.nickname}</span>
                     </div>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <button
-                        onClick={() => handleTogglePublic(!myProfile.isPublic)}
-                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold transition-all cursor-pointer ${
-                          myProfile.isPublic
-                            ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
-                            : 'bg-zinc-200 text-zinc-700 hover:bg-zinc-300'
-                        }`}
-                        title="클릭하여 공개 여부를 즉시 전환합니다"
-                      >
-                        {myProfile.isPublic ? <Globe className="w-3 h-3 text-emerald-600" /> : <Lock className="w-3 h-3 text-zinc-600" />}
-                        <span>내 소다봇 공개: {myProfile.isPublic ? 'ON' : 'OFF'}</span>
-                      </button>
 
+                    {/* Sleek Toggle Switch */}
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-[10px] font-semibold text-[#5C5B57] flex items-center gap-1">
+                        {myProfile.isPublic ? (
+                          <span className="text-emerald-600 font-bold flex items-center gap-0.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            공개
+                          </span>
+                        ) : (
+                          <span className="text-slate-400 font-medium">비공개</span>
+                        )}
+                      </span>
+
+                      {/* iOS-Style Toggle Switch */}
                       <button
-                        onClick={() => setShowEditProfileModal(true)}
-                        className="text-[10px] text-indigo-600 hover:text-indigo-800 font-semibold cursor-pointer underline"
+                        type="button"
+                        onClick={() => handleTogglePublic(!myProfile.isPublic)}
+                        className={`w-9 h-5 flex items-center rounded-full p-0.5 transition-colors duration-200 cursor-pointer ${
+                          myProfile.isPublic
+                            ? 'bg-emerald-500 shadow-2xs'
+                            : 'bg-slate-300'
+                        }`}
+                        title={myProfile.isPublic ? "클릭 시 비공개로 전환" : "클릭 시 친구 검색에 공개"}
                       >
-                        설정 변경
+                        <div
+                          className={`w-4 h-4 rounded-full bg-white shadow-xs transform transition-transform duration-200 ${
+                            myProfile.isPublic ? 'translate-x-4' : 'translate-x-0'
+                          }`}
+                        />
                       </button>
                     </div>
                   </div>
@@ -1136,9 +1158,9 @@ export const SodabotFriendsScreen: React.FC<SodabotFriendsScreenProps> = ({
                 }`}
               >
                 1:1 친구 ({friends.length})
-                {unreadTotal > 0 && (
-                  <span className="ml-1.5 px-1.5 py-0.2 bg-indigo-600 text-white text-[9px] font-bold rounded-full">
-                    {unreadTotal}
+                {unreadDmTotal > 0 && (
+                  <span className="ml-1.5 px-1.5 py-0.2 bg-rose-500 text-white text-[9px] font-bold rounded-full animate-pulse">
+                    {unreadDmTotal}
                   </span>
                 )}
               </button>

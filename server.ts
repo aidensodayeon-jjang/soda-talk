@@ -745,28 +745,24 @@ function buildDeterministicIdentityReply(user: User, message: string): string | 
 }
 
 function findUserByApiKey(token: string, db: DBStructure): User | undefined {
-  if (!token) return undefined;
+  if (!token) return db.users.find(u => u.friendSettings?.persona) || db.users[0];
   const cleanToken = token.trim();
   const user = db.users.find(u => u.personalApiKey === cleanToken);
   if (user) return user;
 
-  // 기본 펌웨어 템플릿 키 또는 데모 키인 경우: 친구설정이 저장된 활성 유저 또는 관리자 유저에 매핑
-  const defaultKeys = [
-    "sk-soda-9597fe97de4771e361b8a171c9aefd7b",
-    "sk-soda-23fdcaabe351c318b448d8540b9bb756",
-    "sk-soda-33b8c4c9312d29b8a01f1803e890a758",
-    "sk-soda-demo"
-  ];
-  if (defaultKeys.includes(cleanToken)) {
-    // 1. 친구설정을 직접 설정한 유저 우선
-    const userWithSettings = db.users.find(u => u.friendSettings && u.friendSettings.persona);
-    if (userWithSettings) return userWithSettings;
-
-    // 2. 현재 로그인된 관리자 또는 기본 admin
-    const defaultAdmin = db.users.find(u => u.username === "admin") || db.users[0];
-    return defaultAdmin;
+  // Session id 매핑
+  const sessionUser = getSession(cleanToken);
+  if (sessionUser) {
+    const u = db.users.find(usr => usr.id === sessionUser.id);
+    if (u) return u;
   }
-  return undefined;
+
+  // 1. 친구설정을 직접 설정한 유저 우선
+  const userWithSettings = db.users.find(u => u.friendSettings && u.friendSettings.persona);
+  if (userWithSettings) return userWithSettings;
+
+  // 2. 현재 로그인된 관리자 또는 기본 admin
+  return db.users.find(u => u.username === "admin") || db.users[0];
 }
 
 // ----------------------------------------------------
@@ -901,14 +897,14 @@ async function getTranscriber() {
 // ESP32용 TTS 프록시: OpenAI의 24kHz 16-bit mono PCM을 저장하지 않고 즉시 전달한다.
 app.post('/api/hw/tts', express.json({ limit: '16kb' }), async (req, res) => {
   const authHeader = req.headers.authorization;
-  if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
+  const text = typeof req.body?.text === "string" ? req.body.text.trim() : "";
+  console.log(`[HW-TTS] 하드웨어 TTS 요청 수신: text="${text}", Auth="${authHeader}"`);
 
-  const token = authHeader.replace("Bearer ", "").trim();
+  const token = authHeader ? authHeader.replace("Bearer ", "").trim() : "";
   const db = readDB();
   const user = findUserByApiKey(token, db);
   if (!user) return res.status(403).json({ error: "Invalid SODA API Key" });
 
-  const text = typeof req.body?.text === "string" ? req.body.text.trim() : "";
   if (!text) return res.status(400).json({ error: "No text provided" });
   if (text.length > 1000) return res.status(400).json({ error: "Text is too long" });
   if (!db.settings.openaiApiKey) {
@@ -928,10 +924,9 @@ app.post('/api/hw/tts', express.json({ limit: '16kb' }), async (req, res) => {
         "Authorization": `Bearer ${db.settings.openaiApiKey}`
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini-tts",
-        voice: "coral",
+        model: "tts-1",
+        voice: "nova",
         input: text,
-        instructions: "한국어로 밝고 친근한 어린이 로봇처럼 자연스럽게 말해 주세요.",
         response_format: "pcm"
       }),
       signal: controller.signal
@@ -942,32 +937,18 @@ app.post('/api/hw/tts', express.json({ limit: '16kb' }), async (req, res) => {
       console.error("TTS API error:", speechRes.status, errorText);
       return res.status(502).json({ error: `TTS API failed: ${speechRes.status}` });
     }
-    if (!speechRes.body) {
-      return res.status(502).json({ error: "TTS API returned no audio" });
-    }
+    const arrayBuffer = await speechRes.arrayBuffer();
+    const pcmBuffer = Buffer.from(arrayBuffer);
 
     res.status(200);
     res.setHeader("Content-Type", "audio/pcm");
+    res.setHeader("Content-Length", String(pcmBuffer.length));
     res.setHeader("Cache-Control", "no-store");
-    res.flushHeaders();
-
-    const reader = speechRes.body.getReader();
-    try {
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (!res.write(Buffer.from(value))) {
-          await new Promise<void>(resolve => res.once("drain", resolve));
-        }
-      }
-      res.end();
-    } finally {
-      reader.releaseLock();
-    }
+    res.end(pcmBuffer);
   } catch (err: any) {
     if (err?.name === "AbortError") return;
     console.error("Hardware TTS error:", err);
-    if (res.headersSent) res.destroy();
+    if (!res.headersSent) res.status(500).json({ error: "Internal TTS Error" });
     else res.status(500).json({ error: err.message });
   }
 });
@@ -1850,6 +1831,33 @@ app.get("/api/admin/chats", requireAdmin, (req, res) => {
 // ----------------------------------------------------
 // System Status API
 // ----------------------------------------------------
+function getLocalNetworkIps(): string[] {
+  const interfaces = os.networkInterfaces();
+  const ips: string[] = [];
+  for (const name of Object.keys(interfaces)) {
+    const netList = interfaces[name];
+    if (netList) {
+      for (const net of netList) {
+        if (net.family === 'IPv4' && !net.internal) {
+          ips.push(net.address);
+        }
+      }
+    }
+  }
+  return ips;
+}
+
+app.get("/api/server-info", (req, res) => {
+  const localIps = getLocalNetworkIps();
+  const primaryIp = localIps.find(ip => ip.startsWith('192.168.') || ip.startsWith('10.') || ip.startsWith('172.')) || localIps[0] || '127.0.0.1';
+  res.json({
+    port: PORT,
+    localIps,
+    primaryIp,
+    lanUrl: `http://${primaryIp}:${PORT}`
+  });
+});
+
 app.get("/api/system/status", (req, res) => {
   const db = readDB();
   const memoryUsage = {

@@ -131,6 +131,7 @@ export default function SodabotFriendSettingsScreen({ currentUser }: SodabotFrie
   });
 
   // UI Local States
+  const [mobileTab, setMobileTab] = useState<'persona' | 'profile' | 'memories' | 'summary'>('persona');
   const [newInterestInput, setNewInterestInput] = useState("");
   const [newMemoryInput, setNewMemoryInput] = useState("");
   const [isAddingMemory, setIsAddingMemory] = useState(false);
@@ -140,6 +141,61 @@ export default function SodabotFriendSettingsScreen({ currentUser }: SodabotFrie
   const friendCardRef = useRef<HTMLDivElement>(null);
   const profileCardRef = useRef<HTMLDivElement>(null);
   const memoryCardRef = useRef<HTMLDivElement>(null);
+
+  // Synchronize settings from server DB on mount
+  useEffect(() => {
+    const token = localStorage.getItem("authSessionId");
+    if (!token) return;
+
+    fetch("/api/user/friend-settings", {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.persona) {
+          const normPersona: PersonaData = {
+            name: data.persona.name || data.persona.robotName || "루미",
+            intro: data.persona.intro || "언제나 나를 도와주는 든든한 AI 학습 파트너",
+            role: data.persona.role || "공부친구",
+            tone: data.persona.tone || "친근한 친구말",
+            personality: data.persona.personality || "친절함",
+            callSign: data.persona.callSign || currentUser?.displayName || "민준아"
+          };
+          setPersona(normPersona);
+          localStorage.setItem(getScopedKey("friend_persona"), JSON.stringify(normPersona));
+          localStorage.setItem("soda_ailab_persona", JSON.stringify(normPersona));
+        }
+
+        if (data.profile) {
+          const normProfile: ProfileData = {
+            userName: data.profile.userName || data.profile.studentName || currentUser?.displayName || "김민준",
+            school: data.profile.school || "소다중학교 1학년",
+            interests: Array.isArray(data.profile.interests)
+              ? data.profile.interests
+              : typeof data.profile.interests === "string" && data.profile.interests
+              ? data.profile.interests.split(",").map((s: string) => s.trim()).filter(Boolean)
+              : ["인공지능", "우주", "과학"],
+            goal: data.profile.goal || data.profile.dream || "과학과 진학 및 AI 개발자가 되기"
+          };
+          setProfile(normProfile);
+          localStorage.setItem(getScopedKey("friend_profile"), JSON.stringify(normProfile));
+          localStorage.setItem("soda_ailab_profile", JSON.stringify(normProfile));
+        }
+
+        if (Array.isArray(data.memories) && data.memories.length > 0) {
+          const normMemories = data.memories.slice(0, 3).map((m: any, idx: number) => ({
+            id: m.id || `mem_${idx + 1}`,
+            text: m.text || m.content || ""
+          })).filter((m: any) => m.text);
+          if (normMemories.length > 0) {
+            setMemories(normMemories);
+            localStorage.setItem(getScopedKey("friend_memories"), JSON.stringify(normMemories));
+            localStorage.setItem("soda_ailab_memories", JSON.stringify(normMemories.map((m: any) => ({ id: m.id, content: m.text }))));
+          }
+        }
+      })
+      .catch(err => console.warn("Failed to fetch server friend settings:", err));
+  }, [currentUser?.id]);
 
   // Synchronize to localStorage & Backend whenever changes occur
   const saveAllSettings = async () => {
@@ -245,6 +301,54 @@ export default function SodabotFriendSettingsScreen({ currentUser }: SodabotFrie
           </div>
         </div>
 
+        {/* Mobile Tab Selector (< lg) */}
+        <div className="flex lg:hidden bg-slate-200/70 p-1 rounded-2xl gap-1">
+          <button
+            type="button"
+            onClick={() => setMobileTab('persona')}
+            className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              mobileTab === 'persona'
+                ? 'bg-white text-blue-600 shadow-2xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            👥 친구 설정
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobileTab('profile')}
+            className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              mobileTab === 'profile'
+                ? 'bg-white text-emerald-600 shadow-2xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            👤 프로필
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobileTab('memories')}
+            className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              mobileTab === 'memories'
+                ? 'bg-white text-amber-600 shadow-2xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            🧠 기억 ({memories.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setMobileTab('summary')}
+            className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              mobileTab === 'summary'
+                ? 'bg-white text-indigo-600 shadow-2xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            📋 요약
+          </button>
+        </div>
+
         {/* 4-Column Grid: 3 Setting Cards + 1 Summary Sidebar */}
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-stretch">
           
@@ -253,7 +357,9 @@ export default function SodabotFriendSettingsScreen({ currentUser }: SodabotFrie
           {/* ============================================================ */}
           <div
             ref={friendCardRef}
-            className="bg-white rounded-3xl border border-[#E2E8F0] p-6 shadow-sm flex flex-col justify-between h-full space-y-5"
+            className={`bg-white rounded-3xl border border-[#E2E8F0] p-6 shadow-sm flex-col justify-between h-full space-y-5 ${
+              mobileTab !== 'persona' ? 'hidden lg:flex' : 'flex'
+            }`}
           >
             <div className="space-y-5">
               {/* Header */}
@@ -379,7 +485,9 @@ export default function SodabotFriendSettingsScreen({ currentUser }: SodabotFrie
           {/* ============================================================ */}
           <div
             ref={profileCardRef}
-            className="bg-white rounded-3xl border border-[#E2E8F0] p-6 shadow-sm flex flex-col justify-between h-full space-y-5"
+            className={`bg-white rounded-3xl border border-[#E2E8F0] p-6 shadow-sm flex-col justify-between h-full space-y-5 ${
+              mobileTab !== 'profile' ? 'hidden lg:flex' : 'flex'
+            }`}
           >
             <div className="space-y-5">
               {/* Header */}
@@ -483,7 +591,9 @@ export default function SodabotFriendSettingsScreen({ currentUser }: SodabotFrie
           {/* ============================================================ */}
           <div
             ref={memoryCardRef}
-            className="bg-white rounded-3xl border border-[#E2E8F0] p-6 shadow-sm flex flex-col justify-between h-full space-y-5"
+            className={`bg-white rounded-3xl border border-[#E2E8F0] p-6 shadow-sm flex-col justify-between h-full space-y-5 ${
+              mobileTab !== 'memories' ? 'hidden lg:flex' : 'flex'
+            }`}
           >
             <div className="space-y-4">
               {/* Header */}
@@ -590,7 +700,11 @@ export default function SodabotFriendSettingsScreen({ currentUser }: SodabotFrie
           {/* ============================================================ */}
           {/* 4. 현재 설정 요약 사이드바 */}
           {/* ============================================================ */}
-          <div className="bg-white rounded-3xl border border-[#E2E8F0] p-6 shadow-sm flex flex-col justify-between h-full space-y-5">
+          <div
+            className={`bg-white rounded-3xl border border-[#E2E8F0] p-6 shadow-sm flex-col justify-between h-full space-y-5 ${
+              mobileTab !== 'summary' ? 'hidden lg:flex' : 'flex'
+            }`}
+          >
             <div className="space-y-4">
               {/* Header */}
               <div className="flex items-center gap-3">

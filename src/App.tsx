@@ -6,10 +6,16 @@ import SodabotConnectScreen from "./components/SodabotConnectScreen";
 import SodabotSettingsScreen from "./components/SodabotSettingsScreen";
 import SodabotFriendSettingsScreen from "./components/SodabotFriendSettingsScreen";
 import SodabotWelcomeScreen from "./components/SodabotWelcomeScreen";
+import SodabotMobileGuideScreen from "./components/SodabotMobileGuideScreen";
+import SodabotAssemblyScreen from "./components/SodabotAssemblyScreen";
 import { SodabotFriendsScreen } from "./components/SodabotFriendsScreen";
 import SodaAiLabScreen from "./components/SodaAiLabScreen";
 import DevCodeHubScreen from "./components/DevCodeHubScreen";
 import AdminCourseManagerModal from "./components/AdminCourseManagerModal";
+import MobileBottomTabBar, { MobileTab } from "./components/mobile/MobileBottomTabBar";
+import MobileHomeScreen from "./components/mobile/MobileHomeScreen";
+import MobileControlScreen from "./components/mobile/MobileControlScreen";
+import PwaInstallBanner from "./components/mobile/PwaInstallBanner";
 import soda63Code from "../firmware/soda-6-3.ino?raw";
 import soda81Code from "../firmware/soda-8-1.ino?raw";
 import soda91Code from "../firmware/soda-9-1.ino?raw";
@@ -53,6 +59,9 @@ import {
   Image as ImageIcon,
   Library,
   Usb,
+  Smartphone,
+  QrCode,
+  Wrench,
   Folder,
   FolderOpen,
   FolderCode,
@@ -131,8 +140,26 @@ export default function App() {
 
     // Fallback/Merge with user.friendSettings from backend
     if (user?.friendSettings) {
-      if (user.friendSettings.persona) persona = { ...persona, ...user.friendSettings.persona };
-      if (user.friendSettings.profile) profile = { ...profile, ...user.friendSettings.profile };
+      if (user.friendSettings.persona) {
+        persona = {
+          ...persona,
+          ...user.friendSettings.persona,
+          name: user.friendSettings.persona.name || user.friendSettings.persona.robotName || persona.name
+        };
+      }
+      if (user.friendSettings.profile) {
+        profile = {
+          ...profile,
+          ...user.friendSettings.profile,
+          userName: user.friendSettings.profile.userName || user.friendSettings.profile.studentName || profile.userName,
+          goal: user.friendSettings.profile.goal || user.friendSettings.profile.dream || profile.goal,
+          interests: Array.isArray(user.friendSettings.profile.interests)
+            ? user.friendSettings.profile.interests
+            : typeof user.friendSettings.profile.interests === 'string' && user.friendSettings.profile.interests
+            ? user.friendSettings.profile.interests.split(',').map((s: string) => s.trim()).filter(Boolean)
+            : profile.interests
+        };
+      }
       if (user.friendSettings.memories && user.friendSettings.memories.length > 0) {
         memories = user.friendSettings.memories.map((m: any) => ({ id: m.id, text: m.text || m.content || "" })).filter((m: any) => m.text);
       }
@@ -171,10 +198,22 @@ export default function App() {
   // Core Data States
   const [chats, setChats] = useState<ChatRoom[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
-  const [currentView, setCurrentView] = useState<'welcome' | 'chat' | 'sodabot' | 'settings' | 'sodabot_builder' | 'mic_circuit' | 'firmware_v4' | 'firmware_v8' | 'firmware_v9' | 'dev' | 'friends'>('welcome');
+  const [currentView, setCurrentView] = useState<'welcome' | 'chat' | 'sodabot' | 'settings' | 'sodabot_builder' | 'mic_circuit' | 'firmware_v4' | 'firmware_v8' | 'firmware_v9' | 'assembly_v9' | 'dev' | 'friends' | 'mobile_guide'>('welcome');
   const [inputText, setInputText] = useState("");
   const [sending, setSending] = useState(false);
   const [clearingChat, setClearingChat] = useState(false);
+
+  // Mobile Layout & Responsive State
+  const [isMobile, setIsMobile] = useState<boolean>(() => typeof window !== 'undefined' ? window.innerWidth < 768 : false);
+  const [mobileTab, setMobileTab] = useState<MobileTab>('home');
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Real Hardware Connection States
   const [sodabotIp, setSodabotIp] = useState<string | null>(localStorage.getItem("sodabot_robot_ip"));
@@ -657,13 +696,16 @@ export default function App() {
     const handleVoiceCompleted = () => {
       fetchChats();
     };
-    const handleSettingsUpdated = () => {
+    const handleSettingsUpdated = (e?: any) => {
       setSettingsVersion(v => v + 1);
+      if (e?.detail) {
+        setUser(prev => prev ? { ...prev, friendSettings: e.detail } : null);
+      }
       if (token) verifySession(token);
     };
 
     window.addEventListener('sodabot-voice-chat', handleVoiceCompleted);
-    window.addEventListener('sodabot-settings-updated', handleSettingsUpdated);
+    window.addEventListener('sodabot-settings-updated', handleSettingsUpdated as EventListener);
 
     return () => {
       clearInterval(interval);
@@ -1249,24 +1291,105 @@ export default function App() {
 
   const activeChat = chats.find(c => c.id === activeChatId) || (chats.length > 0 ? chats[0] : undefined);
 
-  // Suggestions for empty state (Notion / MUJI Vibe)
-  const suggestionCards = [
-    {
-      title: "베란다 실내 식물 추천 🌱",
-      desc: "아파트 실내에서 간편하게 기를 수 있는 미니멀 식물과 관리 팁을 알려드립니다.",
-      prompt: "아파트 베란다나 침실에서 키우기 좋은 미니멀한 실내 식물 3가지와 물주기 팁을 알려줘."
-    },
-    {
-      title: "브랜드 카피라이팅 기획 ✏️",
-      desc: "꾸밈없고 일상에 녹아드는 간결한 문장의 한 줄 광고 기획서.",
-      prompt: "가벼운 린넨 이불 제품에 어울리는 담백하고 미니멀한 가을용 카피 3가지만 적어줘."
-    },
-    {
-      title: "따뜻한 맞춤법 교정기 ☕",
-      desc: "은어와 띄어쓰기가 뒤섞인 서툰 글을 다정하고 품격 넘치는 정돈된 우리글로 다듬기.",
-      prompt: "다음 오탈자 글을 교정해줘: '저번에산 베개 넘나편해서 꿀잠잤음 진짜 고마워요 번창하새요'"
+  // Dynamic Action Cards following the 5 Priorities
+  const getDynamicActionCards = () => {
+    const cards: Array<{
+      title: string;
+      desc: string;
+      action_type: string;
+      onClick: () => void;
+    }> = [];
+
+    const latest = getLatestFriendSettings();
+    const botName = latest.persona.name || "루미";
+
+    // 1순위: 즉시 확인해야 하는 활동 (읽지 않은 친구 메시지 / 새 요청)
+    if (unreadFriendMessages > 0) {
+      cards.push({
+        title: `친구 메시지 ${unreadFriendMessages}개 확인 💬`,
+        desc: "새로 도착한 친구 메시지를 확인하고 소다봇으로 들어보세요.",
+        action_type: "open_friend_chat",
+        onClick: () => {
+          if (isMobile) setMobileTab('friends');
+          else setCurrentView('friends');
+        }
+      });
     }
-  ];
+
+    // 2순위: 최근 AI 대화 이어가기
+    if (activeChat && activeChat.messages.length > 0) {
+      const lastMsg = activeChat.messages[activeChat.messages.length - 1];
+      const previewText = lastMsg.text.length > 18 ? lastMsg.text.slice(0, 18) + '...' : lastMsg.text;
+      cards.push({
+        title: `${botName}와 이어서 대화하기 🤖`,
+        desc: `"${previewText}" 대화를 이어서 진행해보세요.`,
+        action_type: "continue_ai_chat",
+        onClick: () => {
+          handleSendMessage(undefined, "지난번에 이야기하던 내용에 대해 조금 더 자세히 알려줘!");
+        }
+      });
+    } else {
+      cards.push({
+        title: `${botName}에게 질문하기 💡`,
+        desc: "오늘 배운 아두이노 코드나 회로에 대해 자유롭게 물어보세요.",
+        action_type: "start_ai_chat",
+        onClick: () => {
+          handleSendMessage(undefined, `안녕 ${botName}! 오늘 배울 수 있는 재미있는 소다봇 코딩 팁 하나만 알려줘.`);
+        }
+      });
+    }
+
+    // 3순위: 소다봇 하드웨어 활용 (표정 바꾸기 / 소다봇 제어)
+    if (isSodabotConnected || sodabotIp) {
+      cards.push({
+        title: "소다봇 표정 바꾸기 🎮",
+        desc: "실물 소다봇의 LCD 눈동자 표정을 원터치로 바꿔보세요.",
+        action_type: "open_robot_control",
+        onClick: () => {
+          if (isMobile) setMobileTab('control');
+          else setCurrentView('settings');
+        }
+      });
+    } else {
+      cards.push({
+        title: "소다봇 로봇 연동하기 🔗",
+        desc: "블루투스나 Wi-Fi로 내 책상의 실물 소다봇과 연결해보세요.",
+        action_type: "open_robot_connect",
+        onClick: () => {
+          if (isMobile) setMobileTab('control');
+          else setCurrentView('sodabot');
+        }
+      });
+    }
+
+    // 4순위: 우리반 그룹 대화방
+    if (cards.length < 3) {
+      cards.push({
+        title: "우리반 그룹 대화방 👥",
+        desc: "반 친구들과 함께 다자간 그룹 채팅을 시작해보세요.",
+        action_type: "open_group_chat",
+        onClick: () => {
+          if (isMobile) setMobileTab('friends');
+          else setCurrentView('friends');
+        }
+      });
+    }
+
+    // 5순위: 소다봇 친구설정 & 기억 관리
+    if (cards.length < 3) {
+      cards.push({
+        title: "소다봇 친구설정 마무리 🧠",
+        desc: "나의 성격, 관심사, 목표 3가지를 소다봇에게 가르쳐주세요.",
+        action_type: "open_friend_settings",
+        onClick: () => {
+          if (isMobile) setMobileTab('settings');
+          else setCurrentView('sodabot_builder');
+        }
+      });
+    }
+
+    return cards.slice(0, 3);
+  };
 
   const memTotalGB = systemStatus?.memoryUsage ? (systemStatus.memoryUsage.total / 1024 / 1024 / 1024).toFixed(1) : "8.0";
   const memFreeGB = systemStatus?.memoryUsage ? (systemStatus.memoryUsage.free / 1024 / 1024 / 1024).toFixed(1) : "1.8";
@@ -1276,6 +1399,279 @@ export default function App() {
   const openaiUsed = systemStatus?.openaiUsage?.used || 3240;
   const openaiLimit = systemStatus?.openaiUsage?.limit || 10000;
   const openaiPercent = Math.min(100, Math.max(0, (openaiUsed / openaiLimit) * 100));
+
+  // ===== RESPONSIVE MOBILE APP LAYOUT (<768px) =====
+  if (isMobile) {
+    const latestSettings = getLatestFriendSettings();
+    const botName = latestSettings.persona.name || "루미";
+    const studentName = latestSettings.profile.userName || user.displayName;
+    const roleName = latestSettings.persona.role || "공부친구";
+
+    return (
+      <div className="flex flex-col h-[100dvh] w-full bg-[#F8FAFC] overflow-hidden select-none relative font-sans text-[#1D1D1F]">
+        {/* PWA Floating Install Banner */}
+        <PwaInstallBanner />
+
+        {/* Global Hardware Action Toast */}
+        {quickExprToast && (
+          <div className="fixed top-3 left-4 right-4 z-50 bg-slate-900/95 backdrop-blur-md text-white px-4 py-2.5 rounded-2xl shadow-xl flex items-center gap-2 text-xs font-bold animate-fade-in">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="truncate">{quickExprToast}</span>
+          </div>
+        )}
+
+        {/* Mobile Views Container */}
+        <div className="flex-1 flex flex-col overflow-hidden relative">
+          {mobileTab === 'home' && (
+            <MobileHomeScreen
+              currentUser={user}
+              isSodabotConnected={isSodabotConnected}
+              robotName={botName}
+              sodabotIp={sodabotIp}
+              onNavigateTab={(tab, extra) => {
+                setMobileTab(tab);
+                if (tab === 'chat') setCurrentView('chat');
+                if (tab === 'friends') setCurrentView('friends');
+                if (tab === 'settings') setCurrentView('sodabot_builder');
+              }}
+              onLogout={handleLogout}
+              onQuickReconnect={() => verifyWifiConnection()}
+              isVerifying={isVerifying}
+            />
+          )}
+
+          {mobileTab === 'chat' && (
+            <div className="flex-1 flex flex-col h-full overflow-hidden bg-white">
+              {/* Mobile Chat Header */}
+              <header className="py-3 px-4 bg-white border-b border-slate-200/80 flex items-center justify-between shrink-0 shadow-2xs">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-xs shrink-0">
+                    🤖
+                  </div>
+                  <div className="min-w-0">
+                    <h2 className="text-xs font-extrabold text-[#0F172A] truncate flex items-center gap-1.5">
+                      <span>{botName}</span>
+                      <span className="text-[10px] font-normal text-slate-400">· {roleName}</span>
+                    </h2>
+                    <div className="flex items-center gap-1 mt-0.5">
+                      <span className={`w-1.5 h-1.5 rounded-full ${isSodabotConnected ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`} />
+                      <span className="text-[9px] text-slate-500 font-medium">
+                        {isSodabotConnected ? '실물 소다봇 연동됨' : '웹 단독 대화'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={handleClearChat}
+                    disabled={clearingChat}
+                    className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all cursor-pointer"
+                    title="대화 초기화"
+                  >
+                    <RotateCcw className={`w-4 h-4 ${clearingChat ? 'animate-spin text-rose-600' : ''}`} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMobileTab('settings')}
+                    className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all cursor-pointer"
+                    title="친구 설정"
+                  >
+                    <Settings className="w-4 h-4" />
+                  </button>
+                </div>
+              </header>
+
+              {/* Conversation Stream */}
+              <div className="flex-1 overflow-y-auto p-4 bg-[#FAF9F6]/60 relative space-y-4">
+                {(!activeChat || activeChat.messages.length === 0) ? (
+                  <div className="py-8 text-center space-y-4">
+                    <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto shadow-2xs">
+                      <Sparkles className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-extrabold text-[#0F172A]">
+                        안녕하세요, {studentName}님!
+                      </h3>
+                      <p className="text-xs text-slate-500 mt-1">
+                        웹 채팅과 실물 소다봇 음성 대화가<br />하나의 친구 기억으로 연결되어 있어요.
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-2 pt-2 text-left">
+                      {getDynamicActionCards().map((card, idx) => (
+                        <button
+                          key={idx}
+                          onClick={card.onClick}
+                          className="p-3 bg-white hover:bg-indigo-50/50 border border-slate-200/80 rounded-2xl shadow-2xs text-xs font-semibold text-slate-700 transition-all active:scale-[0.98] cursor-pointer"
+                        >
+                          <span className="block text-[#0F172A] font-bold text-xs">{card.title}</span>
+                          <span className="text-[11px] text-slate-500 font-normal line-clamp-1 mt-0.5">{card.desc}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4 pb-4">
+                    {activeChat.messages.map((msg) => {
+                      const isUser = msg.sender === "user";
+                      const isSodabotSource = msg.source === "sodabot";
+
+                      return (
+                        <div
+                          key={msg.id}
+                          className={`flex ${isUser ? "justify-end" : "justify-start"} items-start gap-2.5`}
+                        >
+                          {!isUser && (
+                            <div className="w-7 h-7 rounded-xl bg-white border border-indigo-200 flex items-center justify-center text-indigo-600 shrink-0 shadow-2xs text-xs">
+                              🤖
+                            </div>
+                          )}
+
+                          <div
+                            className={`max-w-[85%] rounded-2xl p-3 text-xs leading-relaxed ${
+                              isUser
+                                ? "bg-indigo-600 text-white rounded-tr-xs shadow-2xs"
+                                : "bg-white border border-slate-200/80 text-[#1E293B] rounded-tl-xs shadow-2xs space-y-2"
+                            }`}
+                          >
+                            {/* Source Badge for User */}
+                            {isUser && (
+                              <div className="flex items-center gap-1 mb-1">
+                                <span className={`text-[9px] px-1.5 py-0.2 rounded font-bold font-mono ${
+                                  isSodabotSource
+                                    ? "bg-indigo-900/50 text-indigo-200 border border-indigo-400/40"
+                                    : "bg-indigo-700 text-indigo-100"
+                                }`}>
+                                  {isSodabotSource ? "🎙 SODABOT" : "⌨ WEB"}
+                                </span>
+                              </div>
+                            )}
+
+                            <div className="whitespace-pre-wrap break-words leading-relaxed">
+                              {msg.text}
+                            </div>
+
+                            {/* Metadata & Speak on Sodabot Button */}
+                            <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono border-t border-slate-100 pt-1.5 mt-1.5 gap-2">
+                              <span>
+                                {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+
+                              {!isUser && (
+                                <button
+                                  type="button"
+                                  disabled={!canReachSodabot || speakingMessageId !== null}
+                                  onClick={async () => {
+                                    if (!canReachSodabot) return;
+                                    setSpeakingMessageId(msg.id);
+                                    setQuickExprToast("🔊 소다봇 음성 재생 중...");
+                                    try {
+                                      await sendHardwareCommand('speak', msg.text, '음성 재생');
+                                    } finally {
+                                      setSpeakingMessageId(null);
+                                    }
+                                  }}
+                                  className={`inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold rounded-lg border transition-all ${
+                                    canReachSodabot && speakingMessageId === null
+                                      ? "text-indigo-600 bg-indigo-50 hover:bg-indigo-100 border-indigo-200 cursor-pointer"
+                                      : "text-slate-400 bg-slate-50 border-slate-200 opacity-60"
+                                  }`}
+                                >
+                                  <span>{speakingMessageId === msg.id ? "⏳ 재생 중..." : "🔊 소다봇으로 말하기"}</span>
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {sending && (
+                      <div className="flex justify-start items-start gap-2.5">
+                        <div className="w-7 h-7 rounded-xl bg-white border border-indigo-200 flex items-center justify-center text-indigo-600 shrink-0 text-xs shadow-2xs">
+                          🤖
+                        </div>
+                        <div className="bg-white border border-slate-200/80 rounded-2xl p-3 text-xs text-slate-500 font-mono flex items-center gap-2 shadow-2xs">
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin text-indigo-600" />
+                          <span>소다봇이 생각하고 있어요...</span>
+                        </div>
+                      </div>
+                    )}
+                    <div ref={chatEndRef} />
+                  </div>
+                )}
+              </div>
+
+              {/* Chat Input Footer */}
+              <footer className="p-3 bg-white border-t border-slate-200/80 pb-20">
+                <form onSubmit={handleSendMessage} className="relative flex items-center">
+                  <input
+                    type="text"
+                    required
+                    disabled={sending}
+                    value={inputText}
+                    onChange={(e) => setInputText(e.target.value)}
+                    placeholder="소다봇에게 물어보세요..."
+                    className="w-full pl-4 pr-11 py-3 bg-[#F8FAFC] border border-slate-200 focus:border-indigo-500 focus:bg-white rounded-2xl text-xs font-sans outline-none transition-all placeholder:text-slate-400"
+                  />
+                  <button
+                    type="submit"
+                    disabled={!inputText.trim() || sending}
+                    className="absolute right-1.5 p-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white rounded-xl transition-all cursor-pointer shadow-xs"
+                    title="전송"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                  </button>
+                </form>
+              </footer>
+            </div>
+          )}
+
+          {mobileTab === 'friends' && (
+            <div className="flex-1 flex flex-col h-full overflow-hidden pb-16">
+              <SodabotFriendsScreen
+                currentUser={user}
+                token={token}
+                isSodabotConnected={isSodabotConnected}
+                onBackToChat={() => setMobileTab('home')}
+              />
+            </div>
+          )}
+
+          {mobileTab === 'control' && (
+            <MobileControlScreen
+              currentUser={user}
+              isSodabotConnected={isSodabotConnected}
+              robotName={botName}
+              sodabotIp={sodabotIp}
+              onVerifyConnection={verifyWifiConnection}
+              isVerifying={isVerifying}
+            />
+          )}
+
+          {mobileTab === 'settings' && (
+            <div className="flex-1 flex flex-col h-full overflow-hidden pb-16">
+              <SodabotFriendSettingsScreen currentUser={user} />
+            </div>
+          )}
+        </div>
+
+        {/* Fixed Mobile Bottom Tab Bar */}
+        <MobileBottomTabBar
+          currentTab={mobileTab}
+          onSelectTab={(tab) => {
+            setMobileTab(tab);
+            if (tab === 'chat') setCurrentView('chat');
+            if (tab === 'friends') setCurrentView('friends');
+            if (tab === 'settings') setCurrentView('sodabot_builder');
+          }}
+          unreadFriendsCount={unreadFriendMessages}
+        />
+      </div>
+    );
+  }
 
   // ===== ADMIN CUSTOM LAYOUT =====
   if (user?.username === "admin") {
@@ -2437,6 +2833,26 @@ export default function App() {
                             8-3
                           </span>
                         </button>
+
+                        {/* 4. 8주차 모바일 소다봇 & PWA (8-4) */}
+                        <button
+                          onClick={() => {
+                            setCurrentView('mobile_guide');
+                          }}
+                          className={`w-full text-left px-2.5 py-1.5 rounded-xl text-xs font-medium flex items-center justify-between transition-all cursor-pointer ${
+                            currentView === 'mobile_guide'
+                              ? 'bg-blue-50/70 text-blue-900 font-bold border border-blue-200/70 shadow-2xs'
+                              : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20 hover:text-[#1D1D1F]'
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <Smartphone className={`w-3.5 h-3.5 shrink-0 ${currentView === 'mobile_guide' ? 'text-blue-600' : 'text-indigo-500'}`} />
+                            <span className="truncate text-xs">4. 모바일 소다봇</span>
+                          </div>
+                          <span className="text-[8px] text-indigo-700 bg-indigo-50 border border-indigo-200/60 px-1.5 py-0.5 rounded font-mono font-semibold shrink-0">
+                            8-4
+                          </span>
+                        </button>
                       </div>
                     )}
                   </div>
@@ -2484,6 +2900,26 @@ export default function App() {
                           </div>
                           <span className="text-[8px] text-indigo-700 bg-indigo-50 border border-indigo-200/60 px-1.5 py-0.5 rounded font-mono font-semibold shrink-0">
                             9-1
+                          </span>
+                        </button>
+
+                        {/* 2. 9주차 소다봇 조립하기 (9-2) */}
+                        <button
+                          onClick={() => {
+                            setCurrentView('assembly_v9');
+                          }}
+                          className={`w-full text-left px-2.5 py-1.5 rounded-xl text-xs font-medium flex items-center justify-between transition-all cursor-pointer ${
+                            currentView === 'assembly_v9'
+                              ? 'bg-blue-50/70 text-blue-900 font-bold border border-blue-200/70 shadow-2xs'
+                              : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20 hover:text-[#1D1D1F]'
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <Wrench className={`w-3.5 h-3.5 shrink-0 ${currentView === 'assembly_v9' ? 'text-blue-600' : 'text-indigo-500'}`} />
+                            <span className="truncate text-xs">2. 소다봇 조립하기</span>
+                          </div>
+                          <span className="text-[8px] text-indigo-700 bg-indigo-50 border border-indigo-200/60 px-1.5 py-0.5 rounded font-mono font-semibold shrink-0">
+                            9-2
                           </span>
                         </button>
                       </div>
@@ -2824,10 +3260,10 @@ export default function App() {
 
                       {/* Grid Suggestions */}
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4">
-                        {suggestionCards.map((card, idx) => (
+                        {getDynamicActionCards().map((card, idx) => (
                           <div
                             key={idx}
-                            onClick={() => handleSendMessage(undefined, card.prompt)}
+                            onClick={card.onClick}
                             className="bg-white border border-[#EAE6DF] hover:border-indigo-400 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all cursor-pointer text-left space-y-2 group active:scale-[0.99] hover:scale-[1.01]"
                           >
                             <h3 className="text-xs font-semibold text-[#1D1D1F] flex items-center justify-between">
@@ -2991,6 +3427,10 @@ export default function App() {
           </div>
         </div>
           </>
+        ) : currentView === 'mobile_guide' ? (
+          <SodabotMobileGuideScreen currentUser={user} />
+        ) : currentView === 'assembly_v9' ? (
+          <SodabotAssemblyScreen onBackToFirmware={() => setCurrentView('firmware_v9')} />
         ) : currentView === 'friends' ? (
           <SodabotFriendsScreen
             currentUser={user}
