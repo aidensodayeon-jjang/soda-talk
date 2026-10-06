@@ -621,34 +621,9 @@ export default function App() {
     parseInt(localStorage.getItem("soda_last_activity") || String(Date.now()), 10)
   );
 
-  const loginAsAdmin = async () => {
-    try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          loginType: "admin",
-          username: "admin",
-          password: "password123"
-        })
-      });
-      const data = await res.json();
-      if (res.ok && data.sessionId && data.user) {
-        handleLoginSuccess(data.sessionId, data.user);
-        return true;
-      }
-    } catch (err) {
-      console.error("Auto admin login failed", err);
-    }
-    return false;
-  };
-
-  // 1. Verify session on mount & Inactivity tracking (Auto admin login)
+  // 1. Verify session on mount & Inactivity tracking
   useEffect(() => {
-    if (!token) {
-      loginAsAdmin();
-      return;
-    }
+    if (!token) return;
 
     // 마운트 시 저장된 마지막 활동 시간 체크
     const savedLastActivity = parseInt(localStorage.getItem("soda_last_activity") || "0", 10);
@@ -809,11 +784,11 @@ export default function App() {
       if (res.ok && data.user) {
         setUser(data.user);
       } else {
-        loginAsAdmin();
+        handleLogout();
       }
     } catch (err) {
       console.error("Session verification failed", err);
-      loginAsAdmin();
+      handleLogout();
     }
   };
 
@@ -1312,17 +1287,7 @@ export default function App() {
   };
 
   if (!user) {
-    return (
-      <div className="flex h-screen w-screen items-center justify-center bg-slate-950 text-white select-none">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin"></div>
-          <div className="text-center">
-            <p className="text-base font-semibold text-slate-200">소다톡 관리자 모드로 접속 중...</p>
-            <p className="text-xs text-slate-400 mt-1">잠시만 기다려 주세요</p>
-          </div>
-        </div>
-      </div>
-    );
+    return <AuthScreen onLoginSuccess={handleLoginSuccess} />;
   }
 
   const activeChat = chats.find(c => c.id === activeChatId) || (chats.length > 0 ? chats[0] : undefined);
