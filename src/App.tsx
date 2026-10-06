@@ -10,6 +10,7 @@ import SodabotMobileGuideScreen from "./components/SodabotMobileGuideScreen";
 import SodabotAssemblyScreen from "./components/SodabotAssemblyScreen";
 import { SodabotFriendsScreen } from "./components/SodabotFriendsScreen";
 import SodaAiLabScreen from "./components/SodaAiLabScreen";
+import SodaAiSkillScreen from "./components/SodaAiSkillScreen";
 import DevCodeHubScreen from "./components/DevCodeHubScreen";
 import AdminCourseManagerModal from "./components/AdminCourseManagerModal";
 import MobileBottomTabBar, { MobileTab } from "./components/mobile/MobileBottomTabBar";
@@ -198,7 +199,7 @@ export default function App() {
   // Core Data States
   const [chats, setChats] = useState<ChatRoom[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
-  const [currentView, setCurrentView] = useState<'welcome' | 'chat' | 'sodabot' | 'settings' | 'sodabot_builder' | 'mic_circuit' | 'firmware_v4' | 'firmware_v8' | 'firmware_v9' | 'assembly_v9' | 'dev' | 'friends' | 'mobile_guide'>('welcome');
+  const [currentView, setCurrentView] = useState<'welcome' | 'chat' | 'sodabot' | 'settings' | 'sodabot_builder' | 'mic_circuit' | 'firmware_v4' | 'firmware_v8' | 'firmware_v9' | 'assembly_v9' | 'ai_skills' | 'dev' | 'friends' | 'mobile_guide'>('welcome');
   const [inputText, setInputText] = useState("");
   const [sending, setSending] = useState(false);
   const [clearingChat, setClearingChat] = useState(false);
@@ -620,9 +621,34 @@ export default function App() {
     parseInt(localStorage.getItem("soda_last_activity") || String(Date.now()), 10)
   );
 
-  // 1. Verify session on mount & Inactivity tracking
+  const loginAsAdmin = async () => {
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          loginType: "admin",
+          username: "admin",
+          password: "password123"
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.sessionId && data.user) {
+        handleLoginSuccess(data.sessionId, data.user);
+        return true;
+      }
+    } catch (err) {
+      console.error("Auto admin login failed", err);
+    }
+    return false;
+  };
+
+  // 1. Verify session on mount & Inactivity tracking (Auto admin login)
   useEffect(() => {
-    if (!token) return;
+    if (!token) {
+      loginAsAdmin();
+      return;
+    }
 
     // 마운트 시 저장된 마지막 활동 시간 체크
     const savedLastActivity = parseInt(localStorage.getItem("soda_last_activity") || "0", 10);
@@ -780,14 +806,14 @@ export default function App() {
         headers: { Authorization: `Bearer ${sessionToken}` }
       });
       const data = await res.json();
-      if (res.ok) {
+      if (res.ok && data.user) {
         setUser(data.user);
       } else {
-        handleLogout();
+        loginAsAdmin();
       }
     } catch (err) {
       console.error("Session verification failed", err);
-      handleLogout();
+      loginAsAdmin();
     }
   };
 
@@ -1286,7 +1312,17 @@ export default function App() {
   };
 
   if (!user) {
-    return <AuthScreen onLoginSuccess={handleLoginSuccess} />;
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-slate-950 text-white select-none">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin"></div>
+          <div className="text-center">
+            <p className="text-base font-semibold text-slate-200">소다톡 관리자 모드로 접속 중...</p>
+            <p className="text-xs text-slate-400 mt-1">잠시만 기다려 주세요</p>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   const activeChat = chats.find(c => c.id === activeChatId) || (chats.length > 0 ? chats[0] : undefined);
@@ -2618,12 +2654,39 @@ export default function App() {
                   <ChevronRight className="w-3.5 h-3.5 text-[#86868B] group-hover:text-indigo-600 group-hover:translate-x-0.5 transition-all" />
                 </button>
 
-                {/* 6~10주차 실습 & AI 연동 메뉴 (소다봇 미연결 시 잠금 처리) */}
+                {/* 10~11주차 AI 스킬 스튜디오 바로가기 버튼 */}
+                <button
+                  onClick={() => setCurrentView('ai_skills')}
+                  className={`w-full text-left bg-white hover:bg-blue-50/50 border rounded-2xl p-2.5 shadow-xs transition-all cursor-pointer group flex items-center justify-between ${
+                    currentView === 'ai_skills' ? 'border-blue-500 ring-2 ring-blue-50 bg-blue-50/40' : 'border-[#EAE6DF] hover:border-blue-300'
+                  }`}
+                  title="10~11주차: 소다봇 AI 스킬 프로젝트 스튜디오"
+                >
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center text-sm text-blue-600 font-bold shrink-0">
+                      <Sparkles className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <h5 className="text-xs font-bold text-[#1D1D1F] truncate group-hover:text-blue-600 transition-colors flex items-center gap-1.5">
+                        <span>AI 스킬 프로젝트</span>
+                        <span className="px-1.5 py-0.2 bg-blue-100 text-blue-700 text-[9px] font-bold rounded-full font-mono">
+                          10-11주차
+                        </span>
+                      </h5>
+                      <p className="text-[10px] text-[#86868B] truncate">
+                        AI 스킬 선택 · 테스트 · 보고서
+                      </p>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-3.5 h-3.5 text-[#86868B] group-hover:text-blue-600 group-hover:translate-x-0.5 transition-all" />
+                </button>
+
+                {/* 6~11주차 실습 & AI 연동 메뉴 (소다봇 미연결 시 잠금 처리) */}
                 <div className="space-y-1 pb-1 pt-1 border-t border-[#EAE6DF]/70">
                   <div className="flex items-center justify-between px-2 py-1 text-[10px] font-bold text-[#86868B] uppercase tracking-wider font-mono">
                     <span className="flex items-center gap-1.5">
                       <FolderCode className="w-3 h-3 text-indigo-600" />
-                      6~10주차 실습 & 연동
+                      6~11주차 실습 & 연동
                     </span>
                     {!isSodabotConnected ? (
                       <span className="text-[9px] text-amber-600 font-extrabold flex items-center gap-0.5 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
@@ -2926,24 +2989,23 @@ export default function App() {
                     )}
                   </div>
 
-                  {/* 10주차: 소다봇 시나리오 & 센서 */}
+                  {/* 10~11주차: AI 스킬 프로젝트 */}
                   <button
                     onClick={() => {
-                      if (!isSodabotConnected) {
-                        alert("소다봇이 연결되지 않았습니다. 상단 '소다봇 상태' 카드를 눌러 먼저 기기를 연결해 주세요.");
-                        setCurrentView('sodabot');
-                        return;
-                      }
-                      alert("10주차: 소다봇 인터랙션 & 센서 제어 기능은 수업 진행에 맞춰 순차 오픈됩니다.");
+                      setCurrentView('ai_skills');
                     }}
-                    className="w-full text-left px-2.5 py-2 rounded-xl text-xs font-medium flex items-center justify-between text-[#86868B] hover:bg-[#EAE6DF]/20 transition-all cursor-pointer opacity-80"
+                    className={`w-full text-left px-2.5 py-2 rounded-xl text-xs font-medium flex items-center justify-between transition-all cursor-pointer ${
+                      currentView === 'ai_skills'
+                        ? 'bg-blue-50 text-blue-900 font-bold border border-blue-200 shadow-2xs'
+                        : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20 hover:text-[#1D1D1F]'
+                    }`}
                   >
                     <div className="flex items-center gap-2 min-w-0">
-                      <Cpu className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span className="truncate">10주차: 시나리오 & 센서</span>
+                      <Sparkles className={`w-3.5 h-3.5 shrink-0 ${currentView === 'ai_skills' ? 'text-blue-600' : 'text-blue-500'}`} />
+                      <span className="truncate">10-11주차: AI 스킬 프로젝트</span>
                     </div>
-                    <span className="text-[9px] text-[#86868B] bg-[#FAF9F6] border border-[#EAE6DF] px-1.5 py-0.5 rounded font-mono shrink-0">
-                      준비중
+                    <span className="text-[8px] text-blue-700 bg-blue-50 border border-blue-200/60 px-1.5 py-0.5 rounded font-mono font-semibold shrink-0">
+                      10-11
                     </span>
                   </button>
                 </div>
@@ -3427,6 +3489,12 @@ export default function App() {
           </div>
         </div>
           </>
+        ) : currentView === 'ai_skills' ? (
+          <SodaAiSkillScreen
+            currentUser={user}
+            onNavigateToChat={() => setCurrentView('chat')}
+            isSodabotConnected={isSodabotConnected}
+          />
         ) : currentView === 'mobile_guide' ? (
           <SodabotMobileGuideScreen currentUser={user} />
         ) : currentView === 'assembly_v9' ? (

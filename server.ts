@@ -74,6 +74,13 @@ interface User {
     profile?: any;
     memories?: any[];
   };
+  aiSkillState?: {
+    activeSkillId?: string;
+    skills?: any[];
+    testLogs?: any[];
+    versionSnapshots?: any[];
+    report?: any;
+  };
 }
 
 interface CourseContent {
@@ -657,6 +664,89 @@ function getJosa(word: string, type: '은는' | '을를' | '이가' | '아야' |
   }
 }
 
+function compileSkillPromptForServer(skill: any): string {
+  if (!skill) return "";
+  let instructions: string[] = [];
+
+  switch (skill.type) {
+    case 'english': {
+      const opts = skill.englishOptions || { level: 'beginner', ratio: 50, koreanHint: true, grammarCorrection: true, length: 'short', wordQuiz: false, roleplay: false };
+      const levelStr = opts.level === 'beginner' ? '초등/입문 수준의 쉬운 단어와 짧은 문장' : opts.level === 'intermediate' ? '중급 수준의 실용 회화 표현' : '고급 수준의 다양한 어휘와 자연스러운 영미권 표현';
+      const lenStr = opts.length === 'short' ? '1~2문장으로 아주 간결하게' : opts.length === 'medium' ? '2~3문장 정도' : '풍부하고 상세한 문장';
+      instructions.push(`[10-11주차 프로젝트 활성 AI 스킬: 영어친구 (English Buddy)]`);
+      instructions.push(`- 난이도: ${levelStr}`);
+      instructions.push(`- 언어 비율: 영어 약 ${opts.ratio}%, 한국어 ${100 - opts.ratio}%`);
+      instructions.push(`- 답변 길이: ${lenStr}`);
+      if (opts.grammarCorrection) instructions.push(`- 문장 교정: 사용자 영어에 오류가 있다면 [💡 교정: "..."] 형태로 친절하게 교정해주세요.`);
+      if (opts.koreanHint) instructions.push(`- 한국어 힌트: 영어 표현 뒤에 괄호 (한국어 해석)을 함께 달아주세요.`);
+      if (opts.wordQuiz) instructions.push(`- 단어 퀴즈: 대화 중 재미있는 관련 영단어 1문제를 퀴즈로 물어보세요.`);
+      if (opts.roleplay) instructions.push(`- 상황극 모드: '${opts.roleplayScenario || "일상"}' 역할극 상황에 맞추어 대화하세요.`);
+      break;
+    }
+    case 'coding': {
+      const opts = skill.codingOptions || { level: 'elementary', codeGenMode: 'hint', explainError: true, suggestFix: true, addComments: true, useHardwareInfo: true };
+      const levelStr = opts.level === 'elementary' ? '초등학생/엔트리 수준의 쉬운 설명' : opts.level === 'middle' ? '중등 아두이노 C++ 기초' : 'ESP32 심화';
+      instructions.push(`[10-11주차 프로젝트 활성 AI 스킬: 코딩친구 (Coding Tutor)]`);
+      instructions.push(`- 설명 수준: ${levelStr}`);
+      if (opts.codeGenMode === 'hint') instructions.push(`- 코드 제공 원칙: 전체 정답 코드를 주지 말고, 스스로 풀 수 있도록 단계별 힌트와 1~2줄의 핵심 코드 조각만 주세요.`);
+      else if (opts.codeGenMode === 'step_by_step') instructions.push(`- 코드 제공 원칙: 한 번에 한 단계씩 코드를 설명하고 확인하며 진행하세요.`);
+      else instructions.push(`- 코드 제공 원칙: 동작 가능한 완성 예제 코드를 제공하고 원리를 설명하세요.`);
+      if (opts.explainError) instructions.push(`- 에러 설명: 에러 이유를 학생 눈높이에 맞추어 공감하며 친절히 설명하세요.`);
+      if (opts.suggestFix) instructions.push(`- 수정 제안: 올바른 수정 방법과 팁을 단계별로 안내하세요.`);
+      if (opts.addComments) instructions.push(`- 주석: 코드에는 친절한 한글 주석(//)을 명확하게 달아주세요.`);
+      if (opts.useHardwareInfo) instructions.push(`- 소다봇 핀맵 참고: ST7789 LCD(11,12,13,7,6), I2S 마이크(9,10,8), I2S 스피커(5,3,44), 버튼(GPIO4), LED(GPIO2)`);
+      break;
+    }
+    case 'study': {
+      const opts = skill.studyOptions || { subject: 'science', method: 'socratic', quizMode: true, cheerLevel: 'high', provideSummaryNotes: true };
+      instructions.push(`[10-11주차 프로젝트 활성 AI 스킬: 공부도우미 (Study Helper)]`);
+      instructions.push(`- 담당 과목: ${opts.subject}`);
+      if (opts.method === 'socratic') instructions.push(`- 교수법: 일방적 정답 대신 "왜 그렇게 생각해?"처럼 소크라테스식 질문으로 학생의 생각을 유도하세요.`);
+      else if (opts.method === 'analogy') instructions.push(`- 교수법: 일상의 쉬운 비유와 예시를 들어 개념을 설명하세요.`);
+      else instructions.push(`- 교수법: 핵심 요점을 1-2-3 목록으로 명확히 정리하세요.`);
+      if (opts.quizMode) instructions.push(`- 퀴즈 모드: 대화 끝에 확인 퀴즈 1문제를 출제하세요.`);
+      if (opts.cheerLevel === 'high') instructions.push(`- 칭찬 격려: 폭풍 칭찬과 따뜻한 응원을 듬뿍 담아주세요.`);
+      if (opts.provideSummaryNotes) instructions.push(`- 핵심 요약: 답변 마지막에 [📌 3줄 핵심 요약]을 붙여주세요.`);
+      break;
+    }
+    case 'daily': {
+      const opts = skill.dailyOptions || { checkGreeting: true, checkSchedule: true, memoryAssist: true, familyMessageMode: false, shortReply: true, easyExpression: true, safetyStrict: true };
+      instructions.push(`[10-11주차 프로젝트 활성 AI 스킬: 생활친구 (Daily Companion)]`);
+      if (opts.checkGreeting) instructions.push(`- 안부 챙김: 오늘의 기분과 일상을 다정하게 물어보세요.`);
+      if (opts.checkSchedule) instructions.push(`- 일정 확인: 숙제나 준비물 등 오늘의 할 일을 챙겨주세요.`);
+      if (opts.memoryAssist) instructions.push(`- 기억 보조: 친구의 취미와 관심사를 자연스럽게 대화에 반영하세요.`);
+      if (opts.shortReply) instructions.push(`- 답변 길이: 1~2문장으로 귀엽고 간결하게 답하세요.`);
+      if (opts.easyExpression) instructions.push(`- 쉬운 표현: 순화된 쉬운 우리말과 이모지를 사용하세요.`);
+      if (opts.safetyStrict) {
+        instructions.push(`- ★안전 규칙 (절대 준수)★: 의학/질병 판단, 위험한 행동 권유는 절대 하지 말고 부모님이나 전문가 상담을 권유하세요.`);
+      }
+      break;
+    }
+    case 'presentation': {
+      const opts = skill.presentationOptions || { topic: '소다봇 소개', targetAudience: '친구들', focusAreas: ['자신감'], mockQa: true, timeManagementTips: true };
+      instructions.push(`[10-11주차 프로젝트 활성 AI 스킬: 발표연습 (Presentation Coach)]`);
+      instructions.push(`- 발표 주제: "${opts.topic}" (청중: ${opts.targetAudience})`);
+      instructions.push(`- 코칭: 학생의 발표 멘트를 더 자신감 있고 설득력 있게 다듬어주세요.`);
+      if (opts.mockQa) instructions.push(`- 모의 Q&A: 발표 내용에 대한 예상 질문 1개를 던져 연습을 도와주세요.`);
+      if (opts.timeManagementTips) instructions.push(`- 스피치 팁: 말하는 속도와 시선 처리 팁을 조언해주세요.`);
+      break;
+    }
+    case 'custom': {
+      const inputs = skill.customInputs || {};
+      instructions.push(`[10-11주차 프로젝트 활성 AI 스킬: ${inputs.skillName || skill.name || '나만의 맞춤 AI 스킬'}]`);
+      if (inputs.forWhom) instructions.push(`- 대상: ${inputs.forWhom}`);
+      if (inputs.targetProblem) instructions.push(`- 목적 및 해결 문제: ${inputs.targetProblem}`);
+      if (inputs.mustDo) instructions.push(`- 반드시 해야 할 행동 (DO): ${inputs.mustDo}`);
+      if (inputs.mustNotDo) instructions.push(`- 하지 말아야 할 행동 (DON'T): ${inputs.mustNotDo}`);
+      if (inputs.memoriesToUse) instructions.push(`- 기억 활용: ${inputs.memoriesToUse}`);
+      if (inputs.responseStyle) instructions.push(`- 답변 방식: ${inputs.responseStyle}`);
+      break;
+    }
+  }
+
+  return instructions.join("\n");
+}
+
 function buildSharedSystemPrompt(user: User, isHardwareVoice: boolean = false): string {
   const friendSettings = user.friendSettings || {};
   const persona = friendSettings.persona || {};
@@ -702,6 +792,18 @@ function buildSharedSystemPrompt(user: User, isHardwareVoice: boolean = false): 
 
   if (memories.length > 0) {
     prompt += `\n\n[3. 우리가 함께 나눈 기억들]:\n` + memories.map((m: any, idx: number) => `  ${idx + 1}. ${m.text || m.content}`).join("\n");
+  }
+
+  // 10~11주차 AI 스킬 주입
+  const aiSkillState = user.aiSkillState;
+  if (aiSkillState && aiSkillState.activeSkillId && aiSkillState.skills) {
+    const activeSkill = aiSkillState.skills.find((s: any) => s.id === aiSkillState.activeSkillId);
+    if (activeSkill) {
+      const skillPrompt = compileSkillPromptForServer(activeSkill);
+      if (skillPrompt) {
+        prompt += `\n\n[4. 현재 장착된 AI 스킬 (최우선 행동 규칙)]:\n${skillPrompt}`;
+      }
+    }
   }
 
   if (isHardwareVoice) {
@@ -995,6 +1097,306 @@ app.post('/api/user/friend-settings', express.json(), (req, res) => {
   user.friendSettings = { persona, profile, memories };
   writeDB(db);
   res.json({ success: true, friendSettings: user.friendSettings });
+});
+
+// ----------------------------------------------------
+// 10~11주차 프로젝트: AI 스킬 API
+// ----------------------------------------------------
+app.get('/api/user/ai-skills', (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
+
+  const token = authHeader.replace("Bearer ", "").trim();
+  const db = readDB();
+  const session = getSession(token);
+  const user = session ? db.users.find(u => u.id === session.id) : findUserByApiKey(token, db);
+  if (!user) return res.status(401).json({ error: "User not found" });
+
+  res.json({
+    success: true,
+    aiSkillState: user.aiSkillState || {
+      activeSkillId: 'skill-english-buddy',
+      skills: [],
+      testLogs: [],
+      versionSnapshots: [],
+      report: null
+    }
+  });
+});
+
+app.post('/api/user/ai-skills', express.json(), (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
+
+  const token = authHeader.replace("Bearer ", "").trim();
+  const db = readDB();
+  const session = getSession(token);
+  const user = session ? db.users.find(u => u.id === session.id) : findUserByApiKey(token, db);
+  if (!user) return res.status(401).json({ error: "User not found" });
+
+  const { activeSkillId, skills, testLogs, versionSnapshots, report } = req.body;
+  user.aiSkillState = {
+    activeSkillId: activeSkillId || user.aiSkillState?.activeSkillId || 'skill-english-buddy',
+    skills: skills || user.aiSkillState?.skills || [],
+    testLogs: testLogs || user.aiSkillState?.testLogs || [],
+    versionSnapshots: versionSnapshots || user.aiSkillState?.versionSnapshots || [],
+    report: report !== undefined ? report : (user.aiSkillState?.report || null)
+  };
+
+  writeDB(db);
+  res.json({ success: true, aiSkillState: user.aiSkillState });
+});
+
+app.post('/api/user/ai-skills/activate', express.json(), (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
+
+  const token = authHeader.replace("Bearer ", "").trim();
+  const db = readDB();
+  const session = getSession(token);
+  const user = session ? db.users.find(u => u.id === session.id) : findUserByApiKey(token, db);
+  if (!user) return res.status(401).json({ error: "User not found" });
+
+  const { skillId } = req.body;
+  if (!user.aiSkillState) {
+    user.aiSkillState = { activeSkillId: skillId, skills: [], testLogs: [], versionSnapshots: [] };
+  } else {
+    user.aiSkillState.activeSkillId = skillId;
+  }
+
+  writeDB(db);
+  res.json({ success: true, activeSkillId: skillId });
+});
+
+app.post('/api/user/ai-skills/test-log', express.json(), (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
+
+  const token = authHeader.replace("Bearer ", "").trim();
+  const db = readDB();
+  const session = getSession(token);
+  const user = session ? db.users.find(u => u.id === session.id) : findUserByApiKey(token, db);
+  if (!user) return res.status(401).json({ error: "User not found" });
+
+  const newLog = req.body;
+  if (!user.aiSkillState) {
+    user.aiSkillState = { activeSkillId: 'skill-english-buddy', skills: [], testLogs: [], versionSnapshots: [] };
+  }
+  if (!user.aiSkillState.testLogs) {
+    user.aiSkillState.testLogs = [];
+  }
+
+  user.aiSkillState.testLogs.unshift({
+    id: 'log-' + Date.now(),
+    timestamp: new Date().toISOString(),
+    ...newLog
+  });
+
+  writeDB(db);
+  res.json({ success: true, testLogs: user.aiSkillState.testLogs });
+});
+
+function generateSkillSimulatedResponse(skill: any, userText: string, user: User): string {
+  const friendSettings = user.friendSettings || {};
+  const persona = friendSettings.persona || {};
+  const botName = persona.name || persona.robotName || "소다봇";
+  const studentName = user.displayName || "친구";
+
+  const skillType = skill?.type || 'english';
+
+  if (skillType === 'english') {
+    const opts = skill.englishOptions || {};
+    const hasCorrection = opts.grammarCorrection;
+    const hasHint = opts.koreanHint;
+    const isQuiz = opts.wordQuiz;
+    const isRoleplay = opts.roleplay;
+
+    if (userText.toLowerCase().includes('hello') || userText.toLowerCase().includes('hi') || userText.includes('안녕')) {
+      let res = `Hello ${studentName}! It's so wonderful to talk with you today! 🌟`;
+      if (hasHint) res += `\n(안녕 ${studentName}! 오늘 너와 이야기하게 되어 정말 기뻐!)`;
+      if (isQuiz) res += `\n\n[💡 Quick Quiz!]: 'Robot'의 철자 뜻을 알고 있니? What does a robot do best?`;
+      return res;
+    } else if (userText.toLowerCase().includes('name') || userText.includes('이름')) {
+      let res = `My name is ${botName}! I am your AI English buddy. What about you?`;
+      if (hasHint) res += `\n(내 이름은 ${botName}이야! 나는 너의 AI 영어 친구야. 너는 어때?)`;
+      return res;
+    } else {
+      let res = `That is very interesting! You said: "${userText}". Keep speaking in English, you are doing awesome! 🚀`;
+      if (hasCorrection && userText.length > 5 && !userText.includes('.')) {
+        res += `\n\n[💡 교정 팁: "${userText}." 처럼 문장 끝에 마침표를 붙이거나 자연스러운 표현으로 말해보면 더 좋아요!]`;
+      }
+      if (hasHint) res += `\n(정말 흥미로운 이야기야! 영어로 계속 말해봐, 아주 잘하고 있어!)`;
+      return res;
+    }
+  } else if (skillType === 'coding') {
+    const opts = skill.codingOptions || {};
+    const mode = opts.codeGenMode || 'hint';
+    const isError = userText.includes('에러') || userText.includes('error') || userText.includes('오류') || userText.includes('안돼') || userText.includes('안 켜져');
+
+    if (isError) {
+      return `앗, 코드나 회로 동작 중에 문제가 생겼구나! 괜찮아, 버그를 잡는 게 진짜 멋진 코딩의 시작이야 🛠️\n\n1. 회로 연결: ESP32 GPIO 핀 번호(예: 버튼은 GPIO4, LED는 GPIO2)가 맞게 꽂혀 있는지 확인해봐!\n2. C++ 코드: \`pinMode(4, INPUT_PULLUP);\` 처럼 핀 모드가 올바르게 선언되었는지 체크해볼까?\n\n어떤 오류 메시지가 뜨는지 알려주면 한 단계씩 같이 고쳐보자!`;
+    } else if (mode === 'hint') {
+      return `좋은 코딩 질문이야! 💡\n\n힌트를 줄게: 소다봇의 ST7789 LCD는 SPI 통신(MOSI:11, CLK:12, CS:13, DC:7, RST:6)을 사용해. 한 번에 모든 코드를 복사하기보다, 먼저 \`tft.init()\`과 \`tft.fillScreen()\` 함수부터 한 줄씩 테스트해보는 걸 추천해!\n\n직접 시도해보고 잘 안 풀리는 부분을 말해줘!`;
+    } else {
+      return `소다봇 코딩 튜터 ${botName}이야! 🤖\n\n\`\`\`cpp\n// 소다봇 동작 기본 예제\nvoid setup() {\n  Serial.begin(115200);\n  pinMode(4, INPUT_PULLUP); // 버튼 핀 설정\n}\n\nvoid loop() {\n  if (digitalRead(4) == LOW) {\n    Serial.println("버튼 클릭됨!");\n  }\n}\n\`\`\`\n\n이 코드를 실행해보고 궁금한 점이 있으면 언제든 물어봐!`;
+    }
+  } else if (skillType === 'study') {
+    const opts = skill.studyOptions || {};
+    const method = opts.method || 'socratic';
+
+    if (method === 'socratic') {
+      return `와, 정말 훌륭한 질문이야! 👏\n\n너는 "${userText}"에 대해 왜 그렇게 된다고 생각하니? 주변에서 비슷한 현상을 본 적이 있니?\n\n너의 생각을 한 문장으로 편하게 들려줘!`;
+    } else {
+      return `이 개념을 일상 속 비유로 쉽게 설명해줄게! 🌱\n\n컴퓨터의 CPU가 우리의 '두뇌'라면, 메모리(RAM)는 책을 펼쳐두는 '책상'과 같아. 책상이 넓을수록 여러 책을 한꺼번에 보며 공부할 수 있지!\n\n[📌 3줄 핵심 요약]\n1. CPU는 연산과 생각을 담당해요.\n2. RAM은 현재 작업 중인 데이터를 기억해요.\n3. 차근차근 원리를 이해하면 과학이 훨씬 쉬워져요!`;
+    }
+  } else if (skillType === 'daily') {
+    return `안녕 ${studentName}! 오늘 하루도 정말 수고 많았어! 💖\n\n오늘 기분은 어때? 밥은 든든하게 잘 챙겨 먹었니? 오늘 학교에서 재미있었던 일이나 나누고 싶은 이야기가 있다면 다 들려줘! 언제나 네 곁에 있을게 ✨`;
+  } else if (skillType === 'presentation') {
+    return `발표 코치 ${botName}이야! 🎤\n\n네가 말해준 "${userText}" 발표 내용은 핵심이 아주 명확해! \n\n[💡 스피치 코칭 팁]:\n- 첫 문장에서 청중의 시선을 사로잡는 질문을 던져보세요: "여러분은 혹시 ~를 상상해보신 적이 있나요?"\n- 결론에서는 소다봇을 만들며 배운 점을 당당한 목소리로 강조해보세요!\n\n[모의 예상 질문 (Q&A)]: "만약 배터리가 부족할 때는 어떻게 동작하나요?"라는 질문을 받는다면 어떻게 답변해볼까?`;
+  } else {
+    const custom = skill.customInputs || {};
+    return `안녕! 나는 '${custom.skillName || skill.name || '맞춤 AI'}'이야! ✨\n\n네가 말해준 "${userText}"에 대해 규칙대로 성심껏 답변할게! ${custom.mustDo ? `(${custom.mustDo})` : ''} 무엇이든 신나게 물어봐!`;
+  }
+}
+
+app.post('/api/ai-skills/test-chat', express.json(), async (req, res) => {
+  const { text, skill, history } = req.body;
+  if (!text) return res.status(400).json({ error: "메시지 텍스트가 필요합니다." });
+
+  const authHeader = req.headers.authorization;
+  const db = readDB();
+  let user: User | null = null;
+  if (authHeader) {
+    const token = authHeader.replace("Bearer ", "").trim();
+    const session = getSession(token);
+    user = session ? db.users.find(u => u.id === session.id) || null : findUserByApiKey(token, db);
+  }
+  if (!user) {
+    user = db.users[0] || { id: "guest", username: "student", displayName: "에이든", passwordHash: "" };
+  }
+
+  // 통합 시스템 프롬프트 구성 (사용자 프로필 + 친구설정 + 기억 + 현재 선택된 AI 스킬 규칙)
+  let systemPrompt = buildSharedSystemPrompt(user, false);
+  if (skill) {
+    const customSkillPrompt = compileSkillPromptForServer(skill);
+    if (customSkillPrompt) {
+      systemPrompt += `\n\n[현재 테스트 중인 AI 스킬 최우선 규칙]:\n${customSkillPrompt}`;
+    }
+  }
+
+  const conversationHistory = Array.isArray(history)
+    ? history.slice(-6).map((m: any) => ({
+        role: m.sender === "user" ? "user" : "assistant",
+        content: m.text
+      }))
+    : [];
+
+  let assistantReply = "";
+  const openaiKey = db.settings.openaiApiKey;
+
+  // 1차: OpenAI API가 있으면 가장 스마트한 실제 GPT 모델로 우선 응답 생성
+  if (openaiKey) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
+
+      const gptRes = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${openaiKey}`
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          messages: [
+            { role: "system", content: systemPrompt },
+            ...conversationHistory,
+            { role: "user", content: text }
+          ],
+          temperature: 0.7,
+          max_tokens: 1024
+        }),
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      if (gptRes.ok) {
+        const data = await gptRes.json();
+        assistantReply = data.choices?.[0]?.message?.content || "";
+      }
+    } catch (gptErr: any) {
+      console.warn("[AI Skill Test Chat] OpenAI call failed:", gptErr.message);
+    }
+  }
+
+  // 2차: OpenAI가 안 되거나 키가 없을 때 로컬 LM Studio 시도
+  if (!assistantReply && db.settings.lmStudioUrl) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+      const lmRes = await fetch(`${db.settings.lmStudioUrl}/v1/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer lm-studio"
+        },
+        body: JSON.stringify({
+          model: db.settings.modelName || "llama-3-korean-bllossom-8b",
+          messages: [
+            { role: "system", content: systemPrompt },
+            ...conversationHistory,
+            { role: "user", content: text }
+          ],
+          temperature: 0.7,
+          max_tokens: 1024
+        }),
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      if (lmRes.ok) {
+        const data = await lmRes.json();
+        assistantReply = data.choices?.[0]?.message?.content || "";
+      }
+    } catch (lmErr: any) {
+      console.warn("[AI Skill Test Chat] Local LM Studio unreachable:", lmErr.message);
+    }
+  }
+
+  // 3차: 네트워크 및 로컬 엔진 모두 불가용 시 지능형 시뮬레이션
+  if (!assistantReply || assistantReply.includes("로컬 엔진이 잠시 쉬고 있어")) {
+    assistantReply = generateSkillSimulatedResponse(skill, text, user);
+  }
+
+  res.json({
+    success: true,
+    reply: assistantReply,
+    timestamp: new Date().toISOString()
+  });
+});
+
+app.post('/api/user/ai-skills/report', express.json(), (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
+
+  const token = authHeader.replace("Bearer ", "").trim();
+  const db = readDB();
+  const session = getSession(token);
+  const user = session ? db.users.find(u => u.id === session.id) : findUserByApiKey(token, db);
+  if (!user) return res.status(401).json({ error: "User not found" });
+
+  const report = req.body;
+  if (!user.aiSkillState) {
+    user.aiSkillState = { activeSkillId: 'skill-english-buddy', skills: [], testLogs: [], versionSnapshots: [] };
+  }
+  user.aiSkillState.report = {
+    ...report,
+    updatedAt: new Date().toISOString()
+  };
+
+  writeDB(db);
+  res.json({ success: true, report: user.aiSkillState.report });
 });
 
 app.post('/api/hw/audio-chat', upload.single('file'), async (req, res) => {
@@ -2383,12 +2785,12 @@ app.post("/api/chats/:id/messages", async (req, res) => {
     content: m.text
   }));
 
-  // 관리자가 유저에게 부여한 맞춤형 페르소나가 있다면 로드합니다.
+  // 사용자 프로필, 친구설정, 기억, 그리고 10~11주차 활성 AI 스킬이 결합된 통합 시스템 프롬프트 생성
   const userRecord = db.users.find(u => u.id === session.id);
-  let sodabotPersona = "코딩 학원 '디랩(D-Lab)'의 인공지능 코딩 반려봇 '소다봇'이야. 초등학생 눈높이의 친근한 한국어 반말 구어체(~했어?, ~야!)와 이모지를 적극 사용해. 에러에는 깊이 공감해주고, 코딩 질문에는 정답 대신 단계별 힌트만 줘.";
+  let sodabotPersona = userRecord ? buildSharedSystemPrompt(userRecord, false) : "코딩 학원 '디랩(D-Lab)'의 인공지능 코딩 반려봇 '소다봇'이야.";
   
   if (userRecord && userRecord.persona) {
-    sodabotPersona = `${sodabotPersona}\n\n[특별 지시사항: 사용자에 맞게 다음 페르소나를 반드시 적용할 것]\n${userRecord.persona}`;
+    sodabotPersona = `${sodabotPersona}\n\n[특별 관리자 지시사항]\n${userRecord.persona}`;
   }
 
   const actualModel = settings.modelName || "llama-3-korean-bllossom-8b";
