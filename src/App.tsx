@@ -2484,9 +2484,10 @@ export default function App() {
                       <div className="pl-4 space-y-0.5 border-l-2 border-indigo-100 ml-3.5 my-1">
                         {weekCodes.map(codeItem => {
                           const isSelected = selectedDevCodeId === codeItem.id && mainNavTab === 'dev';
+                          const isInteractive = codeItem.contentType === 'interactive' || codeItem.filename?.endsWith('.html');
                           const isCircuit = codeItem.contentType === 'circuit' || codeItem.title.includes('회로') || codeItem.title.includes('배선도');
                           const isEditor = codeItem.contentType === 'editor';
-                          const ext = codeItem.filename ? (codeItem.filename.split('.').pop() || 'ino') : 'ino';
+                          const ext = isInteractive ? '탐구' : (codeItem.filename ? (codeItem.filename.split('.').pop() || 'ino') : 'ino');
 
                           return (
                             <button
@@ -2498,26 +2499,30 @@ export default function App() {
                               }}
                               className={`w-full text-left px-2.5 py-1.5 rounded-xl text-xs flex items-center justify-between transition-all cursor-pointer ${
                                 isSelected && currentView === 'dev'
-                                  ? 'bg-indigo-600 text-white font-bold shadow-xs'
+                                  ? 'bg-[#168571] text-white font-bold shadow-xs'
                                   : 'text-[#5C5B57] hover:bg-[#EAE6DF]/30 hover:text-[#1D1D1F]'
                               }`}
                             >
                               <div className="flex items-center gap-1.5 min-w-0 pr-1">
-                                <FileCode className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-white' : 'text-indigo-500'}`} />
+                                <FileCode className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-white' : isInteractive ? 'text-[#168571]' : 'text-indigo-500'}`} />
                                 <span className="truncate text-xs font-semibold">{codeItem.title}</span>
                               </div>
                               <span className={`text-[8px] px-1.5 py-0.5 rounded font-mono shrink-0 ${
                                 isSelected
-                                  ? isCircuit
-                                  ? 'bg-emerald-100 text-emerald-800 font-extrabold'
-                                  : isEditor
-                                    ? 'bg-purple-100 text-purple-800 font-extrabold'
-                                    : 'bg-indigo-100 text-indigo-800 font-extrabold'
-                                : isCircuit
-                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/60'
-                                  : isEditor
-                                    ? 'bg-purple-50 text-purple-700 border border-purple-200/60 font-bold'
-                                    : 'bg-[#EAE6DF]/60 text-[#86868B]'
+                                  ? isInteractive
+                                    ? 'bg-[#E8F4EF] text-[#168571] font-extrabold'
+                                    : isCircuit
+                                    ? 'bg-emerald-100 text-emerald-800 font-extrabold'
+                                    : isEditor
+                                      ? 'bg-purple-100 text-purple-800 font-extrabold'
+                                      : 'bg-indigo-100 text-indigo-800 font-extrabold'
+                                  : isInteractive
+                                    ? 'bg-[#E8F4EF] text-[#168571] border border-[#168571]/30 font-bold'
+                                    : isCircuit
+                                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200/60'
+                                      : isEditor
+                                        ? 'bg-purple-50 text-purple-700 border border-purple-200/60 font-bold'
+                                        : 'bg-[#EAE6DF]/60 text-[#86868B]'
                               }`}>
                                 {ext}
                               </span>
@@ -3047,48 +3052,27 @@ export default function App() {
 
         {/* Fixed Bottom Guide Card for Dev Tab */}
         {mainNavTab === "dev" && (
-          <div className="px-3 pb-2 shrink-0">
-            <div className="p-3 bg-white border-2 border-indigo-200/90 rounded-2xl space-y-2 shadow-xs">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 text-xs font-black text-[#1D1D1F]">
-                  <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>아두이노 IDE 업로드 3단계</span>
+          <div className="px-1.5 pb-2 shrink-0">
+            <div className="p-2.5 bg-white border border-[#EAE6DF] rounded-2xl space-y-2 shadow-xs">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 text-[9px] font-bold text-[#374151]">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#168571] shrink-0" />
+                  <span>펌웨어 업로드 가이드</span>
                 </div>
-                <span className="px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 text-[9px] font-black font-mono">
-                  필독 💡
-                </span>
+                <span className="text-[8px] text-[#A2A3A5] font-mono shrink-0">아두이노 IDE</span>
               </div>
-
-              {/* 3 Step List with High Contrast Colorful Badges */}
-              <div className="space-y-1.5 text-xs">
-                {/* Step 1 */}
-                <div className="flex items-center gap-2 p-1.5 rounded-xl bg-blue-50/80 border border-blue-200/80">
-                  <span className="w-5 h-5 rounded-lg bg-blue-600 text-white flex items-center justify-center text-[10px] font-black shrink-0">
-                    1
-                  </span>
-                  <span className="text-[11px] font-bold text-blue-900 truncate">
-                    💾 [파일 저장] 또는 [코드 복사]
-                  </span>
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1.5 px-1.5 py-1 rounded-xl bg-[#FAF9F6] border border-[#EAE6DF] min-h-7">
+                  <span className="w-4 h-4 rounded-md bg-[#168571] text-white flex items-center justify-center text-[10px] font-bold shrink-0">1</span>
+                  <span className="text-[9px] font-semibold text-[#374151] truncate">💾 [파일 저장] 또는 [코드 복사]</span>
                 </div>
-
-                {/* Step 2 */}
-                <div className="flex items-center gap-2 p-1.5 rounded-xl bg-purple-50/80 border border-purple-200/80">
-                  <span className="w-5 h-5 rounded-lg bg-purple-600 text-white flex items-center justify-center text-[10px] font-black shrink-0">
-                    2
-                  </span>
-                  <span className="text-[11px] font-bold text-purple-900 truncate">
-                    💻 아두이노 IDE에 붙여넣기
-                  </span>
+                <div className="flex items-center gap-1.5 px-1.5 py-1 rounded-xl bg-[#FAF9F6] border border-[#EAE6DF] min-h-7">
+                  <span className="w-4 h-4 rounded-md bg-[#4B5563] text-white flex items-center justify-center text-[10px] font-bold shrink-0">2</span>
+                  <span className="text-[9px] font-semibold text-[#374151] truncate">💻 아두이노 IDE에 붙여넣기</span>
                 </div>
-
-                {/* Step 3 (Highlight) */}
-                <div className="flex items-center gap-2 p-1.5 rounded-xl bg-emerald-50 border-2 border-emerald-300 shadow-2xs">
-                  <span className="w-5 h-5 rounded-lg bg-emerald-600 text-white flex items-center justify-center text-[10px] font-black shrink-0 animate-pulse">
-                    3
-                  </span>
-                  <span className="text-[11px] font-black text-emerald-900 truncate">
-                    ⚡ [ ➔ ] 업로드 버튼 누르기!
-                  </span>
+                <div className="flex items-center gap-1.5 px-1.5 py-1 rounded-xl bg-[#E8F4EF] border border-[#D3EAE2] min-h-7">
+                  <span className="w-4 h-4 rounded-md bg-[#168571] text-white flex items-center justify-center text-[10px] font-bold shrink-0">3</span>
+                  <span className="text-[9px] font-bold text-[#168571] truncate">⚡ [ ➔ ] 업로드 버튼 누르기!</span>
                 </div>
               </div>
             </div>

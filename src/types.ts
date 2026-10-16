@@ -60,7 +60,7 @@ export interface CourseContent {
   tags: string[];
   pinMap?: string;
   code: string;
-  contentType?: "code" | "circuit" | "doc" | "editor";
+  contentType?: "code" | "circuit" | "doc" | "editor" | "interactive";
   imageUrl?: string;
   updatedAt?: string;
 }

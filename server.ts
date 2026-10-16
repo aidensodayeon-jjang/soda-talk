@@ -93,7 +93,7 @@ interface CourseContent {
   tags: string[];
   pinMap?: string;
   code: string;
-  contentType?: "code" | "circuit" | "doc" | "editor";
+  contentType?: "code" | "circuit" | "doc" | "editor" | "interactive";
   imageUrl?: string;
   updatedAt?: string;
 }
@@ -114,18 +114,52 @@ function getFirmwareCode(filename: string, fallbackCode: string = ""): string {
 
 const DEFAULT_COURSE_CONTENTS: CourseContent[] = [
   {
-    id: "content-week-1-circuit-diagram",
-    week: 1,
+    id: "content-week-2-breadboard-secret",
+    week: 2,
+    title: "2-1. 브레드보드의 비밀 (인터랙티브 탐구)",
+    description: "브레드보드 내부 금속 핀의 연결 구조와 전원 레일(VCC/GND)의 원리를 3D 모션그래픽으로 탐구하고, 직접 2가지 회로 연결 미션을 해결해보는 인터랙티브 시뮬레이션입니다.",
+    filename: "breadboard_secret.html",
+    language: "json",
+    contentType: "interactive",
+    imageUrl: "/simulations/breadboard_secret.html",
+    tags: ["브레드보드", "시뮬레이션", "인터랙티브", "회로탐구", "전원레일", "GND"],
+    pinMap: "세로 5핀 내부 연결(A-E, F-J), 가로 전원 레일(+ VCC, - GND)",
+    updatedAt: new Date().toISOString(),
+    code: `<!-- [2주차 1차시] 브레드보드의 비밀 인터랙티브 시뮬레이션 -->
+<!-- 브레드보드 내부 연결 구조 & 2가지 미션 실습 모듈 -->
+<!-- 파일 경로: /simulations/breadboard_secret.html -->
+
+[핵심 학습 포인트]
+1. 세로 5개 구멍 (A~E, F~J)은 안쪽 금속 클립으로 하나로 연결되어 있습니다.
+2. 가운데 홈(분리대)을 기준으로 위/아래는 서로 단절되어 있습니다.
+3. 양쪽 끝의 긴 가로 레일(+, -)은 전원(VCC)과 접지(GND)를 여러 부품에 동시에 공급합니다.
+4. 부품의 다리를 같은 번호 라인에 꽂으면 별도의 전선 납땜 없이 바로 회로가 연결됩니다.`
+  },
+  {
+    id: "content-week-2-circuit-lab",
+    week: 2,
+    title: "2-2. SODA CIRCUIT LAB — LED를 다시 켜라!",
+    description: "직접 부품을 배치하고 배선과 Arduino 코드를 완성하는 가상 회로 실습입니다.",
+    filename: "index.html",
+    language: "json",
+    contentType: "interactive",
+    imageUrl: "/simulations/circuit-lab/index.html",
+    tags: ["LED", "회로 시뮬레이션", "ESP32-S3", "Arduino"],
+    code: "MISSION 01 — LED를 다시 켜라!\n부품 배치 → GPIO2 / GND 배선 → 코드 작성 → 실행 → 깜빡임 도전",
+  },
+  {
+    id: "content-week-2-circuit-diagram",
+    week: 2,
     title: "[배선도] 버튼 + LED + 스피커 회로 연결도",
     description: "ESP32-S3 SuperMini 보드와 MAX98357A I2S 앰프, 버튼(GPIO4), LED(GPIO2)의 핀 연결 배선도 및 하드웨어 회로 가이드입니다.",
     filename: "circuit_btn_led_speaker.png",
     language: "json",
     contentType: "circuit",
     imageUrl: "/images/circuit_btn_led_speaker.png",
-    tags: ["배선도", "회로도", "ESP32-S3", "MAX98357A", "하드웨어"],
+    tags: ["배선도", "회로도", "ESP32-S3", "MAX98357A", "하드웨어", "2주차"],
     pinMap: "버튼: GPIO4, LED: GPIO2, BCLK: GPIO5, LRC: GPIO3, DOUT: GPIO44, 전원: 5V, GND(공통)",
     updatedAt: new Date().toISOString(),
-    code: `// [1-2주차] 버튼 + LED + 스피커 하드웨어 연결 요약
+    code: `// [2주차] 버튼 + LED + 스피커 하드웨어 연결 요약
 // ===================================================
 // 부품          | ESP32-S3 핀  | 연결 대상
 // -------------+-------------+-----------------------
@@ -140,9 +174,9 @@ const DEFAULT_COURSE_CONTENTS: CourseContent[] = [
 // 동작: 버튼을 누르면(LOW) LED 켜짐 + 도-미-솔 사운드 출력`
   },
   {
-    id: "content-week-1-sound",
-    week: 1,
-    title: "1-1. 스피커테스트 도레미파솔라시도",
+    id: "content-week-2-sound",
+    week: 2,
+    title: "2-3. 스피커테스트 도레미파솔라시도",
     description: "I2S 디지털 앰프/스피커 핀(BCLK:5, LRC:3, DOUT:44)을 초기화하고 도레미파솔라시도 음계를 재생하는 소다봇 사운드 기초 실습입니다.",
     filename: "soda-1-1.ino",
     language: "arduino",
@@ -152,9 +186,9 @@ const DEFAULT_COURSE_CONTENTS: CourseContent[] = [
     code: getFirmwareCode("soda-1-1.ino")
   },
   {
-    id: "content-week-1-btn-led-sound",
-    week: 1,
-    title: "1-2. 버튼 + LED + 스피커",
+    id: "content-week-2-btn-led-sound",
+    week: 2,
+    title: "2-4. 버튼 + LED + 스피커",
     description: "버튼(D4)을 누르면 LED(D2)가 켜지며 MAX98357A I2S 앰프 스피커를 통해 도-미-솔 화음 사운드를 출력하는 인터랙션 예제입니다.",
     filename: "soda-1-2.ino",
     language: "arduino",
@@ -507,6 +541,7 @@ interface DBStructure {
     dailyGptQuota?: number;
   };
   chats: ChatRoom[];
+  circuitProgress?: Record<string, { updatedAt: string; data: any }>;
   courseContents?: CourseContent[];
   friendProfiles?: SodabotPublicProfile[];
   friendships?: Friendship[];
@@ -579,6 +614,10 @@ function readDB(): DBStructure {
         changed = true;
       }
     }
+  }
+  for (const item of db.courseContents || []) {
+    if (item.id === "content-week-2-sound" && item.title === "2-2. 스피커테스트 도레미파솔라시도") { item.title = "2-3. 스피커테스트 도레미파솔라시도"; changed = true; }
+    if (item.id === "content-week-2-btn-led-sound" && item.title === "2-3. 버튼 + LED + 스피커") { item.title = "2-4. 버튼 + LED + 스피커"; changed = true; }
   }
   if (!db.friendProfiles || !Array.isArray(db.friendProfiles)) {
     db.friendProfiles = [];
@@ -2071,6 +2110,27 @@ app.post("/api/admin/users/:id/apikey", requireAdmin, (req, res) => {
 // ----------------------------------------------------
 // Course Contents API (주차별 컨텐츠 관리)
 // ----------------------------------------------------
+app.get("/api/circuit-progress", (req, res) => {
+  const session = getSession((req.headers.authorization || "").replace(/^Bearer /, ""));
+  if (!session) return res.status(401).json({ error: "로그인이 필요합니다." });
+  res.json({ userId: session.id, progress: readDB().circuitProgress?.[session.id] || null });
+});
+app.put("/api/circuit-progress", (req, res) => {
+  const session = getSession((req.headers.authorization || "").replace(/^Bearer /, ""));
+  if (!session) return res.status(401).json({ error: "로그인이 필요합니다." });
+  const data = req.body;
+  if (data?.version !== 1 || !Array.isArray(data.wires) || data.wires.length > 500 || typeof data.code !== "string" || data.code.length > 20000) return res.status(400).json({ error: "잘못된 회로 데이터입니다." });
+  const db = readDB();
+  db.circuitProgress ||= {};
+  db.circuitProgress[session.id] = { updatedAt: new Date().toISOString(), data };
+  writeDB(db);
+  res.json({ success: true });
+});
+app.get("/api/admin/circuit-progress", requireAdmin, (req, res) => {
+  const db = readDB();
+  res.json({ results: Object.entries(db.circuitProgress || {}).map(([userId, result]) => ({ userId, displayName: db.users.find(u => u.id === userId)?.displayName || userId, ...result })) });
+});
+
 app.get("/api/course-contents", (req, res) => {
   const db = readDB();
   const rawContents = db.courseContents && db.courseContents.length > 0 ? db.courseContents : DEFAULT_COURSE_CONTENTS;
@@ -2082,7 +2142,10 @@ app.get("/api/course-contents", (req, res) => {
       return { ...c, code: liveCode };
     }
     return c;
-  }).sort((a, b) => a.week - b.week);
+  }).sort((a, b) => {
+    const rank = (id: string) => id === "content-week-2-breadboard-secret" ? -2 : id === "content-week-2-circuit-lab" ? -1 : 0;
+    return a.week - b.week || rank(a.id) - rank(b.id);
+  });
 
   res.json({ contents });
 });

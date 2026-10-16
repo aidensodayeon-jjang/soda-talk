@@ -40,7 +40,7 @@ interface CodeItem {
   tags: string[];
   pinMap?: string;
   code: string;
-  contentType?: "code" | "circuit" | "doc" | "editor";
+  contentType?: "code" | "circuit" | "doc" | "editor" | "interactive";
   imageUrl?: string;
   updatedAt?: string;
 }
@@ -53,18 +53,52 @@ interface DevCodeHubProps {
 
 const SAMPLE_CODES: CodeItem[] = [
   {
-    id: "content-week-1-circuit-diagram",
-    week: 1,
+    id: "content-week-2-breadboard-secret",
+    week: 2,
+    title: "2-1. 브레드보드의 비밀 (인터랙티브 탐구)",
+    description: "브레드보드 내부 금속 핀의 연결 구조와 전원 레일(VCC/GND)의 원리를 3D 모션그래픽으로 탐구하고, 직접 2가지 회로 연결 미션을 해결해보는 인터랙티브 시뮬레이션입니다.",
+    filename: "breadboard_secret.html",
+    language: "json",
+    contentType: "interactive",
+    imageUrl: "/simulations/breadboard_secret.html",
+    tags: ["브레드보드", "시뮬레이션", "인터랙티브", "회로탐구", "전원레일", "GND"],
+    pinMap: "세로 5핀 내부 연결(A-E, F-J), 가로 전원 레일(+ VCC, - GND)",
+    updatedAt: new Date().toISOString(),
+    code: `<!-- [2주차 1차시] 브레드보드의 비밀 인터랙티브 시뮬레이션 -->
+<!-- 브레드보드 내부 연결 구조 & 2가지 미션 실습 모듈 -->
+<!-- 파일 경로: /simulations/breadboard_secret.html -->
+
+[핵심 학습 포인트]
+1. 세로 5개 구멍 (A~E, F~J)은 안쪽 금속 클립으로 하나로 연결되어 있습니다.
+2. 가운데 홈(분리대)을 기준으로 위/아래는 서로 단절되어 있습니다.
+3. 양쪽 끝의 긴 가로 레일(+, -)은 전원(VCC)과 접지(GND)를 여러 부품에 동시에 공급합니다.
+4. 부품의 다리를 같은 번호 라인에 꽂으면 별도의 전선 납땜 없이 바로 회로가 연결됩니다.`
+  },
+  {
+    id: "content-week-2-circuit-lab",
+    week: 2,
+    title: "2-2. SODA CIRCUIT LAB — LED를 다시 켜라!",
+    description: "직접 부품을 배치하고 배선과 Arduino 코드를 완성하는 가상 회로 실습입니다.",
+    filename: "index.html",
+    language: "json",
+    contentType: "interactive",
+    imageUrl: "/simulations/circuit-lab/index.html",
+    tags: ["LED", "회로 시뮬레이션", "ESP32-S3", "Arduino"],
+    code: "MISSION 01 — LED를 다시 켜라!\n부품 배치 → GPIO2 / GND 배선 → 코드 작성 → 실행 → 깜빡임 도전",
+  },
+  {
+    id: "content-week-2-circuit-diagram",
+    week: 2,
     title: "[배선도] 버튼 + LED + 스피커 회로 연결도",
     description: "ESP32-S3 SuperMini 보드와 MAX98357A I2S 앰프, 버튼(GPIO4), LED(GPIO2)의 핀 연결 배선도 및 하드웨어 회로 가이드입니다.",
     filename: "circuit_btn_led_speaker.png",
     language: "json",
     contentType: "circuit",
     imageUrl: "/images/circuit_btn_led_speaker.png",
-    tags: ["배선도", "회로도", "ESP32-S3", "MAX98357A", "하드웨어"],
+    tags: ["배선도", "회로도", "ESP32-S3", "MAX98357A", "하드웨어", "2주차"],
     pinMap: "버튼: GPIO4, LED: GPIO2, BCLK: GPIO5, LRC: GPIO3, DOUT: GPIO44, 전원: 5V, GND(공통)",
     updatedAt: new Date().toISOString(),
-    code: `// [1-2주차] 버튼 + LED + 스피커 하드웨어 연결 요약
+    code: `// [2주차] 버튼 + LED + 스피커 하드웨어 연결 요약
 // ===================================================
 // 부품          | ESP32-S3 핀  | 연결 대상
 // -------------+-------------+-----------------------
@@ -79,9 +113,9 @@ const SAMPLE_CODES: CodeItem[] = [
 // 동작: 버튼을 누르면(LOW) LED 켜짐 + 도-미-솔 사운드 출력`
   },
   {
-    id: "content-week-1-sound",
-    week: 1,
-    title: "1-1. 스피커테스트 도레미파솔라시도",
+    id: "content-week-2-sound",
+    week: 2,
+    title: "2-3. 스피커테스트 도레미파솔라시도",
     description: "I2S 디지털 앰프/스피커 핀(BCLK:5, LRC:3, DOUT:44)을 초기화하고 도레미파솔라시도 음계를 재생하는 소다봇 사운드 기초 실습입니다.",
     filename: "soda-1-1.ino",
     language: "arduino",
@@ -212,9 +246,9 @@ void loop() {
 `
   },
   {
-    id: "content-week-1-btn-led-sound",
-    week: 1,
-    title: "1-2. 버튼 + LED + 스피커",
+    id: "content-week-2-btn-led-sound",
+    week: 2,
+    title: "2-4. 버튼 + LED + 스피커",
     description: "버튼(D4)을 누르면 LED(D2)가 켜지며 MAX98357A I2S 앰프 스피커를 통해 도-미-솔 화음 사운드를 출력하는 인터랙션 예제입니다.",
     filename: "soda-1-2.ino",
     language: "arduino",
@@ -1080,6 +1114,19 @@ export default function DevCodeHubScreen({ className, selectedCodeId, onSelectCo
             </div>
 
             <div className="flex items-center gap-2.5">
+              {activeItem.contentType === "interactive" && activeItem.imageUrl && (
+                <a
+                  href={activeItem.imageUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3.5 py-2 bg-emerald-600/90 hover:bg-emerald-600 active:scale-98 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
+                  title="새 창에서 전체화면으로 열기"
+                >
+                  <ExternalLink className="w-3.5 h-3.5 text-white" />
+                  <span>새 창으로 열기</span>
+                </a>
+              )}
+
               {/* Secondary Download Button (Reduced size & subtle style) */}
               <button
                 id="download-code-btn-compact"
@@ -1087,7 +1134,7 @@ export default function DevCodeHubScreen({ className, selectedCodeId, onSelectCo
                   if (activeItem.imageUrl) {
                     const link = document.createElement("a");
                     link.href = activeItem.imageUrl;
-                    link.download = activeItem.filename || "circuit_diagram.png";
+                    link.download = activeItem.filename || (activeItem.contentType === "circuit" ? "circuit_diagram.png" : "interactive.html");
                     link.target = "_blank";
                     link.click();
                   } else {
@@ -1098,7 +1145,7 @@ export default function DevCodeHubScreen({ className, selectedCodeId, onSelectCo
                 title="파일로 다운로드 저장"
               >
                 <Download className="w-3.5 h-3.5 text-[#89b4fa]" />
-                <span>{activeItem.contentType === "circuit" ? "이미지 저장" : "파일 저장"}</span>
+                <span>{activeItem.contentType === "circuit" ? "이미지 저장" : activeItem.contentType === "interactive" ? "HTML 저장" : "파일 저장"}</span>
               </button>
 
               {/* Primary Highlighted Copy Button (Prominent & High-Impact) */}
@@ -1110,17 +1157,17 @@ export default function DevCodeHubScreen({ className, selectedCodeId, onSelectCo
                     ? "bg-emerald-600 hover:bg-emerald-700 text-white ring-2 ring-emerald-400 shadow-emerald-900/40"
                     : "bg-gradient-to-r from-indigo-500 via-indigo-600 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white shadow-indigo-500/25 ring-1 ring-white/20 hover:shadow-indigo-500/40"
                 }`}
-                title={activeItem.contentType === "circuit" ? "핀맵 및 연결 설명 클립보드에 복사" : "아두이노 IDE에 바로 붙여넣을 수 있도록 전체 코드 복사"}
+                title={activeItem.contentType === "circuit" ? "핀맵 및 연결 설명 클립보드에 복사" : activeItem.contentType === "interactive" ? "학습 내용 및 요약 클립보드에 복사" : "아두이노 IDE에 바로 붙여넣을 수 있도록 전체 코드 복사"}
               >
                 {copiedId === activeItem.id ? (
                   <>
                     <Check className="w-4 h-4 text-white animate-scale-in" />
-                    <span>복사 완료! (아두이노에 붙여넣기)</span>
+                    <span>복사 완료!</span>
                   </>
                 ) : (
                   <>
                     <Copy className="w-4 h-4 text-white" />
-                    <span>{activeItem.contentType === "circuit" ? "📋 핀맵 전체 복사하기" : "📋 코드 전체 복사하기"}</span>
+                    <span>{activeItem.contentType === "circuit" ? "📋 핀맵 전체 복사하기" : activeItem.contentType === "interactive" ? "📋 학습 요약 복사하기" : "📋 코드 전체 복사하기"}</span>
                   </>
                 )}
               </button>
@@ -1141,8 +1188,17 @@ export default function DevCodeHubScreen({ className, selectedCodeId, onSelectCo
             )}
           </div>
 
-          {/* Content Body: Circuit Diagram Image View OR Code View */}
-          {activeItem.contentType === "circuit" ? (
+          {/* Content Body: Interactive Simulator View OR Circuit Diagram Image View OR Code View */}
+          {activeItem.contentType === "interactive" ? (
+            <div className="flex-1 flex flex-col bg-[#11111b] overflow-hidden relative">
+              <iframe
+                src={activeItem.imageUrl}
+                title={activeItem.title}
+                className="w-full h-full border-0 flex-1"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope"
+              />
+            </div>
+          ) : activeItem.contentType === "circuit" ? (
             <div className="flex-1 overflow-auto p-6 space-y-6 bg-[#181825] scrollbar-thin">
               {/* Circuit Image Card with Zoom/Click */}
               <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-xl border border-[#313244] max-w-5xl mx-auto space-y-4">
