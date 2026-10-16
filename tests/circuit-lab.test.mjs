@@ -1,0 +1,18 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {validate,group,compile,createRuntime} from '../public/simulations/circuit-lab/engine.js';
+const circuit=()=>({board:{row:1},led:{a:'A20',b:'A21'},resistor:{a:'A15',b:'A20'},wires:[{a:'pin:2',b:'B15'},{a:'B21',b:'pin:GND'}]});
+test('정상 회로와 실제 GPIO HIGH 점등 조건',()=>{const s=circuit();assert.equal(validate(s).ok,true);const r=createRuntime(compile('void setup(){pinMode(2, OUTPUT);digitalWrite(2,HIGH);} void loop(){}'));assert.equal(validate(s).ok&&r.tick(0)[2],true);});
+test('단선이면 HIGH여도 소등',()=>{const s=circuit();s.wires.pop();assert.equal(validate(s).ok,false);});
+test('LED 역극성',()=>{const s=circuit();[s.led.a,s.led.b]=[s.led.b,s.led.a];assert.equal(validate(s).kind,'polarity');});
+test('저항 누락 경고',()=>{const s=circuit();s.resistor=null;s.wires[0].b='A20';assert.equal(validate(s).kind,'resistor');});
+test('다른 GPIO 연결',()=>{const s=circuit();s.wires[0].a='pin:3';assert.equal(validate(s).kind,'gpio');});
+test('LOW와 delay 깜빡임 타이밍',()=>{const r=createRuntime(compile('const int LED=2; void setup(){pinMode(LED,OUTPUT);} void loop(){digitalWrite(LED,HIGH);delay(500);digitalWrite(LED,LOW);delay(500);}'));assert.equal(r.tick(0)[2],true);assert.equal(r.tick(499)[2],true);assert.equal(r.tick(500)[2],false);r.tick(1000);assert.equal(r.tick(1001)[2],true);});
+test('같은 번호 A~E 연결, 다른 번호와 중앙 홈 분리',()=>{assert.equal(group('A3'),group('E3'));assert.notEqual(group('E3'),group('F3'));assert.notEqual(group('A3'),group('A4'));});
+test('전원 레일 분리 설정',()=>{assert.equal(group('P1'),group('P30'));assert.notEqual(group('P1',true),group('P30',true));});
+test('저장 복원 후 회로 판정 보존',()=>{assert.deepEqual(validate(JSON.parse(JSON.stringify(circuit()))),validate(circuit()));});
+test('저항을 LED 뒤에 배치해도 정상',()=>{const s=circuit();s.wires=[{a:'pin:2',b:'A20'},{a:'A15',b:'pin:GND'}];s.led={a:'A20',b:'A21'};s.resistor={a:'A21',b:'A15'};assert.equal(validate(s).ok,true);});
+test('직접 GPIO-GND 단락 차단',()=>{const s=circuit();s.wires.push({a:'pin:2',b:'pin:GND'});assert.equal(validate(s).kind,'short');});
+test('미지원 문법과 OUTPUT 누락 거부',()=>{assert.throws(()=>compile('void setup(){analogWrite(2, 1);} void loop(){}'));const r=createRuntime(compile('void setup(){digitalWrite(2,HIGH);} void loop(){}'));assert.throws(()=>r.tick(0));});
+test('코드 GPIO와 회로 GPIO가 다르면 소등',()=>{const r=createRuntime(compile('void setup(){pinMode(3,OUTPUT);digitalWrite(3,HIGH);} void loop(){}'));assert.equal(Boolean(validate(circuit()).ok&&r.tick(0)[2]),false);});
+test('전원에서 직접 LED를 제어하면 경고',()=>{const s=circuit();s.wires[0].a='pin:5V';assert.equal(validate(s).kind,'power');});

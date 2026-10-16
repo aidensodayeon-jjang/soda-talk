@@ -1,0 +1,11 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {compileTones,soundWiring} from '../public/simulations/sound-lab/sound-engine.js';
+const template=readFileSync(new URL('../firmware/soda-1-1.ino',import.meta.url),'utf8');
+test('기본 펌웨어의 8개 음계와 편집한 음표 분석',()=>{assert.equal(compileTones(template,template).length,8);assert.equal(compileTones(template.replace('262, 200','300, 400'),template)[0].frequency,300);});
+test('미지원 C++ 변경과 잘못된 주파수 거부',()=>{assert.throws(()=>compileTones(template.replace('44100','48000'),template));assert.throws(()=>compileTones(template.replace('262, 200','0, 200'),template));});
+const circuit=()=>({board:{row:22},amp:{},speaker:{},wires:[['amp:VDD','pin:5V'],['amp:GND','pin:GND'],['amp:BCLK','pin:5'],['amp:LRC','pin:3'],['amp:DIN','pin:44'],['amp:OUTP','speaker:plus'],['amp:OUTN','speaker:minus']].map(([a,b])=>({a,b}))});
+test('모든 I2S/전원/스피커 배선 필요',()=>{assert.equal(soundWiring(circuit()).ok,true);const s=circuit();s.wires.pop();assert.equal(soundWiring(s).ok,false);});
+test('단락이면 재생 금지',()=>{const s=circuit();s.wires.push({a:'pin:5V',b:'pin:GND'});assert.match(soundWiring(s).message,/단락/);});
+test('버튼 다리가 꽂힌 홀을 통해 GPIO4와 GND 연결 판정',async()=>{const {buttonStatus}=await import('../public/simulations/sound-lab/sound-engine.js');const s={board:{row:22},button:{x:429,y:155},wires:[{a:'D25',b:'D14'},{a:'D16',b:'N16'}]};assert.match(buttonStatus(s).message,/파란 레일/);s.wires.push({a:'N1',b:'pin:GND'});assert.equal(buttonStatus(s).ok,true);});
