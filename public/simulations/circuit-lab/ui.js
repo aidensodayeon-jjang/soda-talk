@@ -1,6 +1,6 @@
 import {topPins,bottomPins,group,validate,compile,createRuntime} from './engine.js';
 const $=id=>document.getElementById(id),svg=$('workspace');
-const initial=()=>({version:1,started:false,breadboard:true,board:{row:22},led:null,resistor:null,wires:[],split:false,usb:true,code:'void setup() {\n  // GPIO2를 출력으로 설정하고 HIGH를 보내세요.\n}\n\nvoid loop() {\n\n}',hints:0,errors:0,circuitSuccess:false,simulationSuccess:false,completedAt:null});
+const initial=()=>({version:1,started:false,breadboard:true,board:{row:22},led:null,resistor:null,wires:[],split:false,usb:true,code:"void setup() {\n  // put your setup code here, to run once:\n  pinMode(2,OUTPUT);\n\n}\n\nvoid loop() {\n  // put your main code here, to run repeatedly:\n  digitalWrite(2,HIGH);\n  delay(500);\n  digitalWrite(2,LOW);\n  delay(500);\n\n}",hints:0,errors:0,circuitSuccess:false,simulationSuccess:false,completedAt:null});
 const session=localStorage.getItem('authSessionId')||'guest';const key='soda-circuit-lab:'+session;let s=initial();try{const saved=JSON.parse(localStorage.getItem(key));if(saved?.version===1)s={...s,...saved};}catch{}s.breadboard=true;s.board={row:22};s.usb=true;s.split=false;let tool='',selected='',pending='',hover='',runtime=null,timer=null,lit=false,zoom=1,pan={x:0,y:0},drag=null,wireEdit=null;
 function save(){try{localStorage.setItem(key,JSON.stringify(s));$('saved').textContent='이 기기에 저장됨';}catch{$('saved').textContent='저장 실패 · 결과를 내려받으세요';}if(session!=='guest')fetch('/api/circuit-progress',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+session},body:JSON.stringify(s)}).then(r=>{if(r.ok)$('saved').textContent='학습 결과 저장됨';}).catch(()=>{});}
 function xy(id){const m=/^([A-JPN])(\d+)$/.exec(id);if(m){const row=Number(m[2]);const ys={P:55,N:75,A:115,B:135,C:155,D:175,E:195,F:265,G:285,H:305,I:325,J:345};return [65+(row-1)*26,ys[m[1]]];}if(id.startsWith('pin:')&&s.board){let i=topPins.indexOf(id.slice(4));return xy((i>=0?'E':'F')+(s.board.row+(i>=0?i:bottomPins.indexOf(id.slice(4)))));}return [0,0];}
@@ -47,9 +47,9 @@ const activeWire=selected.startsWith('wire:')?s.wires[Number(selected.slice(5))]
 $('wireList').innerHTML=s.wires.length?s.wires.map((w,i)=>`<button data-select-wire="${i}" class="${selected==='wire:'+i?'active':''}"><span style="color:${esc(w.color)}">●</span> 선 ${i+1} · ${esc(w.a)} → ${esc(w.b)}</button>`).join(''):'<span>연결한 점퍼선이 여기에 표시돼요.</span>';
 $('wireSelection').hidden=!activeWire;
 if(activeWire)$('wireName').textContent=`${activeWire.a} → ${activeWire.b}`;
-$('wireGuide').textContent=['led','resistor'].includes(tool)?'놓을 구멍을 클릭하세요.':wireEdit?'새 구멍이나 핀을 클릭하면 선택한 끝점이 이동해요.':tool==='lead'?'① LED/저항의 다리 클릭 → ② 새 구멍 클릭':pending?`① ${pending} 선택됨 → ② 도착 구멍이나 핀을 클릭하세요`:'① 시작 핀 클릭 → ② 도착 구멍 클릭 · 선을 클릭하면 수정';
+$('wireGuide').textContent=tool==='resistor'?(pending?'② 저항의 두 번째 다리를 꽂을 구멍을 클릭하세요.':'① 저항의 첫 번째 다리를 꽂을 구멍을 클릭하세요.'):tool==='led'?'놓을 구멍을 클릭하세요.':wireEdit?'새 구멍이나 핀을 클릭하면 선택한 끝점이 이동해요.':tool==='lead'?'① LED/저항의 다리 클릭 → ② 새 구멍 클릭':pending?`① ${pending} 선택됨 → ② 도착 구멍이나 핀을 클릭하세요`:tool==='wire'?'① 시작 핀 클릭 → ② 도착 구멍 클릭':'부품 몸체·다리를 드래그해서 이동 · 배선은 점퍼선 버튼 선택';
 $('cancelWire').disabled=!pending&&!wireEdit&&tool!=='lead';
-document.querySelectorAll('[data-tool]').forEach(b=>b.classList.toggle('active',b.dataset.tool===tool));const checks=[s.started,s.breadboard&&s.board&&s.led&&s.resistor,s.board,s.circuitSuccess,s.simulationSuccess,s.completedAt];$('steps').innerHTML=['미션 시작','LED · 저항 준비','ESP32 · 브레드보드 준비','LED 회로 연결','코드 작성 · 실행','성공 · 보너스 도전'].map((v,i)=>`<li class="${checks[i]?'done':''}">${checks[i]?'✓ ':''}${v}</li>`).join('');$('tool').textContent=tool?'선택: '+({led:'LED',resistor:'저항',wire:'점퍼선'}[tool]||tool)+' · 구멍을 클릭하세요':pending?'다음 연결점을 선택하세요':'점퍼선 연결: 두 단자를 클릭하세요';}
+document.querySelectorAll('[data-tool]').forEach(b=>b.classList.toggle('active',b.dataset.tool===tool));$('tool').textContent=tool?'선택: '+({led:'LED',resistor:'저항',wire:'점퍼선'}[tool]||tool)+' · 구멍을 클릭하세요':pending?'다음 연결점을 선택하세요':tool==='wire'?'점퍼선: 두 단자를 클릭하세요':'부품을 드래그해서 배치하세요';}
 const icons={
  led:`<svg viewBox="0 0 48 40" aria-hidden="true"><path d="M19 25v12m10-12v9" stroke="#8b95a5" stroke-width="3"/><path d="M14 24V16a10 10 0 0 1 20 0v8z" fill="#ff5a63" stroke="#dc3647" stroke-width="1.5"/><path d="M18 16a6 6 0 0 1 4-6" fill="none" stroke="#ffb7bb" stroke-width="2.5" stroke-linecap="round"/><path d="M12 25h24" stroke="#dc3647" stroke-width="3" stroke-linecap="round"/></svg>`,
  resistor:`<svg viewBox="0 0 48 40" aria-hidden="true"><path d="M2 20h44" stroke="#8b95a5" stroke-width="2.5"/><rect x="10" y="13" width="28" height="14" rx="5" fill="#e5cca0" stroke="#c6a979"/><path d="M16 14v12" stroke="#b34438" stroke-width="3"/><path d="M22 14v12" stroke="#b34438" stroke-width="3"/><path d="M28 14v12" stroke="#785438" stroke-width="3"/><path d="M34 14v12" stroke="#c59b37" stroke-width="2"/></svg>`,
@@ -61,33 +61,63 @@ $('library').onclick=e=>{const button=e.target.closest('[data-tool]');if(!button
 $('library').ondragstart=e=>{const button=e.target.closest('[data-tool]');if(!button)return;tool=button.dataset.tool;e.dataTransfer.setData('text/plain',tool);};
 function nearest(x,y){let best='',distance=Infinity;for(const c of 'ABCDEFGHIJ')for(let r=1;r<=30;r++){const [u,v]=xy(c+r),d=Math.hypot(x-u,y-v);if(d<distance){distance=d;best=c+r;}}return best;}
 function position(e){const pt=svg.createSVGPoint();pt.x=e.clientX;pt.y=e.clientY;const p=pt.matrixTransform(svg.getScreenCTM().inverse());return {x:(p.x-pan.x)/zoom,y:(p.y-pan.y)/zoom};}
-function place(id){if(!s.breadboard){$('result').textContent='브레드보드를 먼저 준비하세요.';return;}if(tool==='led'){s.led={a:id,b:id[0]+Math.min(30,Number(id.slice(1))+1),color:'#ff4545'};tool='';}else if(tool==='resistor'){s.resistor={a:id,b:id[0]+Math.min(30,Number(id.slice(1))+3),ohms:220};tool='';}changed();}
+function place(id){if(!/^[A-JPN]\d+$/.test(id))return;if(!s.breadboard){$('log').textContent='브레드보드를 먼저 준비하세요.';return;}if(tool==='led'){s.led={a:id,b:id[0]+Math.min(30,Number(id.slice(1))+1),color:'#ff4545'};tool='';}else if(tool==='resistor'){if(!pending){pending=id;render();return;}if(pending===id){$('log').textContent='두 번째 다리는 다른 구멍을 선택하세요.';return;}s.resistor={a:pending,b:id,ohms:220};pending='';selected='resistor';tool='';}changed();}
 function resolve(id){const [p,n]=id.split(':');return ['led','resistor'].includes(p)?s[p][n]:id;}
 function changed(){s.circuitSuccess=validate(s).ok;save();render();}
 svg.onclick=e=>{
  const part=e.target.closest('[data-part]')?.dataset.part,wire=e.target.closest('[data-wire]')?.dataset.wire,id=e.target.dataset.node;
+ if(['led','resistor'].includes(tool)){const point=position(e);place(id?resolve(id):nearest(point.x,point.y));return;}
  if(wire!==undefined){selected='wire:'+wire;pending='';wireEdit=null;tool='';render();return;}
  if(part){selected=part;pending='';render();return;}
  if(!id)return;
- if(wireEdit){const w=s.wires[wireEdit.index],target=resolve(id);if(target===w[wireEdit.end==='a'?'b':'a']){$('result').textContent='양 끝점은 서로 다른 연결점을 선택하세요.';return;}w[wireEdit.end]=target;wireEdit=null;changed();return;}
- if(tool==='lead'){if(!pending){if(!/^(led|resistor):[ab]$/.test(id)){$('result').textContent='LED 또는 저항의 주황색/회색 다리를 먼저 선택하세요.';return;}pending=id;render();return;}if(!/^[A-J]\d+$/.test(id))return;const [part,terminal]=pending.split(':');s[part][terminal]=id;pending='';tool='';changed();return;}
+ if(wireEdit){const w=s.wires[wireEdit.index],target=resolve(id);if(target===w[wireEdit.end==='a'?'b':'a']){$('log').textContent='양 끝점은 서로 다른 연결점을 선택하세요.';return;}w[wireEdit.end]=target;wireEdit=null;changed();return;}
+ if(tool==='lead'){if(!pending){if(!/^(led|resistor):[ab]$/.test(id)){$('log').textContent='LED 또는 저항의 주황색/회색 다리를 먼저 선택하세요.';return;}pending=id;render();return;}if(!/^[A-J]\d+$/.test(id))return;const [part,terminal]=pending.split(':');s[part][terminal]=id;pending='';tool='';changed();return;}
  if(tool&&tool!=='wire'){place(resolve(id));return;}
- if(pending){if(resolve(pending)===resolve(id)){pending='';render();return;}const a=resolve(pending),b=resolve(id);if(s.wires.some(w=>(w.a===a&&w.b===b)||(w.a===b&&w.b===a))){$('result').textContent='이미 연결된 두 점이에요.';pending='';render();return;}s.wires.push({a,b,color:'#6366f1'});selected='wire:'+(s.wires.length-1);pending='';changed();}else{selected='';pending=id;render();}
+ if(tool!=='wire'){selected=/^(led|resistor):/.test(id)?id.split(':')[0]:'';pending='';render();return;}
+ if(pending){if(resolve(pending)===resolve(id)){pending='';render();return;}const a=resolve(pending),b=resolve(id);if(s.wires.some(w=>(w.a===a&&w.b===b)||(w.a===b&&w.b===a))){$('log').textContent='이미 연결된 두 점이에요.';pending='';render();return;}s.wires.push({a,b,color:'#6366f1'});selected='wire:'+(s.wires.length-1);pending='';changed();}else{selected='';pending=id;render();}
 };
 
-svg.onpointerdown=e=>{if(e.target.closest('[data-part]')){selected=e.target.closest('[data-part]').dataset.part;drag={part:selected,start:position(e)};}else if(e.target===svg)drag={part:'pan',start:position(e),original:{...pan}};if(drag)svg.setPointerCapture(e.pointerId);};svg.onpointermove=e=>{if(!drag)return;const p=position(e);if(drag.part==='pan'){pan.x+=(p.x-drag.start.x)*zoom;pan.y+=(p.y-drag.start.y)*zoom;}else if(Math.hypot(p.x-drag.start.x,p.y-drag.start.y)>8){drag.moved=true;const id=nearest(p.x,p.y);{const part=s[drag.part];const delta=Number(id.slice(1))-Number(part.a.slice(1));const next=Number(part.b.slice(1))+delta;if(next>=1&&next<=30){part.a=id;part.b=part.b[0]+next;}}}render();};svg.onpointerup=()=>{if(drag?.moved)changed();drag=null;};svg.ondragover=e=>e.preventDefault();svg.ondrop=e=>{e.preventDefault();if(tool==='breadboard'){s.breadboard=true;tool='';changed();}else {const p=position(e);place(nearest(p.x,p.y));}};
+let suppressClick=false;
+svg.addEventListener('click',e=>{if(suppressClick){e.stopImmediatePropagation();suppressClick=false;}},true);
+svg.onpointerdown=e=>{
+ if(['led','resistor'].includes(tool)||tool==='wire'||wireEdit)return;
+ const node=e.target.dataset.node,terminal=/^(led|resistor):([ab])$/.exec(node||''),part=terminal?.[1]||e.target.closest('[data-part]')?.dataset.part;
+ if(part){selected=part;pending='';drag={part,terminal:terminal?.[2],start:position(e),original:{...s[part]}};}
+ else if(e.target===svg)drag={part:'pan',start:position(e)};
+ if(drag)svg.setPointerCapture(e.pointerId);
+};
+svg.onpointermove=e=>{
+ if(!drag)return;
+ const p=position(e);
+ if(Math.hypot(p.x-drag.start.x,p.y-drag.start.y)<4&&!drag.moved)return;
+ drag.moved=true;
+ if(drag.part==='pan'){pan.x+=(p.x-drag.start.x)*zoom;pan.y+=(p.y-drag.start.y)*zoom;}
+ else if(drag.terminal){const target=nearest(p.x,p.y),other=drag.terminal==='a'?'b':'a';if(target!==s[drag.part][other])s[drag.part][drag.terminal]=target;}
+ else {
+ const original=drag.original,[ax,ay]=xy(original.a),target=nearest(ax+p.x-drag.start.x,ay+p.y-drag.start.y);
+ const columns='ABCDEFGHIJ',rowDelta=Number(target.slice(1))-Number(original.a.slice(1)),colDelta=columns.indexOf(target[0])-columns.indexOf(original.a[0]);
+ const newRow=Number(original.b.slice(1))+rowDelta,newCol=columns.indexOf(original.b[0])+colDelta;
+ if(newRow>=1&&newRow<=30&&newCol>=0&&newCol<10){s[drag.part].a=target;s[drag.part].b=columns[newCol]+newRow;}
+ }
+ render();
+};
+svg.onpointerup=()=>{if(drag?.moved){suppressClick=true;changed();}drag=null;};
+svg.onpointercancel=()=>{if(drag?.original)s[drag.part]=drag.original;drag=null;render();};
+svg.ondragover=e=>e.preventDefault();
+svg.ondrop=e=>{e.preventDefault();const p=position(e),id=nearest(p.x,p.y);if(tool==='resistor'){const row=Number(id.slice(1)),end=row<=27?row+3:row-3;s.resistor={a:id,b:id[0]+end,ohms:220};tool='';pending='';selected='resistor';changed();}else place(id);};
+
 function deleteSelected(){if(selected.startsWith('wire:'))s.wires.splice(Number(selected.slice(5)),1);else if(['led','resistor'].includes(selected))s[selected]=null;selected='';pending='';wireEdit=null;changed();}
 $('minus').onclick=()=>{zoom=Math.max(.5,zoom-.15);render();};$('plus').onclick=()=>{zoom=Math.min(2.5,zoom+.15);render();};$('home').onclick=()=>{zoom=1;pan={x:0,y:0};render();};
 function highlight(){const code=esc($('code').value);$('highlight').innerHTML=code.replace(/\b(void|setup|loop|pinMode|digitalWrite|delay|OUTPUT|HIGH|LOW|int|const)\b/g,'<span class="kw">$1</span>').replace(/\b(\d+)\b/g,'<span class="num">$1</span>');}
 $('code').value=s.code;$('code').oninput=()=>{s.code=$('code').value;highlight();save();};$('code').onscroll=()=>{$('highlight').scrollTop=$('code').scrollTop;$('highlight').scrollLeft=$('code').scrollLeft;};
-function stop(){clearInterval(timer);timer=null;runtime=null;lit=false;render();}$('stop').onclick=()=>{stop();$('log').textContent='시뮬레이션 정지';};$('run').onclick=()=>{stop();try{runtime=createRuntime(compile(s.code));$('log').textContent='시뮬레이션 실행 중';timer=setInterval(()=>{try{const pins=runtime.tick(performance.now()),result=validate(s);const previousLit=lit;lit=Boolean(s.usb&&result.ok&&pins[2]);$('log').textContent=`GPIO2: ${pins[2]?'HIGH':'LOW'} · LED: ${lit?'ON':'OFF'}\n${s.usb?result.message:'USB 전원을 연결하세요.'}`;if(lit&&!s.simulationSuccess){s.circuitSuccess=true;s.simulationSuccess=true;s.completedAt=new Date().toISOString();$('result').textContent='성공! 코딩으로 실제 전기회로를 제어했어요.';save();}if(previousLit!==lit)render();}catch(err){stop();s.errors++;$('log').textContent=err.message;save();}},25);}catch(err){s.errors++;$('log').textContent='코드 오류: '+err.message;save();}};
-$('check').onclick=()=>{const result=validate(s);s.circuitSuccess=result.ok;if(!result.ok)s.errors++;$('result').textContent=result.message;changed();};$('start').onclick=()=>{s.started=true;save();render();};const hints=['같은 번호 A~E와 F~J는 각각 연결돼요. 중앙 홈은 전기가 통하지 않아요.','LED의 긴 다리(+)와 짧은 다리(−), GPIO2와 GND 위치를 확인하세요. 같은 번호의 구멍이 연결되는지 확인하세요.','GPIO2 → 저항 → LED(+) → LED(−) → GND. 코드에는 pinMode(2, OUTPUT);와 digitalWrite(2, HIGH);가 필요해요. 깜빡임은 loop()에서 HIGH, delay, LOW, delay 순서로 작성해요.'];$('hint').onclick=()=>{$('hintText').textContent=hints[Math.min(s.hints,2)];s.hints++;save();};$('reset').onclick=()=>{if(!confirm('회로와 코드를 초기화할까요?'))return;stop();s=initial();$('code').value=s.code;pending='';selected='';highlight();changed();};$('export').onclick=()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(s,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='soda-circuit-mission01.json';a.click();URL.revokeObjectURL(url);};$('import').onchange=async e=>{try{const data=JSON.parse(await e.target.files[0].text());if(data.version!==1||!Array.isArray(data.wires)||typeof data.code!=='string'||data.wires.length>500)throw Error('지원하지 않는 결과 파일');stop();s={...initial(),...data,breadboard:true,board:{row:22},usb:true,split:false};$('code').value=s.code;highlight();changed();}catch(err){$('result').textContent='불러오기 실패: '+err.message;}};
+function stop(){clearInterval(timer);timer=null;runtime=null;lit=false;$('run').classList.remove('running');$('run').setAttribute('aria-pressed','false');render();}$('stop').onclick=()=>{stop();$('log').textContent='시뮬레이션 정지';};$('run').onclick=()=>{stop();try{runtime=createRuntime(compile(s.code));$('run').classList.add('running');$('run').setAttribute('aria-pressed','true');$('log').textContent='시뮬레이션 실행 중';timer=setInterval(()=>{try{const pins=runtime.tick(performance.now()),result=validate(s);const previousLit=lit;lit=Boolean(s.usb&&result.ok&&pins[2]);$('log').textContent=`GPIO2: ${pins[2]?'HIGH':'LOW'} · LED: ${lit?'ON':'OFF'}\n${s.usb?result.message:'USB 전원을 연결하세요.'}`;if(lit&&!s.simulationSuccess){s.circuitSuccess=true;s.simulationSuccess=true;s.completedAt=new Date().toISOString();$('log').textContent='성공! 코딩으로 실제 전기회로를 제어했어요.';save();}if(previousLit!==lit)render();}catch(err){stop();s.errors++;$('log').textContent=err.message;save();}},25);}catch(err){s.errors++;$('log').textContent='코드 오류: '+err.message;save();}};
+$('reset').onclick=()=>{if(!confirm('회로와 코드를 초기화할까요?'))return;stop();s=initial();$('code').value=s.code;pending='';selected='';tool='';wireEdit=null;highlight();changed();$('log').textContent='초기화 완료 · 부품을 배치하고 실행하세요.';};
 highlight();render();
 // Restore the authenticated student's work across sessions and devices.
 if(session!=='guest'){
  const revision=JSON.stringify(s);
  fetch('/api/circuit-progress',{headers:{Authorization:'Bearer '+session}}).then(r=>r.ok?r.json():null).then(data=>{if(data?.progress?.data?.version===1&&JSON.stringify(s)===revision){s={...initial(),...data.progress.data,breadboard:true,board:{row:22},usb:true,split:false};$('code').value=s.code;highlight();render();$('saved').textContent='저장된 학습 결과 불러옴';}}).catch(()=>{});
- const teacher=document.createElement('button');teacher.textContent='교사용 학습 결과 조회';teacher.onclick=async()=>{const response=await fetch('/api/admin/circuit-progress',{headers:{Authorization:'Bearer '+session}});if(!response.ok){$('result').textContent='교사 관리자 계정으로 로그인하세요.';return;}const data=await response.json();const panel=document.createElement('dialog');panel.style.cssText='max-width:850px;width:90%;border:1px solid #ddd;border-radius:16px;padding:24px';panel.innerHTML='<h2>학생별 미션 결과</h2><button id="closeResults">닫기</button>'+data.results.map(r=>`<article><h3>${esc(r.displayName)}</h3><p>회로 ${r.data.circuitSuccess?'성공':'진행 중'} · 실행 ${r.data.simulationSuccess?'성공':'진행 중'} · 힌트 ${Number(r.data.hints)||0} · 오류 ${Number(r.data.errors)||0}</p><p>완료: ${esc(r.data.completedAt||'미완료')}</p><details><summary>최종 코드와 회로</summary><pre style="white-space:pre-wrap">${esc(JSON.stringify(r.data,null,2))}</pre></details></article>`).join('');document.body.append(panel);panel.querySelector('#closeResults').onclick=()=>panel.remove();panel.showModal();};document.querySelector('.mission').append(teacher);
+
 }
 
 function cancelWire(){pending='';wireEdit=null;tool='';render();}

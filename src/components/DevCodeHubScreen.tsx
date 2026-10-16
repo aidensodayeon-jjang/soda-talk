@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import soundLabCode from "../../firmware/soda-1-1.ino?raw";
+import React, { useState, useEffect, useRef } from 'react';
 import LcdPixelEditor from './LcdPixelEditor';
 import soda63Code from '../../firmware/soda-6-3.ino?raw';
 import soda81Code from '../../firmware/soda-8-1.ino?raw';
@@ -77,7 +78,7 @@ const SAMPLE_CODES: CodeItem[] = [
   {
     id: "content-week-2-circuit-lab",
     week: 2,
-    title: "2-2. SODA CIRCUIT LAB — LED를 다시 켜라!",
+    title: "2-2. LED를 다시 켜라!",
     description: "직접 부품을 배치하고 배선과 Arduino 코드를 완성하는 가상 회로 실습입니다.",
     filename: "index.html",
     language: "json",
@@ -85,6 +86,19 @@ const SAMPLE_CODES: CodeItem[] = [
     imageUrl: "/simulations/circuit-lab/index.html",
     tags: ["LED", "회로 시뮬레이션", "ESP32-S3", "Arduino"],
     code: "MISSION 01 — LED를 다시 켜라!\n부품 배치 → GPIO2 / GND 배선 → 코드 작성 → 실행 → 깜빡임 도전",
+  },
+  {
+    id: "content-week-2-sound-lab",
+    week: 2,
+    title: "2-3. 버튼 · LED · 스피커",
+    description: "버튼, LED, 저항, MAX98357A 앰프와 스피커를 직접 배치하고 배선하는 실습입니다.",
+    filename: "button-led.ino",
+    language: "arduino",
+    contentType: "interactive",
+    imageUrl: "/simulations/sound-lab/index.html",
+    tags: ["버튼", "LED", "MAX98357A", "스피커", "I2S"],
+    pinMap: "버튼 GPIO4 · LED GPIO2 · BCLK GPIO5 · LRC GPIO3 · DIN GPIO44 · VDD 5V · GND",
+    code: "void setup() {\n  pinMode(2, OUTPUT);\n  pinMode(4, INPUT_PULLUP);\n}\n\nvoid loop() {\n  if (digitalRead(4) == LOW) {\n    digitalWrite(2, HIGH);\n  }\n  else {\n    digitalWrite(2, LOW);\n  }\n}",
   },
   {
     id: "content-week-2-circuit-diagram",
@@ -115,7 +129,7 @@ const SAMPLE_CODES: CodeItem[] = [
   {
     id: "content-week-2-sound",
     week: 2,
-    title: "2-3. 스피커테스트 도레미파솔라시도",
+    title: "2-4. 스피커테스트 도레미파솔라시도",
     description: "I2S 디지털 앰프/스피커 핀(BCLK:5, LRC:3, DOUT:44)을 초기화하고 도레미파솔라시도 음계를 재생하는 소다봇 사운드 기초 실습입니다.",
     filename: "soda-1-1.ino",
     language: "arduino",
@@ -248,7 +262,7 @@ void loop() {
   {
     id: "content-week-2-btn-led-sound",
     week: 2,
-    title: "2-4. 버튼 + LED + 스피커",
+    title: "2-5. 버튼 + LED + 스피커",
     description: "버튼(D4)을 누르면 LED(D2)가 켜지며 MAX98357A I2S 앰프 스피커를 통해 도-미-솔 화음 사운드를 출력하는 인터랙션 예제입니다.",
     filename: "soda-1-2.ino",
     language: "arduino",
@@ -956,6 +970,7 @@ void loop() {
 ];
 
 export default function DevCodeHubScreen({ className, selectedCodeId, onSelectCode }: DevCodeHubProps) {
+  const interactiveFrameRef = useRef<HTMLIFrameElement>(null);
   const [codes, setCodes] = useState<CodeItem[]>(SAMPLE_CODES);
   const [loading, setLoading] = useState(false);
   const [selectedWeek, setSelectedWeek] = useState<number | "all">(1);
@@ -1151,13 +1166,24 @@ export default function DevCodeHubScreen({ className, selectedCodeId, onSelectCo
               {/* Primary Highlighted Copy Button (Prominent & High-Impact) */}
               <button
                 id="copy-code-btn-prominent"
-                onClick={() => handleCopy(activeItem.id, activeItem.code)}
+                onClick={() => {
+                  let code = activeItem.code;
+                  if (activeItem.contentType === "interactive") {
+                    try {
+                      const editor = interactiveFrameRef.current?.contentDocument?.querySelector<HTMLTextAreaElement>("textarea#code");
+                      if (editor) code = editor.value;
+                    } catch (error) {
+                      console.warn("실습 편집기 접근 실패", error);
+                    }
+                  }
+                  handleCopy(activeItem.id, code);
+                }}
                 className={`px-5 sm:px-6 py-2.5 rounded-xl text-xs sm:text-sm font-black flex items-center gap-2 transition-all cursor-pointer active:scale-95 shadow-md ${
                   copiedId === activeItem.id
                     ? "bg-emerald-600 hover:bg-emerald-700 text-white ring-2 ring-emerald-400 shadow-emerald-900/40"
                     : "bg-gradient-to-r from-indigo-500 via-indigo-600 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white shadow-indigo-500/25 ring-1 ring-white/20 hover:shadow-indigo-500/40"
                 }`}
-                title={activeItem.contentType === "circuit" ? "핀맵 및 연결 설명 클립보드에 복사" : activeItem.contentType === "interactive" ? "학습 내용 및 요약 클립보드에 복사" : "아두이노 IDE에 바로 붙여넣을 수 있도록 전체 코드 복사"}
+                title={activeItem.contentType === "circuit" ? "핀맵 및 연결 설명 클립보드에 복사" : activeItem.contentType === "interactive" ? "현재 작성한 실습 코드를 클립보드에 복사" : "아두이노 IDE에 바로 붙여넣을 수 있도록 전체 코드 복사"}
               >
                 {copiedId === activeItem.id ? (
                   <>
@@ -1167,7 +1193,7 @@ export default function DevCodeHubScreen({ className, selectedCodeId, onSelectCo
                 ) : (
                   <>
                     <Copy className="w-4 h-4 text-white" />
-                    <span>{activeItem.contentType === "circuit" ? "📋 핀맵 전체 복사하기" : activeItem.contentType === "interactive" ? "📋 학습 요약 복사하기" : "📋 코드 전체 복사하기"}</span>
+                    <span>{activeItem.contentType === "circuit" ? "📋 핀맵 전체 복사하기" : activeItem.contentType === "interactive" ? "📋 실습코드복사하기" : "📋 코드 전체 복사하기"}</span>
                   </>
                 )}
               </button>
@@ -1192,6 +1218,7 @@ export default function DevCodeHubScreen({ className, selectedCodeId, onSelectCo
           {activeItem.contentType === "interactive" ? (
             <div className="flex-1 flex flex-col bg-[#11111b] overflow-hidden relative">
               <iframe
+                ref={interactiveFrameRef}
                 src={activeItem.imageUrl}
                 title={activeItem.title}
                 className="w-full h-full border-0 flex-1"
