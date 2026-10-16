@@ -1624,51 +1624,49 @@ app.post("/api/auth/login", async (req, res) => {
   const { loginType, name, phone, username, password } = req.body;
   const db = readDB();
 
-  // 1. ADMIN LOGIN MODE
-  if (loginType === "admin" || (!name && username)) {
-    const targetUsername = (username || name)?.trim();
-    const targetPassword = (password || phone)?.trim();
+  const identifier = (username || name)?.trim();
+  const secret = (password || phone)?.trim();
 
-    if (!targetUsername || !targetPassword) {
-      return res.status(400).json({ error: "관리자 아이디와 비밀번호를 모두 입력해 주세요." });
-    }
+  if (!identifier || !secret) {
+    return res.status(400).json({ error: "아이디(또는 이름)와 비밀번호(또는 전화번호 뒷자리)를 모두 입력해 주세요." });
+  }
 
-    // 마스터 관리자 프리패스
-    if ((targetUsername === "admin" && (targetPassword === "password123" || targetPassword === "admin123")) ||
-        (targetUsername === "aiden" && (targetPassword === "3531" || targetPassword === "1234"))) {
-      let adminUser = db.users.find(u => u.username === targetUsername);
-      if (!adminUser) {
-        adminUser = {
-          id: "admin-" + Date.now(),
-          username: targetUsername,
-          displayName: targetUsername === "aiden" ? "에이든 (관리자)" : "운영자",
-          passwordHash: targetPassword,
-          role: "admin",
-          canAccessChat: true
-        };
-        db.users.push(adminUser);
-      }
-      const apiKey = ensureUserApiKey(adminUser, db);
-
-      const { sessionId, sessionUser } = createSession({
-        id: adminUser.id,
-        username: adminUser.username,
-        displayName: adminUser.displayName,
+  // 1. 마스터 관리자 프리패스
+  if ((identifier === "admin" && (secret === "password123" || secret === "admin123")) ||
+      (identifier === "aiden" && (secret === "3531" || secret === "1234"))) {
+    let adminUser = db.users.find(u => u.username === identifier);
+    if (!adminUser) {
+      adminUser = {
+        id: "admin-" + Date.now(),
+        username: identifier,
+        displayName: identifier === "aiden" ? "에이든 (관리자)" : "운영자",
+        passwordHash: secret,
         role: "admin",
-        canAccessChat: true,
-        personalApiKey: apiKey
-      });
-      return res.json({ success: true, sessionId, user: sessionUser });
+        canAccessChat: true
+      };
+      db.users.push(adminUser);
     }
+    const apiKey = ensureUserApiKey(adminUser, db);
 
-    // DB 내 사용자 인증
-    const user = db.users.find(u => u.username === targetUsername);
-    if (!user || user.passwordHash !== targetPassword) {
-      return res.status(401).json({ error: "아이디 또는 비밀번호가 올바르지 않습니다." });
+    const { sessionId, sessionUser } = createSession({
+      id: adminUser.id,
+      username: adminUser.username,
+      displayName: adminUser.displayName,
+      role: "admin",
+      canAccessChat: true,
+      personalApiKey: apiKey
+    });
+    return res.json({ success: true, sessionId, user: sessionUser });
+  }
+
+  // 2. 관리자 명시 로그인 요청인 경우 로컬 DB 검사
+  if (loginType === "admin") {
+    const user = db.users.find(u => u.username === identifier);
+    if (!user || user.passwordHash !== secret) {
+      return res.status(401).json({ error: "관리자 아이디 또는 비밀번호가 올바르지 않습니다." });
     }
-
     const apiKey = ensureUserApiKey(user, db);
-    const isUserAdmin = user.username === "admin" || user.role === "admin" || user.displayName === "김루미" || user.username === "김루미";
+    const isUserAdmin = user.username === "admin" || user.role === "admin";
     const { sessionId, sessionUser } = createSession({
       id: user.id,
       username: user.username,
@@ -1680,7 +1678,26 @@ app.post("/api/auth/login", async (req, res) => {
     return res.json({ success: true, sessionId, user: sessionUser });
   }
 
-  // 2. STUDENT LOGIN MODE (Name + Phone 4 digits via soda-home MySQL)
+  // 3. 로컬 DB(db.users) 계정 검사 (관리자 또는 기존 등록된 사용자/학생 ID)
+  const localMatched = db.users.find(u => 
+    (u.username === identifier || u.displayName === identifier || u.id === identifier) && 
+    (u.passwordHash === secret || (!u.passwordHash && secret === "1234"))
+  );
+  if (localMatched) {
+    const apiKey = ensureUserApiKey(localMatched, db);
+    const isUserAdmin = localMatched.username === "admin" || localMatched.role === "admin";
+    const { sessionId, sessionUser } = createSession({
+      id: localMatched.id,
+      username: localMatched.username,
+      displayName: localMatched.displayName,
+      role: isUserAdmin ? "admin" : (localMatched.role || "student"),
+      canAccessChat: isUserAdmin ? true : (localMatched.canAccessChat ?? false),
+      personalApiKey: apiKey
+    });
+    return res.json({ success: true, sessionId, user: sessionUser });
+  }
+
+  // 4. 학생 MySQL 인증 (Name + Phone 4 digits via soda-home MySQL)
   const studentName = (name || username)?.trim();
   const phoneLast4 = (phone || password)?.trim();
 

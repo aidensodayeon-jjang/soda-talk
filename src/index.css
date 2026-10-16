@@ -1,1 +1,45 @@
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css');
 @import "tailwindcss";
+
+@theme {
+  --font-sans: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Helvetica Neue', 'Segoe UI', 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
+  --color-warm-main: #FAF9F6;
+  --color-warm-sidebar: #F5F3EF;
+  --color-warm-card: #FFFFFF;
+  --color-warm-text: #20262B;
+  --color-warm-muted: #858B8D;
+  --color-warm-mint: #168571;
+  --color-warm-mint-light: #E8F4EF;
+  --color-warm-border: #E9E7E2;
+  --color-warm-amber: #E89435;
+}
+
+:root {
+  --bg-main: #FAF9F6;
+  --bg-sidebar: #F5F3EF;
+  --bg-card: #FFFFFF;
+  --text-main: #20262B;
+  --text-muted: #858B8D;
+  --color-primary: #168571;
+  --color-mint-light: #E8F4EF;
+  --border-subtle: #E9E7E2;
+  --color-amber: #E89435;
+}
+
+html, body {
+  font-family: var(--font-sans);
+  background-color: #FAF9F6;
+  color: #20262B;
+  letter-spacing: -0.015em;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Subtle Card Hover Effect */
+.warm-card-hover {
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease;
+}
+
+.warm-card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px -4px rgba(32, 38, 43, 0.06), 0 2px 6px -1px rgba(32, 38, 43, 0.04);
+}
