@@ -1,3 +1,9 @@
+import expressionMissionCode from "../../firmware/soda-expression.ino?raw";
+import frameMissionCode from "../../firmware/soda-frame.ino?raw";
+import lcdShapesCode from "../../firmware/soda-3-3.ino?raw";
+import lcdCounterCode from "../../firmware/soda-3-2.ino?raw";
+import buttonSoundCode from "../../firmware/soda-1-2.ino?raw";
+import lcdHelloCode from "../../firmware/soda-3-1.ino?raw";
 import soundLabCode from "../../firmware/soda-1-1.ino?raw";
 import React, { useState, useEffect, useRef } from 'react';
 import LcdPixelEditor from './LcdPixelEditor';
@@ -278,199 +284,7 @@ void loop() {
     tags: ["버튼", "LED", "I2S", "스피커", "ESP32", "사운드"],
     pinMap: "LED: D2, 버튼: D4, 스피커: BCLK: D5, LRC: D3, DOUT: D44",
     updatedAt: new Date().toISOString(),
-    code: `#include <driver/i2s.h>
-#include <math.h>
-
-// ========================
-// 핀 설정
-// ========================
-
-// LED / 버튼
-#define LED_PIN     2
-#define BUTTON_PIN  4
-
-// MAX98357A 앰프
-#define I2S_BCLK    5
-#define I2S_LRC     3
-#define I2S_DOUT    44      // ESP32-S3 SuperMini RX 핀
-
-#define I2S_PORT    I2S_NUM_0
-#define SAMPLE_RATE 44100
-
-
-// ========================
-// I2S 설정
-// ========================
-
-void setup() {
-
-  Serial.begin(115200);
-
-  pinMode(LED_PIN, OUTPUT);
-  pinMode(BUTTON_PIN, INPUT_PULLUP);
-
-  digitalWrite(LED_PIN, LOW);
-
-
-  i2s_config_t i2s_config = {
-
-    .mode = (i2s_mode_t)(
-      I2S_MODE_MASTER |
-      I2S_MODE_TX
-    ),
-
-    .sample_rate = SAMPLE_RATE,
-
-    .bits_per_sample =
-      I2S_BITS_PER_SAMPLE_16BIT,
-
-    .channel_format =
-      I2S_CHANNEL_FMT_RIGHT_LEFT,
-
-    .communication_format =
-      I2S_COMM_FORMAT_STAND_I2S,
-
-    .intr_alloc_flags = 0,
-
-    .dma_buf_count = 8,
-    .dma_buf_len = 256,
-
-    .use_apll = false,
-    .tx_desc_auto_clear = true,
-    .fixed_mclk = 0
-  };
-
-
-  i2s_pin_config_t pin_config = {
-
-    .bck_io_num = I2S_BCLK,
-
-    .ws_io_num = I2S_LRC,
-
-    .data_out_num = I2S_DOUT,
-
-    .data_in_num =
-      I2S_PIN_NO_CHANGE
-  };
-
-
-  i2s_driver_install(
-    I2S_PORT,
-    &i2s_config,
-    0,
-    NULL
-  );
-
-
-  i2s_set_pin(
-    I2S_PORT,
-    &pin_config
-  );
-}
-
-
-// ========================
-// 메인
-// ========================
-
-void loop() {
-
-  if (digitalRead(BUTTON_PIN) == LOW) {
-
-    digitalWrite(LED_PIN, HIGH);
-
-    // 도
-    playTone(523.25, 180);
-
-    delay(40);
-
-    // 미
-    playTone(659.25, 180);
-
-    delay(40);
-
-    // 솔
-    playTone(783.99, 300);
-
-
-    // 버튼을 놓을 때까지 기다림
-    while (digitalRead(BUTTON_PIN) == LOW) {
-      delay(10);
-    }
-
-    digitalWrite(LED_PIN, LOW);
-
-    delay(50);
-  }
-}
-
-
-// ========================
-// 사인파 소리 출력
-// ========================
-
-void playTone(float frequency, int duration_ms) {
-
-  const int BUFFER_FRAMES = 256;
-
-  int16_t buffer[BUFFER_FRAMES * 2];
-
-  float phase = 0;
-
-  float phaseStep =
-    2.0 * PI * frequency / SAMPLE_RATE;
-
-
-  int totalSamples =
-    SAMPLE_RATE * duration_ms / 1000;
-
-  int generated = 0;
-
-
-  while (generated < totalSamples) {
-
-    int count =
-      min(BUFFER_FRAMES,
-          totalSamples - generated);
-
-
-    for (int i = 0; i < count; i++) {
-
-      // 볼륨
-      int16_t sample =
-        (int16_t)(sin(phase) * 6000);
-
-      phase += phaseStep;
-
-      if (phase >= 2.0 * PI) {
-        phase -= 2.0 * PI;
-      }
-
-
-      // 좌/우 동일 신호
-      buffer[i * 2]     = sample;
-      buffer[i * 2 + 1] = sample;
-    }
-
-
-    size_t bytesWritten;
-
-    i2s_write(
-      I2S_PORT,
-      buffer,
-      count * 2 * sizeof(int16_t),
-      &bytesWritten,
-      portMAX_DELAY
-    );
-
-
-    generated += count;
-  }
-
-
-  // 소리 끄기
-  i2s_zero_dma_buffer(I2S_PORT);
-}`
+    code: buttonSoundCode
   },
   {
     id: "content-week-3-circuit-diagram",
@@ -520,9 +334,17 @@ void playTone(float frequency, int duration_ms) {
 // 3. 동시에 LED 점등과 함께 I2S 스피커로 경쾌한 도-미-솔 사운드가 울립니다.`
   },
   {
+    id: "content-week-3-lcd-lab", week: 3,
+    title: "3-4. LCD 연결하기",
+    description: "기존 회로에 ST7789 LCD를 추가하고 문구와 색상을 출력하는 가상 실습입니다.",
+    filename: "soda-3-1.ino", language: "arduino", contentType: "interactive",
+    imageUrl: "/simulations/lcd-lab/index.html", tags: ["LCD", "ST7789", "시뮬레이션"],
+    code: lcdHelloCode,
+  },
+  {
     id: "content-week-3-lcd-hello",
     week: 3,
-    title: "3-4. LCD 기본 출력 - Hello SODA!",
+    title: "3-5. LCD 기본 출력 - Hello SODA!",
     description: "Waveshare 2.0인치 ST7789 LCD 디스플레이를 초기화하고 화면 중앙에 'Hello SODA!' 글씨를 출력하는 가장 기본적이고 심플한 3주차 첫 실습 코드입니다.",
     filename: "soda-3-1.ino",
     language: "arduino",
@@ -570,9 +392,17 @@ void loop() {
 }`
   },
   {
+    id: "content-week-4-lcd-code-lab", week: 4,
+    title: "4-1. LCD 코드 실습",
+    description: "완성된 LCD 회로에서 soda-3-2.ino 코드와 버튼 카운트 코드를 실행하는 실습입니다.",
+    filename: "soda-3-2.ino", language: "arduino", contentType: "interactive",
+    imageUrl: "/simulations/lcd-code-lab/index.html", tags: ["LCD", "코드 실습", "시뮬레이션"],
+    code: lcdCounterCode,
+  },
+  {
     id: "content-week-3-lcd-basic",
-    week: 3,
-    title: "3-5. LCD 기본코드 - 메인화면 표시 버튼클릭시 증가표시",
+    week: 4,
+    title: "4-2. LCD 기본코드 - 메인화면 표시 버튼클릭시 증가표시",
     description: "ST7789 2.0인치 LCD 화면에 메인 그래픽을 표시하고, 버튼을 누를 때마다 클릭 카운트 증가 화면 및 도-미-솔 사운드를 출력하는 3주차 실습입니다.",
     filename: "soda-3-2.ino",
     language: "arduino",
@@ -770,9 +600,15 @@ void playTone(float frequency, int duration_ms) {
 `
   },
   {
+    id: "content-week-4-lcd-shapes-lab", week: 4, title: "4-3. LCD 도형 실습",
+    description: "완성된 LCD 회로에서 선·사각형·원·채운 도형을 직접 코딩하고 실행하는 실습입니다.",
+    filename: "soda-3-3.ino", language: "arduino", contentType: "interactive",
+    imageUrl: "/simulations/lcd-shapes-lab/index.html", tags: ["LCD", "도형", "코드 실습"], code: lcdShapesCode,
+  },
+  {
     id: "content-week-3-lcd-shapes",
-    week: 3,
-    title: "3-6. LCD 다양한 도형 그리기",
+    week: 4,
+    title: "4-4. LCD 다양한 도형 그리기",
     description: "ST7789 2.0인치 LCD 디스플레이에 선(Line), 사각형(Rect), 원(Circle), 채운 원(FillCircle) 등 다양한 2D 그래픽 도형을 2초 간격으로 순차 렌더링하는 3주차 실습입니다.",
     filename: "soda-3-3.ino",
     language: "arduino",
@@ -849,9 +685,15 @@ void loop() {
 }`
   },
   {
+    id: "content-week-4-lcd-frame-lab", week: 4, title: "4-5. 나만의 액자 만들기",
+    description: "색상·장식·제목을 직접 수정해 나만의 LCD 액자를 만드는 미션 실습입니다.",
+    filename: "soda-frame.ino", language: "arduino", contentType: "interactive",
+    imageUrl: "/simulations/lcd-frame-lab/index.html", tags: ["LCD", "액자", "미션"], code: frameMissionCode,
+  },
+  {
     id: "content-week-3-lcd-editor",
-    week: 3,
-    title: "3-7. 2.0\" LCD 화면편집기 (소다봇 표정 스튜디오)",
+    week: 4,
+    title: "4-6. 2.0\" LCD 화면편집기 (소다봇 표정 스튜디오)",
     description: "마우스로 소다봇 표정 및 픽셀 아트를 직접 그리고 2장 표정 전환 애니메이션을 아두이노 C++ 코드로 생성/다운로드하는 3주차 전용 그래픽 도구입니다.",
     filename: "soda-3-4.ino",
     language: "arduino",
@@ -862,14 +704,20 @@ void loop() {
     code: `// 소다봇 2.0" LCD 화면편집기 / 표정 스튜디오에서 코드를 직접 디자인하고 다운로드하세요!`
   },
   {
+    id: "content-week-4-lcd-expression-lab", week: 4, title: "4-7. 버튼으로 표정 바꾸기",
+    description: "버튼을 누르면 LCD 표정·효과음·LED가 함께 반응하는 통합 미션입니다.",
+    filename: "soda-expression.ino", language: "arduino", contentType: "interactive",
+    imageUrl: "/simulations/lcd-expression-lab/index.html", tags: ["LCD", "표정", "버튼", "LED", "효과음"], code: expressionMissionCode,
+  },
+  {
     id: "content-week-6-settings",
-    week: 6,
+    week: 7,
     title: "1. 소다봇 설정하기",
     description: "소다봇의 Wi-Fi, BLE 장치 이름, 기본 표정, 물리 버튼 동작을 설정하고 4개 파트(HEADERS, GLOBALS, SETUP, FUNCTION) 커스텀 아두이노 기능을 자동 병합하여 다운로드합니다.",
     filename: "soda-basic-template.ino",
     language: "arduino",
     contentType: "code",
-    tags: ["6-7주차", "소다봇설정", "커스텀기능", "Wi-Fi", "BLE", "펌웨어"],
+    tags: ["7-8주차", "소다봇설정", "커스텀기능", "Wi-Fi", "BLE", "펌웨어"],
     pinMap: "LCD(11,12,13,7,6), 버튼:4, I2S스피커(5,3,44), I2S마이크(9,10,8)",
     updatedAt: new Date().toISOString(),
     code: `// [6-7주차] 소다봇 설정하기 & 커스텀 기능 펌웨어 가이드
@@ -892,14 +740,14 @@ void loop() {
   },
   {
     id: "content-week-6-mic-circuit",
-    week: 6,
+    week: 7,
     title: "2. [배선도] 마이크 추가 회로 연결도",
     description: "ESP32-S3 SuperMini 보드와 I2S 원형 마이크 모듈의 3.3V 전원 및 핀 연결 배선도(GPIO9/SCK, GPIO10/WS, GPIO8/SD) 가이드입니다.",
     filename: "circuit_mic_i2s.jpg",
     language: "json",
     contentType: "circuit",
     imageUrl: "/images/circuit_mic_i2s.jpg",
-    tags: ["6-7주차", "배선도", "회로도", "마이크", "I2S", "ESP32-S3", "3.3V"],
+    tags: ["7-8주차", "배선도", "회로도", "마이크", "I2S", "ESP32-S3", "3.3V"],
     pinMap: "마이크 VDD: 3.3V, GND: 공통GND, SCK: GPIO9, WS: GPIO10, SD: GPIO8, L/R: GND",
     updatedAt: new Date().toISOString(),
     code: `// [6-7주차] ESP32 Super Mini ↔ I2S 마이크 연결 핀맵 요약
@@ -920,26 +768,26 @@ void loop() {
   },
   {
     id: "content-week-6-firmware-v4",
-    week: 6,
+    week: 7,
     title: "3. 마이크 입력 테스트 (소리 크기 측정)",
-    description: "물리 버튼(GPIO 4)을 누르고 있는 동안에만 INMP441 I2S 마이크가 활성화되어 소리 크기(VU 미터)를 2.0인치 LCD 화면과 시리얼 모니터로 측정하는 6주차 실습 펌웨어입니다.",
+    description: "물리 버튼(GPIO 4)을 누르고 있는 동안에만 INMP441 I2S 마이크가 활성화되어 소리 크기(VU 미터)를 2.0인치 LCD 화면과 시리얼 모니터로 측정하는 7주차 실습 펌웨어입니다.",
     filename: "soda-6-3.ino",
     language: "arduino",
     contentType: "code",
-    tags: ["6-7주차", "마이크입력테스트", "버튼테스트", "소리크기측정", "VUmeter", "INMP441", "ESP32-S3"],
+    tags: ["7-8주차", "마이크입력테스트", "버튼테스트", "소리크기측정", "VUmeter", "INMP441", "ESP32-S3"],
     pinMap: "LCD(MOSI:11, CLK:12, CS:13, DC:7, RST:6), 버튼:4, LED:2, I2S마이크(SCK:9, WS:10, SD:8)",
     updatedAt: new Date().toISOString(),
     code: soda63Code
   },
   {
     id: "content-week-6-friend-settings",
-    week: 6,
+    week: 7,
     title: "4. 소다봇 친구설정 (페르소나 & 프로필 & 기억)",
     description: "AI 소다봇의 이름, 성격, 말투, 프로필 및 중요한 3가지 기억 정보를 자유롭게 맞춤 설정하는 소다봇 친구설정 페이지입니다.",
     filename: "sodabot_friend_settings.json",
     language: "json",
     contentType: "doc",
-    tags: ["6-7주차", "소다봇친구설정", "페르소나", "프로필", "기억설정", "AI대화"],
+    tags: ["7-8주차", "소다봇친구설정", "페르소나", "프로필", "기억설정", "AI대화"],
     pinMap: "클라우드 AI 및 로컬 소다봇 실시간 연동",
     updatedAt: new Date().toISOString(),
     code: `// [6주차 4차시] 소다봇 친구설정 요약
@@ -952,26 +800,26 @@ void loop() {
   },
   {
     id: "content-week-8-firmware",
-    week: 8,
+    week: 9,
     title: "8주차 소다봇 기본 펌웨어",
-    description: "8주차 소다봇 빌더 실습을 위한 표준 아두이노 펌웨어입니다. BLE, Wi-Fi, WebSocket, 2.0인치 ST7789 LCD, MAX98357A I2S 스피커, INMP441 I2S 마이크, Push-to-Talk 실시간 음성인식, 인터넷 실시간 시계(NTP) 및 커스텀 기능이 모두 통합되어 있습니다.",
+    description: "9주차 소다봇 빌더 실습을 위한 표준 아두이노 펌웨어입니다. BLE, Wi-Fi, WebSocket, 2.0인치 ST7789 LCD, MAX98357A I2S 스피커, INMP441 I2S 마이크, Push-to-Talk 실시간 음성인식, 인터넷 실시간 시계(NTP) 및 커스텀 기능이 모두 통합되어 있습니다.",
     filename: "soda-8-1.ino",
     language: "arduino",
     contentType: "code",
-    tags: ["8주차", "기본펌웨어", "소다봇빌더", "음성대화", "NTP시계", "ESP32-S3", "soda-8-1"],
+    tags: ["9주차", "기본펌웨어", "소다봇빌더", "음성대화", "NTP시계", "ESP32-S3", "soda-8-1"],
     pinMap: "LCD(MOSI:11, CLK:12, CS:13, DC:7, RST:6), 버튼:4, I2S스피커(5,3,44), I2S마이크(9,10,8)",
     updatedAt: new Date().toISOString(),
     code: soda81Code
   },
   {
     id: "content-week-9-firmware",
-    week: 9,
+    week: 10,
     title: "9주차: 1. 소다봇 PCB 기본 펌웨어",
-    description: "9주차 소다봇 전용 PCB(v1.1) 실습을 위한 표준 아두이노 펌웨어입니다. SODA-AIBOT v1.1 PCB 배선 및 TX(GPIO43) 버튼 입력, I2S 스피커/마이크, ST7789 LCD 및 실시간 음성 대화 기능이 연결되어 있습니다.",
+    description: "10주차 소다봇 전용 PCB(v1.1) 실습을 위한 표준 아두이노 펌웨어입니다. SODA-AIBOT v1.1 PCB 배선 및 TX(GPIO43) 버튼 입력, I2S 스피커/마이크, ST7789 LCD 및 실시간 음성 대화 기능이 연결되어 있습니다.",
     filename: "soda-9-1.ino",
     language: "arduino",
     contentType: "code",
-    tags: ["9주차", "PCB기본펌웨어", "소다봇PCB", "음성대화", "soda-9-1", "ESP32-S3"],
+    tags: ["10주차", "PCB기본펌웨어", "소다봇PCB", "음성대화", "soda-9-1", "ESP32-S3"],
     pinMap: "PCB v1.1: LCD(MOSI:11, CLK:12, CS:13, DC:7, RST:6), 버튼:GPIO43(TX), I2S스피커(5,3,44), I2S마이크(9,10,8)",
     updatedAt: new Date().toISOString(),
     code: soda91Code

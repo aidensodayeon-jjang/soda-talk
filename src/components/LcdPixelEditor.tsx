@@ -211,7 +211,7 @@ const GRID_SIZES = [16, 24, 32];
 
 export default function LcdPixelEditor({ onExportCode }: LcdPixelEditorProps) {
   // 모드 선택: 1장(단일 정지 화면) vs 2장(애니메이션)
-  const [frameMode, setFrameMode] = useState<1 | 2>(2);
+  const [frameMode, setFrameMode] = useState<1 | 2>(1);
   const [activeFrame, setActiveFrame] = useState<1 | 2>(1);
 
   const [gridSize, setGridSize] = useState<number>(16);

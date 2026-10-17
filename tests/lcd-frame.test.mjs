@@ -1,0 +1,5 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import {compileShapes,shapeSvg} from '../public/simulations/lcd-frame-lab/shapes-engine.js';
+const source=readFileSync('firmware/soda-frame.ino','utf8');
+test('샘플 액자에 테두리·장식·제목 표시',()=>{const frame=compileShapes(source,source).frame(0);assert.equal(frame.shapes.length,6);assert.equal(frame.shapes[5].text,'MY FRAME');});
+test('미션 색상·좌표·문구 수정 반영',()=>{const edited=source.replaceAll('ST77XX_YELLOW','ST77XX_GREEN').replace('55, 65, 20','70, 65, 25').replace('MY FRAME','AIDEN');const frame=compileShapes(edited,source).frame(0);assert.equal(frame.shapes[0].color,'#22c55e');assert.deepEqual(frame.shapes[2].args,[70,65,25]);assert.equal(frame.shapes[5].text,'AIDEN');});
+test('미지원 초기화 변경 거부·텍스트 SVG 이스케이프',()=>{assert.throws(()=>compileShapes(source.replace('tft.init(240, 320)','tft.init(1, 1)'),source));assert.match(shapeSvg({type:'text',text:'<x>',x:0,y:0,size:2,color:'#fff'}),/&lt;x&gt;/);});

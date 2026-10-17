@@ -1,5 +1,6 @@
 #include <driver/i2s.h>
 #include <math.h>
+#include <string.h>
 
 // ========================
 // 핀 설정
@@ -16,6 +17,9 @@
 
 #define I2S_PORT    I2S_NUM_0
 #define SAMPLE_RATE 44100
+
+// I2S 초기화 성공 시에만 재생합니다.
+bool audioReady = false;
 
 
 // ========================
@@ -74,18 +78,20 @@ void setup() {
   };
 
 
-  i2s_driver_install(
-    I2S_PORT,
-    &i2s_config,
-    0,
-    NULL
-  );
+  esp_err_t err = i2s_driver_install(I2S_PORT, &i2s_config, 0, NULL);
+  if (err != ESP_OK) {
+    Serial.printf("I2S driver error: %d\n", (int)err);
+    return;
+  }
+  err = i2s_set_pin(I2S_PORT, &pin_config);
+  if (err != ESP_OK) {
+    Serial.printf("I2S pin error: %d\n", (int)err);
+    return;
+  }
+  i2s_zero_dma_buffer(I2S_PORT);
+  audioReady = true;
+  Serial.println("I2S ready: BCLK=5, LRC=3, DIN=44 (RX)");
 
-
-  i2s_set_pin(
-    I2S_PORT,
-    &pin_config
-  );
 }
 
 
@@ -94,11 +100,24 @@ void setup() {
 // ========================
 
 void loop() {
+  // USB 시리얼 진단: s=상태, t=440Hz 테스트음
+  if (Serial.available()) {
+    char command = Serial.read();
+    if (command == 's') {
+      Serial.printf("audioReady=%d, button=%d, BCLK=5 LRC=3 DIN=44\n", audioReady, digitalRead(BUTTON_PIN));
+    } else if (command == 't') {
+      Serial.println("TEST 440Hz begin");
+      playTone(440.0, 700);
+      Serial.println("TEST 440Hz end");
+    }
+  }
+
 
   if (digitalRead(BUTTON_PIN) == LOW) {
 
     digitalWrite(LED_PIN, HIGH);
 
+    Serial.println("BUTTON: melody begin");
     // 도
     playTone(523.25, 180);
 
@@ -113,6 +132,7 @@ void loop() {
     playTone(783.99, 300);
 
 
+    Serial.println("BUTTON: melody end");
     // 버튼을 놓을 때까지 기다림
     while (digitalRead(BUTTON_PIN) == LOW) {
       delay(10);
@@ -131,6 +151,10 @@ void loop() {
 
 void playTone(float frequency, int duration_ms) {
 
+  if (!audioReady) {
+    Serial.println("Audio unavailable: check I2S setup errors.");
+    return;
+  }
   const int BUFFER_FRAMES = 256;
 
   int16_t buffer[BUFFER_FRAMES * 2];
@@ -156,9 +180,12 @@ void playTone(float frequency, int duration_ms) {
 
     for (int i = 0; i < count; i++) {
 
-      // 볼륨
-      int16_t sample =
-        (int16_t)(sin(phase) * 6000);
+      // 시작과 끝 5ms에 음량을 서서히 바꿔 클릭음을 줄입니다.
+      const int rampSamples = SAMPLE_RATE / 200;
+      const int position = generated + i;
+      const float fadeIn = fminf(1.0f, (float)position / rampSamples);
+      const float fadeOut = fminf(1.0f, (float)(totalSamples - 1 - position) / rampSamples);
+      int16_t sample = (int16_t)(sin(phase) * 3000 * fminf(fadeIn, fadeOut));
 
       phase += phaseStep;
 
@@ -173,21 +200,38 @@ void playTone(float frequency, int duration_ms) {
     }
 
 
-    size_t bytesWritten;
-
-    i2s_write(
-      I2S_PORT,
-      buffer,
-      count * 2 * sizeof(int16_t),
-      &bytesWritten,
-      portMAX_DELAY
-    );
-
+    const uint8_t *data = (const uint8_t *)buffer;
+    const size_t totalBytes = count * 2 * sizeof(int16_t);
+    size_t offset = 0;
+    while (offset < totalBytes) {
+      size_t bytesWritten = 0;
+      esp_err_t err = i2s_write(I2S_PORT, data + offset, totalBytes - offset,
+                                &bytesWritten, portMAX_DELAY);
+      if (err != ESP_OK || bytesWritten == 0) {
+        Serial.printf("I2S write error: %d, bytes=%u\n", (int)err, (unsigned)bytesWritten);
+        return;
+      }
+      offset += bytesWritten;
+    }
 
     generated += count;
   }
 
 
-  // 소리 끄기
-  i2s_zero_dma_buffer(I2S_PORT);
+  // DMA에 대기 중인 음을 지우지 않고 무음으로 이어줍니다.
+  // 8개 DMA 버퍼보다 많은 무음을 보내 마지막 음이 출력되게 합니다.
+  memset(buffer, 0, sizeof(buffer));
+  for (int block = 0; block < 9; block++) {
+    size_t offset = 0;
+    while (offset < sizeof(buffer)) {
+      size_t written = 0;
+      esp_err_t err = i2s_write(I2S_PORT, ((const uint8_t *)buffer) + offset,
+                                sizeof(buffer) - offset, &written, portMAX_DELAY);
+      if (err != ESP_OK || written == 0) {
+        Serial.printf("I2S silence error: %d\n", (int)err);
+        return;
+      }
+      offset += written;
+    }
+  }
 }

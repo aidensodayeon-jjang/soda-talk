@@ -188,24 +188,7 @@ export default function SodabotConnectScreen({ currentUser }: SodabotConnectScre
       return;
     }
     
-    // 페어링 버튼 클릭 시 이전 연결 및 브라우저 블루투스 캐시 자동 정리 (메시지/확인창 없이 자동 수행)
-    try {
-      sodabotTransport.disconnect();
-    } catch {}
-
-    try {
-      if ((navigator as any).bluetooth?.getDevices) {
-        const devices = await (navigator as any).bluetooth.getDevices();
-        for (const dev of devices) {
-          if (dev.forget) {
-            await dev.forget();
-          }
-        }
-      }
-    } catch (e) {
-      console.warn("Silent bluetooth cache clear warning:", e);
-    }
-
+    // Keep requestDevice in the click gesture; do not revoke saved device permissions.
     localStorage.removeItem(getScopedKey("robot_ip"));
     localStorage.removeItem(getScopedKey("device_name"));
     localStorage.removeItem("sodabot_robot_ip");
@@ -228,6 +211,7 @@ export default function SodabotConnectScreen({ currentUser }: SodabotConnectScre
         optionalServices: [SERVICE_UUID]
       });
       
+      sodabotTransport.disconnect();
       bleDeviceRef.current = device;
       setFoundDevices([{
         id: device.id,
@@ -403,7 +387,7 @@ export default function SodabotConnectScreen({ currentUser }: SodabotConnectScre
 
               <div className="space-y-2.5">
                 <div>
-                  <label className="text-[11px] font-bold text-[#1D1D1F] block mb-1">로봇 이름</label>
+                  <label className="text-[11px] font-bold text-[#1D1D1F] block mb-1">새 펌웨어의 로봇 이름</label>
                   <input 
                     type="text" 
                     placeholder="예: lumi, SODA_01" 
@@ -414,6 +398,12 @@ export default function SodabotConnectScreen({ currentUser }: SodabotConnectScre
                     }} 
                     className="w-full text-xs px-3 py-2 bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl focus:outline-none focus:border-indigo-500 font-bold font-mono" 
                   />
+                  <p className="mt-1.5 text-[11px] leading-relaxed text-[#86868B]">
+                    코드 다운로드·업로드 후 적용됩니다.
+                    {status === 'connected' && connectedDeviceName && (
+                      <span className="block">최근 페어링 이름: {connectedDeviceName}</span>
+                    )}
+                  </p>
                 </div>
                 <div>
                   <label className="text-[11px] font-bold text-[#1D1D1F] block mb-1">Wi-Fi 이름 (SSID)</label>
@@ -454,6 +444,14 @@ export default function SodabotConnectScreen({ currentUser }: SodabotConnectScre
                 <Download className="w-3.5 h-3.5 text-[#86868B]" />
                 <span>맞춤 펌웨어 파일 다운로드 (.ino)</span>
               </button>
+              <details className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950">
+                <summary className="cursor-pointer font-bold">예전 인사말이나 설정이 남아 있나요?</summary>
+                <div className="mt-2 space-y-2 leading-relaxed">
+                  <p>Arduino IDE의 도구 → Erase All Flash Before Sketch Upload → Enabled로 설정한 뒤, 새로 다운로드한 맞춤 코드를 업로드하세요.</p>
+                  <p>기존 프로그램과 저장된 Wi-Fi·API 키·인사말 등 모든 설정이 삭제됩니다. 새 코드에 포함된 정보는 다시 적용되며, 그 밖의 설정은 다시 지정해야 합니다.</p>
+                  <p className="font-bold">초기화 업로드가 끝나면 Disabled로 돌려놓으세요.</p>
+                </div>
+              </details>
             </div>
           </div>
 
@@ -500,7 +498,7 @@ export default function SodabotConnectScreen({ currentUser }: SodabotConnectScre
               {/* Robot Device Label */}
               <div className="text-center my-auto">
                 <div className="text-base font-black text-[#1D1D1F] tracking-wide font-mono">
-                  SODABOT_{robotName}
+                  {status === 'connected' && connectedDeviceName ? connectedDeviceName : `SODABOT_${robotName}`}
                 </div>
                 <div className="text-[11px] text-[#86868B] mt-1">
                   {status === 'connected' ? '소다봇과 실시간 동적 페어링 완료' : '원형 버튼을 눌러 블루투스 페어링을 시작하세요'}
@@ -559,6 +557,14 @@ export default function SodabotConnectScreen({ currentUser }: SodabotConnectScre
                     : '🔘 원형 버튼을 클릭하여 블루투스 활성화'}
                 </span>
               </div>
+              <details className="rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-950">
+                <summary className="cursor-pointer font-bold">페어링 목록에 소다봇이 안 보이나요?</summary>
+                <div className="mt-2 space-y-2 leading-relaxed">
+                  <p>Chrome을 완전히 종료한 뒤 다시 실행하고, 스튜디오에서 페어링을 다시 시도하세요. Mac에서는 ⌘Q, Windows에서는 Chrome 메뉴 → 종료를 사용하세요. 탭이나 창만 닫으면 검색 상태가 초기화되지 않을 수 있습니다.</p>
+                  <p>Mac에서는 시스템 설정 → 개인정보 보호 및 보안 → Bluetooth에서 Google Chrome의 접근 권한이 켜져 있는지도 확인하세요.</p>
+                  <p>ESP의 전원을 확인하고 RESET 버튼을 한 번 누른 뒤 SODABOT_으로 시작하는 기기를 찾아보세요. 목록이 비어 있다는 이유만으로 플래시를 삭제할 필요는 없습니다.</p>
+                </div>
+              </details>
 
             </div>
           </div>

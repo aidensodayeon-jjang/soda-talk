@@ -258,9 +258,17 @@ const DEFAULT_COURSE_CONTENTS: CourseContent[] = [
 // 3. 동시에 LED 점등과 함께 I2S 스피커로 경쾌한 도-미-솔 사운드가 울립니다.`
   },
   {
+    id: "content-week-3-lcd-lab", week: 3,
+    title: "3-4. LCD 연결하기",
+    description: "기존 회로에 ST7789 LCD를 추가하고 문구와 색상을 출력하는 가상 실습입니다.",
+    filename: "soda-3-1.ino", language: "arduino", contentType: "interactive",
+    imageUrl: "/simulations/lcd-lab/index.html", tags: ["LCD", "ST7789", "시뮬레이션"],
+    code: getFirmwareCode("soda-3-1.ino"),
+  },
+  {
     id: "content-week-3-lcd-hello",
     week: 3,
-    title: "3-4. LCD 기본 출력 - Hello SODA!",
+    title: "3-5. LCD 기본 출력 - Hello SODA!",
     description: "Waveshare 2.0인치 ST7789 LCD 디스플레이를 초기화하고 화면 중앙에 'Hello SODA!' 글씨를 출력하는 가장 기본적이고 심플한 3주차 첫 실습 코드입니다.",
     filename: "soda-3-1.ino",
     language: "arduino",
@@ -270,9 +278,17 @@ const DEFAULT_COURSE_CONTENTS: CourseContent[] = [
     code: getFirmwareCode("soda-3-1.ino")
   },
   {
+    id: "content-week-4-lcd-code-lab", week: 4,
+    title: "4-1. LCD 코드 실습",
+    description: "완성된 LCD 회로에서 soda-3-2.ino 코드와 버튼 카운트 코드를 실행하는 실습입니다.",
+    filename: "soda-3-2.ino", language: "arduino", contentType: "interactive",
+    imageUrl: "/simulations/lcd-code-lab/index.html", tags: ["LCD", "코드 실습", "시뮬레이션"],
+    code: getFirmwareCode("soda-3-2.ino"),
+  },
+  {
     id: "content-week-3-lcd-basic",
-    week: 3,
-    title: "3-5. LCD 기본코드 - 메인화면 표시 버튼클릭시 증가표시",
+    week: 4,
+    title: "4-2. LCD 기본코드 - 메인화면 표시 버튼클릭시 증가표시",
     description: "ST7789 2.0인치 LCD 화면에 메인 그래픽을 표시하고, 버튼을 누를 때마다 클릭 카운트 증가 화면 및 도-미-솔 사운드를 출력하는 3주차 실습입니다.",
     filename: "soda-3-2.ino",
     language: "arduino",
@@ -282,9 +298,15 @@ const DEFAULT_COURSE_CONTENTS: CourseContent[] = [
     code: getFirmwareCode("soda-3-2.ino")
   },
   {
+    id: "content-week-4-lcd-shapes-lab", week: 4, title: "4-3. LCD 도형 실습",
+    description: "완성된 LCD 회로에서 선·사각형·원·채운 도형을 직접 코딩하고 실행하는 실습입니다.",
+    filename: "soda-3-3.ino", language: "arduino", contentType: "interactive",
+    imageUrl: "/simulations/lcd-shapes-lab/index.html", tags: ["LCD", "도형", "코드 실습"], code: getFirmwareCode("soda-3-3.ino"),
+  },
+  {
     id: "content-week-3-lcd-shapes",
-    week: 3,
-    title: "3-6. LCD 다양한 도형 그리기",
+    week: 4,
+    title: "4-4. LCD 다양한 도형 그리기",
     description: "ST7789 2.0인치 LCD 디스플레이에 선(Line), 사각형(Rect), 원(Circle), 채운 원(FillCircle) 등 다양한 2D 그래픽 도형을 2초 간격으로 순차 렌더링하는 3주차 실습입니다.",
     filename: "soda-3-3.ino",
     language: "arduino",
@@ -294,9 +316,15 @@ const DEFAULT_COURSE_CONTENTS: CourseContent[] = [
     code: getFirmwareCode("soda-3-3.ino")
   },
   {
+    id: "content-week-4-lcd-frame-lab", week: 4, title: "4-5. 나만의 액자 만들기",
+    description: "색상·장식·제목을 직접 수정해 나만의 LCD 액자를 만드는 미션 실습입니다.",
+    filename: "soda-frame.ino", language: "arduino", contentType: "interactive",
+    imageUrl: "/simulations/lcd-frame-lab/index.html", tags: ["LCD", "액자", "미션"], code: getFirmwareCode("soda-frame.ino"),
+  },
+  {
     id: "content-week-3-lcd-editor",
-    week: 3,
-    title: "3-7. 2.0\" LCD 화면편집기 (소다봇 표정 스튜디오)",
+    week: 4,
+    title: "4-6. 2.0\" LCD 화면편집기 (소다봇 표정 스튜디오)",
     description: "마우스로 소다봇 표정 및 픽셀 아트를 직접 그리고 2장 표정 전환 애니메이션을 아두이노 C++ 코드로 생성/다운로드하는 3주차 전용 그래픽 도구입니다.",
     filename: "soda-3-4.ino",
     language: "arduino",
@@ -310,10 +338,16 @@ const DEFAULT_COURSE_CONTENTS: CourseContent[] = [
   // WEEK 04 — 공룡을 점프시켜라 (4개 실습)
   // ====================================================
   {
+    id: "content-week-4-lcd-expression-lab", week: 4, title: "4-7. 버튼으로 표정 바꾸기",
+    description: "버튼을 누르면 LCD 표정·효과음·LED가 함께 반응하는 통합 미션입니다.",
+    filename: "soda-expression.ino", language: "arduino", contentType: "interactive",
+    imageUrl: "/simulations/lcd-expression-lab/index.html", tags: ["LCD", "표정", "버튼", "LED", "효과음"], code: getFirmwareCode("soda-expression.ino"),
+  },
+  {
     id: "content-week-4-dino-basic",
-    week: 4,
-    title: "4-1. 공룡과 바닥 표시",
-    description: "ST7789 2.0인치 LCD에 공룡 스프라이트 비트맵과 바닥 선을 선명하게 렌더링하는 4주차 첫 번째 실습입니다.",
+    week: 5,
+    title: "5-1. 공룡과 바닥 표시",
+    description: "ST7789 2.0인치 LCD에 공룡 스프라이트 비트맵과 바닥 선을 선명하게 렌더링하는 5주차 첫 번째 실습입니다.",
     filename: "soda-4-1.ino",
     language: "arduino",
     tags: ["디노게임", "비트맵", "공룡", "LCD", "ST7789", "ESP32"],
@@ -323,8 +357,8 @@ const DEFAULT_COURSE_CONTENTS: CourseContent[] = [
   },
   {
     id: "content-week-4-button-jump-simple",
-    week: 4,
-    title: "4-2. 정해진 위치를 이용한 점프 애니메이션",
+    week: 5,
+    title: "5-2. 정해진 위치를 이용한 점프 애니메이션",
     description: "버튼(GPIO4)을 누르면 정해진 높이 단계 배열을 따라 공룡이 위로 올라갔다 내려오는 기초 점프 애니메이션을 구현합니다.",
     filename: "soda-4-2.ino",
     language: "arduino",
@@ -335,8 +369,8 @@ const DEFAULT_COURSE_CONTENTS: CourseContent[] = [
   },
   {
     id: "content-week-4-dino-jump-physics",
-    week: 4,
-    title: "4-3. 점프 힘과 중력을 이용한 자연스러운 점프",
+    week: 5,
+    title: "5-3. 점프 힘과 중력을 이용한 자연스러운 점프",
     description: "물리 엔진 개념(점프 속도 velocity와 중력 gravity)을 적용하여 진짜 게임처럼 부드럽고 찰진 공룡 점프를 완성합니다.",
     filename: "soda-4-3.ino",
     language: "arduino",
@@ -347,9 +381,9 @@ const DEFAULT_COURSE_CONTENTS: CourseContent[] = [
   },
   {
     id: "content-week-4-dino-jump-final",
-    week: 4,
-    title: "4-4. 점프 효과음(I2S 스피커)과 완성 점프",
-    description: "공룡 점프 시 MAX98357A I2S 앰프와 FreeRTOS 비동기 태스크를 통해 고품질 점프 신스 사운드를 재생하는 4주차 완성 실습입니다.",
+    week: 5,
+    title: "5-4. 점프 효과음(I2S 스피커)과 완성 점프",
+    description: "공룡 점프 시 MAX98357A I2S 앰프와 FreeRTOS 비동기 태스크를 통해 고품질 점프 신스 사운드를 재생하는 5주차 완성 실습입니다.",
     filename: "soda-4-4.ino",
     language: "arduino",
     tags: ["점프효과음", "I2S스피커", "MAX98357A", "FreeRTOS", "완성점프", "DINO_FINAL", "ESP32"],
@@ -362,8 +396,8 @@ const DEFAULT_COURSE_CONTENTS: CourseContent[] = [
   // ====================================================
   {
     id: "content-week-5-cactus-move",
-    week: 5,
-    title: "5-1. X좌표로 선인장 이동",
+    week: 6,
+    title: "6-1. X좌표로 선인장 이동",
     description: "오른쪽 끝에서 왼쪽으로 스스로 달려오는 장애물(선인장)의 X좌표 이동 및 I2S 점프 효과음을 구현합니다.",
     filename: "soda-5-1.ino",
     language: "arduino",
@@ -374,8 +408,8 @@ const DEFAULT_COURSE_CONTENTS: CourseContent[] = [
   },
   {
     id: "content-week-5-collision-gameover",
-    week: 5,
-    title: "5-2. 충돌, 게임 종료, 다시 시작",
+    week: 6,
+    title: "6-2. 충돌, 게임 종료, 다시 시작",
     description: "공룡과 선인장의 AABB 충돌 판정, GAME OVER 화면, 점프/충돌 I2S 사운드 및 버튼 재시작 흐름을 제작합니다.",
     filename: "soda-5-2.ino",
     language: "arduino",
@@ -386,8 +420,8 @@ const DEFAULT_COURSE_CONTENTS: CourseContent[] = [
   },
   {
     id: "content-week-5-score-level",
-    week: 5,
-    title: "5-3. 점수와 속도 증가",
+    week: 6,
+    title: "6-3. 점수와 속도 증가",
     description: "실시간 점수(SCORE), 점수 획득/점프/충돌 사운드, 난이도에 따라 선인장 속도가 빨라지는 레벨업 시스템을 적용합니다.",
     filename: "soda-5-3.ino",
     language: "arduino",
@@ -398,8 +432,8 @@ const DEFAULT_COURSE_CONTENTS: CourseContent[] = [
   },
   {
     id: "content-week-5-dino-game-final",
-    week: 5,
-    title: "5-4. 최고점 저장 & 완성형 디노 게임",
+    week: 6,
+    title: "6-4. 최고점 저장 & 완성형 디노 게임",
     description: "랜덤 선인장 간격, 공룡 발 애니메이션, I2S 멀티 사운드 엔진, Flash 최고 기록(BEST SCORE) 저장 기능이 모두 포함된 완성형 디노 게임입니다.",
     filename: "soda-5-4.ino",
     language: "arduino",
@@ -410,27 +444,27 @@ const DEFAULT_COURSE_CONTENTS: CourseContent[] = [
   },
   {
     id: "content-week-6-settings",
-    week: 6,
+    week: 7,
     title: "1. 소다봇 설정하기",
     description: "소다봇의 Wi-Fi, BLE 장치 이름, 기본 표정, 물리 버튼 동작을 설정하고 4개 파트(HEADERS, GLOBALS, SETUP, FUNCTION) 커스텀 아두이노 기능을 자동 병합하여 다운로드합니다.",
     filename: "soda-basic-template.ino",
     language: "arduino",
     contentType: "code",
-    tags: ["6-7주차", "소다봇설정", "커스텀기능", "Wi-Fi", "BLE", "펌웨어"],
+    tags: ["7-8주차", "소다봇설정", "커스텀기능", "Wi-Fi", "BLE", "펌웨어"],
     pinMap: "LCD(11,12,13,7,6), 버튼:4, I2S스피커(5,3,44), I2S마이크(9,10,8)",
     updatedAt: new Date().toISOString(),
     code: getFirmwareCode("soda-basic-template.ino")
   },
   {
     id: "content-week-6-mic-circuit",
-    week: 6,
+    week: 7,
     title: "2. [배선도] 마이크 추가 회로 연결도",
     description: "ESP32-S3 SuperMini 보드와 I2S 원형 마이크 모듈의 3.3V 전원 및 핀 연결 배선도(GPIO9/SCK, GPIO10/WS, GPIO8/SD) 가이드입니다.",
     filename: "circuit_mic_i2s.jpg",
     language: "json",
     contentType: "circuit",
     imageUrl: "/images/circuit_mic_i2s.jpg",
-    tags: ["6-7주차", "배선도", "회로도", "마이크", "I2S", "ESP32-S3", "3.3V"],
+    tags: ["7-8주차", "배선도", "회로도", "마이크", "I2S", "ESP32-S3", "3.3V"],
     pinMap: "마이크 VDD: 3.3V, GND: 공통GND, SCK: GPIO9, WS: GPIO10, SD: GPIO8, L/R: GND",
     updatedAt: new Date().toISOString(),
     code: `// [6-7주차] ESP32 Super Mini ↔ I2S 마이크 연결 핀맵 요약
@@ -451,39 +485,39 @@ const DEFAULT_COURSE_CONTENTS: CourseContent[] = [
   },
   {
     id: "content-week-6-firmware-v4",
-    week: 6,
+    week: 7,
     title: "3. 소다봇 기본 펌웨어 (마이크 통합 v4)",
     description: "ESP32-S3 기반 소다봇 표준 펌웨어 v4입니다. BLE, Wi-Fi, WebSocket, 2.0인치 ST7789 LCD, MAX98357A I2S 스피커, INMP441 I2S 마이크, 물리 버튼 및 NVS 설정 저장이 모두 통합되어 있습니다.",
     filename: "soda-6-3.ino",
     language: "arduino",
     contentType: "code",
-    tags: ["6-7주차", "기본펌웨어", "마이크통합v4", "ESP32-S3", "ST7789", "MAX98357A", "INMP441", "BLE", "WebSocket"],
+    tags: ["7-8주차", "기본펌웨어", "마이크통합v4", "ESP32-S3", "ST7789", "MAX98357A", "INMP441", "BLE", "WebSocket"],
     pinMap: "LCD(MOSI:11, CLK:12, CS:13, DC:7, RST:6), 버튼:4, I2S스피커(5,3,44), I2S마이크(9,10,8)",
     updatedAt: new Date().toISOString(),
     code: getFirmwareCode("soda-6-3.ino")
   },
   {
     id: "content-week-8-firmware",
-    week: 8,
+    week: 9,
     title: "1. 소다봇 기본 펌웨어",
-    description: "8주차 소다봇 빌더 실습을 위한 표준 아두이노 펌웨어입니다. BLE, Wi-Fi, WebSocket, 2.0인치 ST7789 LCD, MAX98357A I2S 스피커, INMP441 I2S 마이크, Push-to-Talk 실시간 음성인식, 인터넷 실시간 시계(NTP) 및 커스텀 기능이 모두 통합되어 있습니다.",
+    description: "9주차 소다봇 빌더 실습을 위한 표준 아두이노 펌웨어입니다. BLE, Wi-Fi, WebSocket, 2.0인치 ST7789 LCD, MAX98357A I2S 스피커, INMP441 I2S 마이크, Push-to-Talk 실시간 음성인식, 인터넷 실시간 시계(NTP) 및 커스텀 기능이 모두 통합되어 있습니다.",
     filename: "soda-8-1.ino",
     language: "arduino",
     contentType: "code",
-    tags: ["8주차", "기본펌웨어", "소다봇빌더", "음성대화", "NTP시계", "ESP32-S3", "soda-8-1"],
+    tags: ["9주차", "기본펌웨어", "소다봇빌더", "음성대화", "NTP시계", "ESP32-S3", "soda-8-1"],
     pinMap: "LCD(MOSI:11, CLK:12, CS:13, DC:7, RST:6), 버튼:4, I2S스피커(5,3,44), I2S마이크(9,10,8)",
     updatedAt: new Date().toISOString(),
     code: getFirmwareCode("soda-8-1.ino")
   },
   {
     id: "content-week-9-firmware",
-    week: 9,
+    week: 10,
     title: "1. 소다봇 PCB 기본 펌웨어",
-    description: "9주차 소다봇 전용 PCB(v1.1) 실습을 위한 표준 아두이노 펌웨어입니다. SODA-AIBOT v1.1 PCB 배선 및 TX(GPIO43) 버튼 입력, I2S 스피커/마이크, ST7789 LCD 및 실시간 음성 대화 기능이 연결되어 있습니다.",
+    description: "10주차 소다봇 전용 PCB(v1.1) 실습을 위한 표준 아두이노 펌웨어입니다. SODA-AIBOT v1.1 PCB 배선 및 TX(GPIO43) 버튼 입력, I2S 스피커/마이크, ST7789 LCD 및 실시간 음성 대화 기능이 연결되어 있습니다.",
     filename: "soda-9-1.ino",
     language: "arduino",
     contentType: "code",
-    tags: ["9주차", "PCB기본펌웨어", "소다봇PCB", "음성대화", "soda-9-1", "ESP32-S3"],
+    tags: ["10주차", "PCB기본펌웨어", "소다봇PCB", "음성대화", "soda-9-1", "ESP32-S3"],
     pinMap: "PCB v1.1: LCD(MOSI:11, CLK:12, CS:13, DC:7, RST:6), 버튼:GPIO43(TX), I2S스피커(5,3,44), I2S마이크(9,10,8)",
     updatedAt: new Date().toISOString(),
     code: getFirmwareCode("soda-9-1.ino")
@@ -564,6 +598,7 @@ interface DBStructure {
   };
   chats: ChatRoom[];
   circuitProgress?: Record<string, { updatedAt: string; data: any }>;
+  curriculumWeekShiftVersion?: number;
   courseContents?: CourseContent[];
   friendProfiles?: SodabotPublicProfile[];
   friendships?: Friendship[];
@@ -607,6 +642,7 @@ function initDB() {
           ]
         }
       ],
+      curriculumWeekShiftVersion: 1,
       courseContents: DEFAULT_COURSE_CONTENTS,
       friendProfiles: [],
       friendships: [],
@@ -624,6 +660,23 @@ function readDB(): DBStructure {
   const raw = fs.readFileSync(DB_FILE, "utf8");
   const db: DBStructure = JSON.parse(raw);
   let changed = false;
+  if (!db.curriculumWeekShiftVersion) {
+    for (const item of db.courseContents || []) {
+    if (item.id === "content-week-4-lcd-code-lab" && item.filename === "soda-3-1.ino") {
+      item.filename = "soda-3-2.ino";
+      item.code = getFirmwareCode("soda-3-2.ino");
+      changed = true;
+    }
+      if (Number(item.week) >= 4) {
+        const oldWeek = Number(item.week);
+        item.week = oldWeek + 1;
+        item.title = item.title.replace(new RegExp("^" + oldWeek + "-(\\d+\\.)"), String(item.week) + "-$1");
+      }
+    }
+    db.curriculumWeekShiftVersion = 1;
+    changed = true;
+  }
+
   if (!db.courseContents || !Array.isArray(db.courseContents)) {
     db.courseContents = DEFAULT_COURSE_CONTENTS;
     changed = true;
@@ -641,12 +694,13 @@ function readDB(): DBStructure {
     const movedToWeek3 = ["content-week-2-circuit-diagram", "content-week-2-amplifier-lab", "content-week-2-sound", "content-week-2-btn-led-sound"];
     const week3Numbers: Record<string, string> = {
       "content-week-2-amplifier-lab": "3-1.", "content-week-2-sound": "3-2.", "content-week-2-btn-led-sound": "3-3.",
-      "content-week-3-lcd-hello": "3-4.", "content-week-3-lcd-basic": "3-5.", "content-week-3-lcd-shapes": "3-6.", "content-week-3-lcd-editor": "3-7."
+      "content-week-3-lcd-hello": "3-5.", "content-week-3-lcd-basic": "4-2.", "content-week-3-lcd-shapes": "4-4.", "content-week-3-lcd-editor": "4-6."
     };
     if (movedToWeek3.includes(item.id) && item.week !== 3) { item.week = 3; changed = true; }
+    if (["content-week-3-lcd-basic", "content-week-3-lcd-shapes", "content-week-3-lcd-editor"].includes(item.id) && item.week !== 4) { item.week = 4; changed = true; }
     const prefix = week3Numbers[item.id];
     if (prefix) {
-      const title = item.title.replace(/^[23]-\d+\./, prefix);
+      const title = item.title.replace(/^[234]-\d+\./, prefix);
       if (title !== item.title) { item.title = title; changed = true; }
     }
 
@@ -2185,7 +2239,7 @@ app.get("/api/course-contents", (req, res) => {
   }).sort((a, b) => {
     const rank = (id: string) => ({
       "content-week-2-breadboard-secret": -5, "content-week-2-circuit-lab": -4, "content-week-2-sound-lab": -3,
-      "content-week-2-circuit-diagram": -4, "content-week-2-amplifier-lab": -3, "content-week-2-sound": -2, "content-week-2-btn-led-sound": -1
+      "content-week-2-circuit-diagram": -4, "content-week-2-amplifier-lab": -3, "content-week-2-sound": -2, "content-week-2-btn-led-sound": -1, "content-week-4-lcd-code-lab": -1, "content-week-3-lcd-lab": 0.5, "content-week-3-lcd-hello": 1, "content-week-3-lcd-basic": 2, "content-week-4-lcd-shapes-lab": 2.5, "content-week-3-lcd-shapes": 3, "content-week-4-lcd-frame-lab": 3.5, "content-week-3-lcd-editor": 4, "content-week-4-lcd-expression-lab": 5
     }[id] || 0);
     return a.week - b.week || rank(a.id) - rank(b.id);
   });

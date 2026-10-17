@@ -2391,7 +2391,7 @@ export default function App() {
                 <span>1단계: 펌웨어 개발실</span>
               </div>
               <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600 font-extrabold font-mono">
-                1~5주차
+                1~6주차
               </span>
             </button>
 
@@ -2415,7 +2415,7 @@ export default function App() {
               </div>
               {user.canAccessChat ? (
                 <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 font-extrabold flex items-center gap-0.5 font-mono">
-                  6주차~
+                  7주차~
                 </span>
               ) : (
                 <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 font-extrabold flex items-center gap-0.5 border border-amber-200">
@@ -2434,11 +2434,11 @@ export default function App() {
             <div className="flex items-center justify-between px-2 py-1.5 text-[10px] font-bold text-[#86868B] uppercase tracking-wider font-mono border-b border-[#EAE6DF] mb-1">
               <span className="flex items-center gap-1.5">
                 <FolderCode className="w-3.5 h-3.5 text-indigo-600" />
-                1~5주차 펌웨어 실습 코드
+                1~6주차 펌웨어 실습 코드
               </span>
               <button
                 onClick={() => {
-                  const devWeeks = Array.from(new Set(courseContents.filter(c => Number(c.week) <= 5).map(c => c.week)));
+                  const devWeeks = Array.from(new Set(courseContents.filter(c => Number(c.week) <= 6).map(c => c.week)));
                   if (expandedWeeks.length === devWeeks.length) {
                     setExpandedWeeks([]);
                   } else {
@@ -2451,8 +2451,8 @@ export default function App() {
               </button>
             </div>
 
-            {/* Tree View Grouped by Week (1~5주차 전용) */}
-            {Array.from(new Set(courseContents.filter(c => Number(c.week) <= 5).map(c => Number(c.week))))
+            {/* Tree View Grouped by Week (1~6주차 전용) */}
+            {Array.from(new Set(courseContents.filter(c => Number(c.week) <= 6).map(c => Number(c.week))))
               .sort((a, b) => Number(a) - Number(b))
               .map(weekNum => {
                 const weekCodes = courseContents.filter(c => c.week === weekNum);
@@ -2591,72 +2591,12 @@ export default function App() {
                   </div>
                 </button>
 
-                {/* 소다봇 친구 바로가기 버튼 */}
-                <button
-                  onClick={() => setCurrentView('friends')}
-                  className={`w-full text-left bg-white hover:bg-indigo-50/40 border rounded-2xl p-2.5 shadow-xs transition-all cursor-pointer group flex items-center justify-between ${
-                    currentView === 'friends' ? 'border-indigo-500 ring-2 ring-indigo-50 bg-indigo-50/30' : 'border-[#EAE6DF] hover:border-indigo-300'
-                  }`}
-                  title="소다봇 친구 목록 및 1:1 메시지"
-                >
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-xl bg-indigo-50 border border-indigo-200 flex items-center justify-center text-sm text-indigo-600 font-bold shrink-0">
-                      <Users className="w-4 h-4" />
-                    </div>
-                    <div className="min-w-0">
-                      <h5 className="text-xs font-bold text-[#1D1D1F] truncate group-hover:text-indigo-600 transition-colors flex items-center gap-1.5">
-                        <span>소다봇 친구</span>
-                        {unreadFriendMessages > 0 ? (
-                          <span className="px-1.5 py-0.2 bg-rose-500 text-white text-[9px] font-bold rounded-full font-mono animate-pulse">
-                            {unreadFriendMessages}
-                          </span>
-                        ) : (
-                          <span className="px-1.5 py-0.2 bg-indigo-100 text-indigo-700 text-[9px] font-bold rounded-full font-mono">
-                            NEW
-                          </span>
-                        )}
-                      </h5>
-                      <p className="text-[10px] text-[#86868B] truncate">
-                        친구 찾기 및 1:1 메시지
-                      </p>
-                    </div>
-                  </div>
-                  <ChevronRight className="w-3.5 h-3.5 text-[#86868B] group-hover:text-indigo-600 group-hover:translate-x-0.5 transition-all" />
-                </button>
-
-                {/* 10~11주차 AI 스킬 스튜디오 바로가기 버튼 */}
-                <button
-                  onClick={() => setCurrentView('ai_skills')}
-                  className={`w-full text-left bg-white hover:bg-blue-50/50 border rounded-2xl p-2.5 shadow-xs transition-all cursor-pointer group flex items-center justify-between ${
-                    currentView === 'ai_skills' ? 'border-blue-500 ring-2 ring-blue-50 bg-blue-50/40' : 'border-[#EAE6DF] hover:border-blue-300'
-                  }`}
-                  title="10~11주차: 소다봇 AI 스킬 프로젝트 스튜디오"
-                >
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center text-sm text-blue-600 font-bold shrink-0">
-                      <Sparkles className="w-4 h-4" />
-                    </div>
-                    <div className="min-w-0">
-                      <h5 className="text-xs font-bold text-[#1D1D1F] truncate group-hover:text-blue-600 transition-colors flex items-center gap-1.5">
-                        <span>AI 스킬 프로젝트</span>
-                        <span className="px-1.5 py-0.2 bg-blue-100 text-blue-700 text-[9px] font-bold rounded-full font-mono">
-                          10-11주차
-                        </span>
-                      </h5>
-                      <p className="text-[10px] text-[#86868B] truncate">
-                        AI 스킬 선택 · 테스트 · 보고서
-                      </p>
-                    </div>
-                  </div>
-                  <ChevronRight className="w-3.5 h-3.5 text-[#86868B] group-hover:text-blue-600 group-hover:translate-x-0.5 transition-all" />
-                </button>
-
-                {/* 6~11주차 실습 & AI 연동 메뉴 (소다봇 미연결 시 잠금 처리) */}
+                {/* 7~11주차 실습 & AI 연동 메뉴 (소다봇 미연결 시 잠금 처리) */}
                 <div className="space-y-1 pb-1 pt-1 border-t border-[#EAE6DF]/70">
                   <div className="flex items-center justify-between px-2 py-1 text-[10px] font-bold text-[#86868B] uppercase tracking-wider font-mono">
                     <span className="flex items-center gap-1.5">
                       <FolderCode className="w-3 h-3 text-indigo-600" />
-                      6~11주차 실습 & 연동
+                      7~11주차 실습 & 연동
                     </span>
                     {!isSodabotConnected ? (
                       <span className="text-[9px] text-amber-600 font-extrabold flex items-center gap-0.5 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
@@ -2669,7 +2609,7 @@ export default function App() {
                     )}
                   </div>
 
-                  {/* 6-7주차 실습 폴더 */}
+                  {/* 7-8주차 실습 폴더 */}
                   <div className="space-y-0.5">
                     <button
                       onClick={() => setIsWeek67Expanded(!isWeek67Expanded)}
@@ -2681,7 +2621,7 @@ export default function App() {
                         ) : (
                           <ChevronRight className="w-3.5 h-3.5 text-[#86868B] shrink-0" />
                         )}
-                        <span className="truncate">6-7주차 실습</span>
+                        <span className="truncate">7-8주차 실습</span>
                       </div>
                     </button>
 
@@ -2781,7 +2721,7 @@ export default function App() {
                     )}
                   </div>
 
-                  {/* 8주차 실습 폴더 */}
+                  {/* 9주차 실습 폴더 */}
                   <div className="space-y-0.5">
                     <button
                       onClick={() => setIsWeek8Expanded(!isWeek8Expanded)}
@@ -2793,13 +2733,13 @@ export default function App() {
                         ) : (
                           <ChevronRight className="w-3.5 h-3.5 text-[#86868B] shrink-0" />
                         )}
-                        <span className="truncate">8주차 실습</span>
+                        <span className="truncate">9주차 실습</span>
                       </div>
                     </button>
 
                     {isWeek8Expanded && (
                       <div className="pl-3.5 space-y-0.5 border-l-2 border-indigo-100 ml-3.5 my-1">
-                        {/* 1. 8주차 기본 펌웨어 (soda-8-1) */}
+                        {/* 1. 9주차 기본 펌웨어 (soda-8-1) */}
                         <button
                           onClick={() => {
                             const userKey = user?.id || user?.username || 'default';
@@ -2827,7 +2767,7 @@ export default function App() {
                           </span>
                         </button>
 
-                        {/* 2. 8주차 소다와 대화하기 (8-2) */}
+                        {/* 2. 9주차 소다와 대화하기 (8-2) */}
                         <button
                           onClick={() => {
                             setCurrentView('chat');
@@ -2847,7 +2787,7 @@ export default function App() {
                           </span>
                         </button>
 
-                        {/* 3. 8주차 소다봇 친구 & 1:1 메시지 (8-3) */}
+                        {/* 3. 9주차 소다봇 친구 & 1:1 메시지 (8-3) */}
                         <button
                           onClick={() => {
                             setCurrentView('friends');
@@ -2867,7 +2807,7 @@ export default function App() {
                           </span>
                         </button>
 
-                        {/* 4. 8주차 모바일 소다봇 & PWA (8-4) */}
+                        {/* 4. 9주차 모바일 소다봇 & PWA (8-4) */}
                         <button
                           onClick={() => {
                             setCurrentView('mobile_guide');
@@ -2886,11 +2826,29 @@ export default function App() {
                             8-4
                           </span>
                         </button>
+                        <button
+                          onClick={() => setCurrentView('friends')}
+                          title="소다봇 친구 목록 및 1:1 메시지"
+                          className={`w-full text-left px-2.5 py-1.5 rounded-xl text-xs font-medium flex items-center justify-between transition-all cursor-pointer ${
+                            currentView === 'friends'
+                              ? 'bg-indigo-50 text-indigo-900 font-bold border border-indigo-200 shadow-2xs'
+                              : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20 hover:text-[#1D1D1F]'
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <Users className="w-3.5 h-3.5 shrink-0 text-indigo-500" />
+                            <span className="truncate text-xs">5. 소다봇 친구</span>
+                            {unreadFriendMessages > 0 && (
+                              <span className="px-1.5 rounded-full bg-rose-500 text-white text-[9px] font-bold">{unreadFriendMessages}</span>
+                            )}
+                          </div>
+                          <span className="text-[8px] text-indigo-700 bg-indigo-50 border border-indigo-200/60 px-1.5 py-0.5 rounded font-mono font-semibold shrink-0">9-5</span>
+                        </button>
                       </div>
                     )}
                   </div>
 
-                  {/* 9주차 실습 폴더 */}
+                  {/* 10주차 실습 폴더 */}
                   <div className="space-y-0.5">
                     <button
                       onClick={() => setIsWeek9Expanded(!isWeek9Expanded)}
@@ -2902,13 +2860,13 @@ export default function App() {
                         ) : (
                           <ChevronRight className="w-3.5 h-3.5 text-[#86868B] shrink-0" />
                         )}
-                        <span className="truncate">9주차 실습</span>
+                        <span className="truncate">10주차 실습</span>
                       </div>
                     </button>
 
                     {isWeek9Expanded && (
                       <div className="pl-3.5 space-y-0.5 border-l-2 border-indigo-100 ml-3.5 my-1">
-                        {/* 1. 9주차 PCB 기본 펌웨어 (soda-9-1) */}
+                        {/* 1. 10주차 PCB 기본 펌웨어 (soda-9-1) */}
                         <button
                           onClick={() => {
                             const userKey = user?.id || user?.username || 'default';
@@ -2936,7 +2894,7 @@ export default function App() {
                           </span>
                         </button>
 
-                        {/* 2. 9주차 소다봇 조립하기 (9-2) */}
+                        {/* 2. 10주차 소다봇 조립하기 (9-2) */}
                         <button
                           onClick={() => {
                             setCurrentView('assembly_v9');
@@ -2959,7 +2917,7 @@ export default function App() {
                     )}
                   </div>
 
-                  {/* 10~11주차: AI 스킬 프로젝트 */}
+                  {/* 11주차: AI 스킬 프로젝트 */}
                   <button
                     onClick={() => {
                       setCurrentView('ai_skills');
@@ -2972,10 +2930,10 @@ export default function App() {
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       <Sparkles className={`w-3.5 h-3.5 shrink-0 ${currentView === 'ai_skills' ? 'text-blue-600' : 'text-blue-500'}`} />
-                      <span className="truncate">10-11주차: AI 스킬 프로젝트</span>
+                      <span className="truncate">11주차: AI 스킬 프로젝트</span>
                     </div>
                     <span className="text-[8px] text-blue-700 bg-blue-50 border border-blue-200/60 px-1.5 py-0.5 rounded font-mono font-semibold shrink-0">
-                      10-11
+                      11
                     </span>
                   </button>
                 </div>
@@ -3470,7 +3428,7 @@ export default function App() {
                   </div>
                   <div>
                     <h2 className="text-base sm:text-lg font-black text-[#1D1D1F] flex items-center gap-2">
-                      <span>6-7주차: 마이크 추가 배선도</span>
+                      <span>7-8주차: 마이크 추가 배선도</span>
                       <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-mono font-bold">
                         WEEK 06-07
                       </span>
@@ -3664,7 +3622,7 @@ export default function App() {
                         </div>
                         <div>
                           <h2 className="text-base sm:text-lg font-black text-[#1D1D1F] flex items-center gap-2 flex-wrap">
-                            <span>{isWeek9 ? '9주차: 소다봇 PCB 기본 펌웨어' : isWeek8 ? '8주차: 소다봇 기본 펌웨어' : '6-7주차: 마이크 입력 테스트'}</span>
+                            <span>{isWeek9 ? '10주차: 소다봇 PCB 기본 펌웨어' : isWeek8 ? '9주차: 소다봇 기본 펌웨어' : '7-8주차: 마이크 입력 테스트'}</span>
                             <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 font-mono font-bold">
                               {isWeek9 ? '소다봇 PCB v1.1' : isWeek8 ? '소다봇 빌더 통합 v4' : '사운드 레벨 측정'}
                             </span>
@@ -3674,7 +3632,7 @@ export default function App() {
                               ? '소다봇 전용 PCB(v1.1) 실습을 위한 펌웨어입니다. SODA-AIBOT PCB 배선(버튼 GPIO43), I2S 마이크/스피커, 2.0" LCD 및 실시간 음성 대화 기능이 통합되어 있습니다.'
                               : isWeek8
                               ? 'ESP32-S3 기반 BLE, Wi-Fi, 2.0" LCD, I2S 스피커/마이크, Push-to-Talk 실시간 음성인식, 실시간 시계(NTP) 및 커스텀 기능 통합 표준 아두이노 코드입니다.'
-                              : '물리 버튼(GPIO 4)을 누르고 있는 동안에만 마이크가 활성화되어 소리 크기(VU 미터)를 2.0" LCD와 시리얼 모니터로 실시간 측정하는 6주차 마이크 테스트 실습 펌웨어입니다.'}
+                              : '물리 버튼(GPIO 4)을 누르고 있는 동안에만 마이크가 활성화되어 소리 크기(VU 미터)를 2.0" LCD와 시리얼 모니터로 실시간 측정하는 7주차 마이크 테스트 실습 펌웨어입니다.'}
                           </p>
                         </div>
                       </div>

@@ -1,3 +1,4 @@
+import { soundPresets, normalizeSoundSettings, defaultSoundSettings } from '../utils/sodabotSounds';
 import { sodabotTransport } from '../utils/sodabotTransport';
 import React, { useState, useEffect, useRef } from 'react';
 import { 
@@ -115,8 +116,16 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
   const [profileDesc, setProfileDesc] = useState(() => localStorage.getItem(getScopedKey("profile_desc")) || '');
   const [startupPrompt, setStartupPrompt] = useState(() => localStorage.getItem(getScopedKey("startup_prompt")) || '');
   const [exprTab, setExprTab] = useState<'basic' | 'custom'>('basic');
-  const [defaultIdleExpr, setDefaultIdleExpr] = useState(() => localStorage.getItem(getScopedKey('default_idle_expr')) || 'happy');
-  const [selectedExpr, setSelectedExpr] = useState(() => localStorage.getItem(getScopedKey('default_idle_expr')) || 'happy');
+  const [defaultIdleExpr, setDefaultIdleExpr] = useState(() => {
+    if (!localStorage.getItem(getScopedKey('idle_default_v2'))) {
+      localStorage.setItem(getScopedKey('default_idle_expr'), 'default');
+      localStorage.setItem('sodabot_default_idle_expr', 'default');
+      localStorage.removeItem('sodabot_default_custom_face');
+      localStorage.setItem(getScopedKey('idle_default_v2'), '1');
+    }
+    return localStorage.getItem(getScopedKey('default_idle_expr')) || 'default';
+  });
+  const [selectedExpr, setSelectedExpr] = useState(() => localStorage.getItem(getScopedKey('default_idle_expr')) || 'default');
 
   // Custom Created Expression List State
   const [customExprList, setCustomExprList] = useState<Array<{
@@ -192,12 +201,9 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
     setSelectedExpr(exprId);
     setActiveCustomFace(null);
     localStorage.setItem('sodabot_default_idle_expr', exprId);
+    localStorage.setItem(getScopedKey('default_idle_expr'), exprId);
     localStorage.removeItem('sodabot_default_custom_face');
 
-    const matched = expressionsList.find(e => e.id === exprId);
-    const displayLabel = matched ? `${matched.label} 표정 ${matched.emoji}` : `${label} 표정`;
-    setStandbyFace(displayLabel);
-    localStorage.setItem('sodabot_standby_face', displayLabel);
 
     const safeHardwareId = mapToSafeHardwareExpr(exprId);
     sendWsCommand("set_default_expression", safeHardwareId, `대기 기본 표정(${label}) 설정`);
@@ -212,11 +218,9 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
     setSelectedExpr(cExpr.shape || 'custom');
     setActiveCustomFace(cExpr);
     localStorage.setItem('sodabot_default_idle_expr', cExpr.id);
+    localStorage.setItem(getScopedKey('default_idle_expr'), cExpr.id);
     localStorage.setItem('sodabot_default_custom_face', JSON.stringify(cExpr));
 
-    const displayLabel = `[내 표정] ${cExpr.label} ${cExpr.emoji}`;
-    setStandbyFace(displayLabel);
-    localStorage.setItem('sodabot_standby_face', displayLabel);
 
     try {
       if (cExpr.mode === 'pixel' && cExpr.pixelGrid) {
@@ -357,7 +361,7 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
 
   const [editName, setEditName] = useState('울먹눈');
   const [editEmoji, setEditEmoji] = useState('🥹');
-  const [editShape, setEditShape] = useState<'default' | 'happy' | 'angry' | 'sleepy' | 'surprised' | 'wink' | 'heart' | 'cat'>('happy');
+  const [editShape, setEditShape] = useState<'default' | 'happy' | 'angry' | 'sleepy' | 'surprised' | 'wink' | 'heart' | 'cat'>('default');
   const [editMouth, setEditMouth] = useState<'none' | 'smile' | 'open' | 'cat' | 'tongue'>('smile');
   const [editColor, setEditColor] = useState('#22D3EE');
   const [editEffect, setEditEffect] = useState<'none' | 'pulse' | 'bounce' | 'glow'>('pulse');
@@ -660,7 +664,6 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
   };
 
   const [welcomeMsg, setWelcomeMsg] = useState(localStorage.getItem('sodabot_welcome_msg') || 'HELLO!\nI AM LUMI :)\nNICE TO SEE YOU TODAY!');
-  const [standbyFace, setStandbyFace] = useState(localStorage.getItem('sodabot_standby_face') || '기본 표정 표시 🤖');
 
   const [soundTab, setSoundTab] = useState<'basic' | 'custom'>('basic');
   const [playingSound, setPlayingSound] = useState<string | null>(null);
@@ -752,39 +755,6 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
     const saved = localStorage.getItem('sodabot_btn_long');
     return (saved && saved !== 'show_time') ? saved : 'none';
   });
-
-  const previewStandbyScreen = (face: string) => {
-    showToast(`🌙 [대기 화면: ${face}] 미리보기를 시작합니다.`);
-    if (face.includes('시계')) {
-      setBootingState('time');
-      const now = new Date();
-      const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-      sendWsCommand("send_message", `TIME\n${timeStr}`, "대기 화면 시계 모드");
-      setTimeout(() => setBootingState(null), 3000);
-    } else if (face.includes('날씨')) {
-      setBootingState('greeting');
-      setBootingMessage('WEATHER\nSUNNY 24°C');
-      sendWsCommand("send_message", "WEATHER\nSUNNY 24C", "대기 화면 날씨 모드");
-      setTimeout(() => setBootingState(null), 3000);
-    } else if (face.includes('화면 끄기')) {
-      setBootingState(null);
-      setSelectedExpr('sleepy');
-      sendWsCommand("set_expression", "sleepy", "대기 화면 절전 모드");
-    } else {
-      setBootingState(null);
-      // 1. Check custom expressions
-      const foundCustom = customExprList.find(c => face.includes(c.label) || face.includes(c.id));
-      if (foundCustom) {
-        triggerCustomExpression(foundCustom);
-        return;
-      }
-      // 2. Check basic expressions
-      const matched = expressionsList.find(e => face.includes(e.label) || face.includes(e.id) || face.includes(e.emoji));
-      const exprId = matched ? matched.id : defaultIdleExpr;
-      const safeId = mapToSafeHardwareExpr(exprId);
-      triggerExpression(safeId, matched?.label || '기본');
-    }
-  };
 
   // 1. 새 기능 등록 모달 열기 (비어 있는 첫 번째 슬롯 자동 선택 및 초기화)
   const handleOpenNewFuncModal = () => {
@@ -1131,16 +1101,15 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
   // Configurable Boot Sequence State
   const [bootSequence, setBootSequence] = useState<Array<{
     id: string;
-    type: 'greeting' | 'expression' | 'sound' | 'time';
+    type: 'greeting' | 'expression' | 'sound';
     name: string;
     icon: string;
     enabled: boolean;
     value: string;
   }>>([
     { id: '1', type: 'greeting', name: '환영 인사 표시', icon: '💬', enabled: true, value: 'HELLO!\nI AM LUMI :)\nNICE TO SEE YOU TODAY!' },
-    { id: '2', type: 'expression', name: '표정 전환', icon: '😃', enabled: true, value: 'happy' },
+    { id: '2', type: 'expression', name: '표정 전환', icon: '🤖', enabled: true, value: 'default' },
     { id: '3', type: 'sound', name: '효과음 재생', icon: '🎵', enabled: true, value: 'greeting' },
-    { id: '4', type: 'time', name: '현재 시간 표시', icon: '⏰', enabled: true, value: '' },
   ]);
 
   const moveSeqUp = (index: number) => {
@@ -1177,24 +1146,22 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
 
   const removeSeqItem = (id: string) => {
     if (bootSequence.length <= 1) {
-      showToast('최소 1개 이상의 시작 시퀀스 단계가 필요합니다.');
+      showToast('최소 1개 이상의 시퀀스 단계가 필요합니다.');
       return;
     }
     setBootSequence(prev => prev.filter(item => item.id !== id));
     showToast('시퀀스 단계를 삭제했습니다.');
   };
 
-  const addSeqItem = (type: 'greeting' | 'expression' | 'sound' | 'time') => {
+  const addSeqItem = (type: 'greeting' | 'expression' | 'sound') => {
     const newId = Date.now().toString();
     let newItem: typeof bootSequence[0];
     if (type === 'greeting') {
       newItem = { id: newId, type: 'greeting', name: '환영 인사 표시', icon: '💬', enabled: true, value: welcomeMsg || 'HELLO!\nI AM LUMI :)' };
     } else if (type === 'expression') {
-      newItem = { id: newId, type: 'expression', name: '표정 전환', icon: '😃', enabled: true, value: 'happy' };
-    } else if (type === 'sound') {
-      newItem = { id: newId, type: 'sound', name: '효과음 재생', icon: '🎵', enabled: true, value: 'greeting' };
+      newItem = { id: newId, type: 'expression', name: '표정 전환', icon: '🤖', enabled: true, value: 'default' };
     } else {
-      newItem = { id: newId, type: 'time', name: '현재 시간 표시', icon: '⏰', enabled: true, value: '' };
+      newItem = { id: newId, type: 'sound', name: '효과음 재생', icon: '🎵', enabled: true, value: 'greeting' };
     }
     setBootSequence(prev => [...prev, newItem]);
     showToast(`'${newItem.name}' 단계를 새로 추가했습니다.`);
@@ -1203,6 +1170,46 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
   const showToast = (msg: string) => {
     setSaveToast(msg);
     setTimeout(() => setSaveToast(null), 2500);
+  };
+
+  const [soundSettings, setSoundSettings] = useState<Record<string, string>>(() => {
+    try { return normalizeSoundSettings(JSON.parse(localStorage.getItem(getScopedKey('sound_settings')) || '{}')); }
+    catch { return normalizeSoundSettings({}); }
+  });
+  const soundDraftChanged = useRef(false);
+  useEffect(() => {
+    let active = true;
+    soundDraftChanged.current = false;
+    if (connectionType !== 'none') {
+      void sodabotTransport.send('get_status').then(reply => {
+        if (active && !soundDraftChanged.current && reply.sound_settings) {
+          const settings = normalizeSoundSettings(reply.sound_settings);
+          setSoundSettings(settings);
+          localStorage.setItem(getScopedKey('sound_settings'), JSON.stringify(settings));
+        }
+      }).catch(() => {});
+      if (!localStorage.getItem(getScopedKey('idle_default_hardware_v2')) && defaultIdleExpr === 'default') {
+        void sodabotTransport.send('set_default_expression', 'default').then(() => {
+          localStorage.setItem(getScopedKey('idle_default_hardware_v2'), '1');
+        }).catch(() => {});
+      }
+    }
+    return () => { active = false; };
+  }, [connectionType, userKey]);
+  const [savingSounds, setSavingSounds] = useState(false);
+  const saveSoundSettings = async () => {
+    setSavingSounds(true);
+    try {
+      const status = await sodabotTransport.send('get_status');
+      if (!status.sound_settings) throw new Error('효과음 저장을 지원하는 새 맞춤 펌웨어를 다운로드·업로드해주세요.');
+      const reply = await sodabotTransport.send('set_sound_settings', JSON.stringify(soundSettings));
+      if (!reply.sound_settings || Object.keys(soundSettings).some(key => reply.sound_settings?.[key] !== soundSettings[key])) {
+        throw new Error('로봇의 효과음 저장 결과를 확인하지 못했습니다.');
+      }
+      localStorage.setItem(getScopedKey('sound_settings'), JSON.stringify(soundSettings));
+      showToast('효과음을 로봇에 저장했습니다. 재부팅 후에도 유지됩니다.');
+    } catch (error) { showToast(error instanceof Error ? error.message : '효과음 저장 실패'); }
+    finally { setSavingSounds(false); }
   };
 
   // Web Audio API Audio Synthesizer (웹에서만 듣기 - 소리 보장)
@@ -1229,22 +1236,15 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
         osc.stop(ctx.currentTime + duration);
       };
 
-      if (soundId === 'power_on') {
-        playTone(440, 0.15, 'sine');
-        setTimeout(() => playTone(880, 0.25, 'sine'), 150);
-      } else if (soundId === 'greeting') {
-        playTone(523.25, 0.15, 'triangle');
-        setTimeout(() => playTone(659.25, 0.15, 'triangle'), 150);
-        setTimeout(() => playTone(783.99, 0.25, 'triangle'), 300);
-      } else if (soundId === 'button_click') {
-        playTone(1000, 0.08, 'square');
-      } else if (soundId === 'touch_react') {
-        playTone(400, 0.1, 'sine');
-        setTimeout(() => playTone(600, 0.15, 'sine'), 100);
-      } else {
-        playTone(880, 0.2, 'sine');
-        setTimeout(() => playTone(1200, 0.2, 'sine'), 180);
+      const preset = soundPresets.find(p => p.id === (soundSettings[soundId] || soundId)) || soundPresets[0];
+      let offset = 0;
+      for (const [frequency, duration] of preset.notes) {
+        const scheduledOffset = offset;
+        setTimeout(() => playTone(frequency, duration / 1000), scheduledOffset);
+        offset += duration;
       }
+      setTimeout(() => { void ctx.close(); }, offset + 100);
+
     } catch (e) {
       console.error("Audio error:", e);
     }
@@ -1252,21 +1252,28 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
   };
 
   // Hardware Sound Test (소다봇 기기에서만 듣기)
-  const playBotSound = (soundId: string) => {
+  const playBotSound = async (soundId: string) => {
     setPlayingSound(`bot_${soundId}`);
-    sendWsCommand("play_sound", soundId);
-    showToast(`'${soundId}' 사운드를 소다봇 기기 스피커로 전송했습니다 🤖🔊`);
-    setTimeout(() => setPlayingSound(null), 600);
+    try {
+      const status = await sodabotTransport.send('get_status');
+      const preset = soundSettings[soundId] || soundId;
+      if (!status.sound_settings && preset !== defaultSoundSettings[soundId]) {
+        throw new Error('다른 효과음을 사용하려면 새 맞춤 펌웨어를 업로드해주세요.');
+      }
+      await sodabotTransport.send('play_sound', status.sound_settings ? preset : soundId);
+      showToast('선택한 효과음을 로봇에서 재생했습니다.');
+    } catch (error) { showToast(error instanceof Error ? error.message : '효과음 재생 실패'); }
+    finally { setPlayingSound(null); }
   };
 
   // Boot sequence preview simulator & Real Hardware execution
   const playBootSequence = async () => {
     const activeSteps = bootSequence.filter(s => s.enabled);
     if (activeSteps.length === 0) {
-      showToast('⚠️ 활성화된 시작 시퀀스 항목이 없습니다. 체크박스를 켜주세요.');
+      showToast('⚠️ 활성화된 시퀀스 항목이 없습니다. 체크박스를 켜주세요.');
       return;
     }
-    showToast(`🚀 시작 시퀀스 (${activeSteps.length}단계) 실행 중!`);
+    showToast(`🚀 시퀀스 (${activeSteps.length}단계) 실행 중!`);
     
     for (let i = 0; i < activeSteps.length; i++) {
       const step = activeSteps[i];
@@ -1278,7 +1285,7 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
         sendWsCommand("send_message", cleanMsg, `[${i+1}/${activeSteps.length}] 환영 인사 전송`);
         await new Promise(r => setTimeout(r, 2000));
       } else if (step.type === 'expression') {
-        const expr = step.value || 'happy';
+        const expr = step.value || 'default';
         setBootingState(expr);
         setSelectedExpr(expr);
         sendWsCommand("set_expression", expr, `[${i+1}/${activeSteps.length}] ${expr} 표정 전송`);
@@ -1289,12 +1296,7 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
         playWebSound(sound);
         sendWsCommand("play_sound", sound, `[${i+1}/${activeSteps.length}] ${sound} 효과음 재생`);
         await new Promise(r => setTimeout(r, 1200));
-      } else if (step.type === 'time') {
-        setBootingState('time');
-        const now = new Date();
-        const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-        sendWsCommand("send_message", `TIME\n${timeStr}`, `[${i+1}/${activeSteps.length}] 현재 시간 전송`);
-        await new Promise(r => setTimeout(r, 2000));
+
       }
     }
 
@@ -1302,8 +1304,8 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
     setBootingState(null);
     setBootingMessage('');
     setSelectedExpr('default');
-    sendWsCommand("set_expression", "default", "시작 시퀀스 완료 -> 기본 표정 복귀");
-    showToast('✨ 시작 시퀀스 재생이 완료되었습니다.');
+    sendWsCommand("set_expression", "default", "시퀀스 완료 -> 기본 표정 복귀");
+    showToast('✨ 시퀀스 재생이 완료되었습니다.');
   };
 
   // Listen to physical button events from Sodabot
@@ -1324,7 +1326,6 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
       profileName,
       profileDesc,
       welcomeMsg,
-      standbyFace,
       standbyTime,
       wifiSsid,
       autoSync,
@@ -1629,7 +1630,7 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
                   소다봇 설정 스튜디오
                 </h2>
                 <p className="text-xs text-[#787774] mt-0.5">
-                  표정, 대기 모드, 효과음 및 물리 버튼 동작을 한 화면에서 설정합니다.
+                  표정, 인사말, 효과음 및 물리 버튼 동작을 한 화면에서 설정합니다.
                 </p>
               </div>
 
@@ -1651,24 +1652,8 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
             </div>
 
             {/* Quick Overview Badges */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+            <div className="grid grid-cols-2 gap-2.5">
               <div className="bg-white p-3 rounded-xl border border-[#E5E5E3] space-y-1 shadow-2xs">
-                <span className="text-[11px] text-[#787774] font-medium block">대기 기본 표정</span>
-                <div className="text-xs font-bold text-[#191919] truncate">
-                  {defaultIdleExpr.startsWith('custom_')
-                    ? (activeCustomFace?.emoji ? `${activeCustomFace.emoji} ${activeCustomFace.label}` : '맞춤 표정')
-                    : `${expressionsList.find(e => e.id === defaultIdleExpr)?.emoji || '🤖'} ${expressionsList.find(e => e.id === defaultIdleExpr)?.label || defaultIdleExpr}`}
-                </div>
-              </div>
-
-              <div className="bg-white p-3 rounded-xl border border-[#E5E5E3] space-y-1 shadow-2xs">
-                <span className="text-[11px] text-[#787774] font-medium block">대기 화면 모드</span>
-                <div className="text-xs font-bold text-[#191919] truncate">
-                  {standbyFace}
-                </div>
-              </div>
-
-              <div className="col-span-2 sm:col-span-1 bg-white p-3 rounded-xl border border-[#E5E5E3] space-y-1 shadow-2xs">
                 <span className="text-[11px] text-[#787774] font-medium block">실시간 연동</span>
                 <div className="text-xs font-semibold text-emerald-700 truncate">
                   {connectionType === 'none' ? '웹 시뮬레이터 동작' : '하드웨어 1:1 동기화'}
@@ -1836,18 +1821,18 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
           </div>
 
 
-          {/* Card 2: 인사·소리 & 대기 설정 */}
+          {/* Card 2: 인사·소리 설정 */}
           <div className="bg-white border border-[#E5E5E3] hover:border-neutral-300 rounded-2xl p-5 shadow-2xs flex flex-col justify-between transition-all space-y-3">
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="w-5 h-5 rounded-md bg-neutral-100 border border-neutral-200/80 text-[11px] font-bold text-neutral-700 flex items-center justify-center">2</span>
-                  <span className="text-xs font-bold text-[#191919]">인사·소리 & 대기 설정</span>
+                  <span className="text-xs font-bold text-[#191919]">인사·소리 설정</span>
                 </div>
                 <Volume2 className="w-4 h-4 text-neutral-400" />
               </div>
               <p className="text-[11px] text-[#787774] leading-relaxed">
-                부팅 인사말, 대기 화면 모드, 효과음을 한곳에서 설정합니다.
+                부팅 인사말과 효과음을 설정합니다.
               </p>
 
               {/* 1) Welcome Message Box */}
@@ -1870,71 +1855,18 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
                 </div>
               </div>
 
-              {/* 2) Standby Screen Box */}
-              <div className="space-y-1 bg-[#FBFBFA] p-2.5 rounded-xl border border-[#EBEBEA]">
-                <div className="flex items-center justify-between">
-                  <label className="text-[10px] font-bold text-[#191919]">대기 화면 모드</label>
-                  <button
-                    onClick={() => previewStandbyScreen(standbyFace)}
-                    className="px-2 py-0.5 bg-white hover:bg-neutral-100 text-neutral-700 border border-[#E5E5E3] text-[9px] font-semibold rounded-md transition-colors flex items-center gap-1 cursor-pointer"
-                    title="대기 화면 미리보기"
-                  >
-                    <Play className="w-2.5 h-2.5 text-neutral-500" /> 미리보기
-                  </button>
-                </div>
-                <div className="relative">
-                  <select 
-                    value={standbyFace}
-                    onChange={(e) => {
-                      const newFace = e.target.value;
-                      setStandbyFace(newFace);
-                      // 1. Check if matches custom expression
-                      const matchedCustom = customExprList.find(c => newFace.includes(`[내 표정] ${c.label}`) || newFace.includes(c.label) || newFace === c.id);
-                      if (matchedCustom) {
-                        handleSetDefaultCustomIdleExpr(matchedCustom);
-                        return;
-                      }
-                      // 2. Check if matches basic expression
-                      const matched = expressionsList.find(expr => newFace.includes(expr.label) || newFace.includes(expr.emoji));
-                      if (matched) {
-                        handleSetDefaultIdleExpr(matched.id, matched.label);
-                        return;
-                      }
-                    }}
-                    className="w-full px-2.5 py-1.5 text-xs bg-white border border-[#E5E5E3] rounded-xl text-[#191919] outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600/20 font-semibold appearance-none cursor-pointer transition-all"
-                  >
-                    <optgroup label="🤖 기본 표정 (12개)">
-                      {expressionsList.map(expr => (
-                        <option key={expr.id} value={`${expr.label} 표정 ${expr.emoji}`}>
-                          {expr.emoji} {expr.label} 표정 ({expr.id})
-                        </option>
-                      ))}
-                    </optgroup>
-                    {customExprList.length > 0 && (
-                      <optgroup label="✨ 내가 만든 맞춤 표정">
-                        {customExprList.map(cExpr => (
-                          <option key={cExpr.id} value={`[내 표정] ${cExpr.label} ${cExpr.emoji}`}>
-                            {cExpr.emoji} [내 표정] {cExpr.label}
-                          </option>
-                        ))}
-                      </optgroup>
-                    )}
-                    <optgroup label="⚙️ 화면 모드">
-                      <option value="시계 모드 ⏰">⏰ 시계 모드</option>
-                      <option value="날씨 정보 ☀️">☀️ 날씨 정보</option>
-                      <option value="화면 끄기 🌙">🌙 화면 끄기 (절전)</option>
-                    </optgroup>
-                  </select>
-                  <ChevronDown className="w-3 h-3 text-[#787774] absolute right-2.5 top-2.5 pointer-events-none" />
-                </div>
-              </div>
-
               {/* 3) Sound Effects Box */}
               <div className="space-y-1.5 bg-[#FBFBFA] p-2.5 rounded-xl border border-[#EBEBEA]">
                 <label className="text-[10px] font-bold text-[#191919]">효과음 테스트 & 선택</label>
                 <div className="grid grid-cols-2 gap-1.5">
                   {soundList.slice(0, 4).map(s => (
-                    <div key={s.id} className="flex items-center justify-between p-1.5 bg-white rounded-xl border border-[#E5E5E3] text-xs">
+                    <div key={s.id} className="space-y-1.5 p-1.5 bg-white rounded-xl border border-[#E5E5E3] text-xs">
+                      <select aria-label={`${s.name} 효과음`} value={soundSettings[s.id]}
+                        onChange={e => { soundDraftChanged.current = true; setSoundSettings(previous => ({ ...previous, [s.id]: e.target.value })); }}
+                        className="w-full rounded-md border border-[#E5E5E3] bg-white px-1 py-1 text-[10px]">
+                        {soundPresets.map(preset => <option key={preset.id} value={preset.id}>{preset.name}</option>)}
+                      </select>
+                      <div className="flex items-center justify-between">
                       <span className="font-medium text-[#191919] text-[10px] truncate max-w-[50px]">{s.name}</span>
                       <div className="flex items-center gap-1">
                         <button 
@@ -1952,9 +1884,14 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
                           <Bot className="w-2.5 h-2.5" />
                         </button>
                       </div>
+                      </div>
                     </div>
                   ))}
                 </div>
+                <button onClick={saveSoundSettings} disabled={savingSounds}
+                  className="w-full rounded-lg bg-neutral-900 py-2 text-[11px] font-semibold text-white disabled:opacity-50 cursor-pointer">
+                  {savingSounds ? '저장 중…' : '효과음 저장'}
+                </button>
               </div>
             </div>
 
@@ -1962,18 +1899,16 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
               onClick={() => {
                 const cleanedText = welcomeMsg.trim();
                 localStorage.setItem('sodabot_welcome_msg', cleanedText);
-                localStorage.setItem('sodabot_standby_face', standbyFace);
                 localStorage.setItem('sodabot_standby_time', standbyTime);
                 localStorage.setItem('sodabot_default_idle_expr', defaultIdleExpr);
                 sendWsCommand("set_welcome", cleanedText, "환영 인사 설정 전송");
-                sendWsCommand("set_expression", mapToSafeHardwareExpr(defaultIdleExpr), "대기 기본 표정 전송");
-                
+
                 // 실시간 미리보기
                 setBootingState('greeting');
                 setBootingMessage(cleanedText);
                 setTimeout(() => setBootingState(null), 3000);
 
-                showToast('환영 인사 및 대기 표정 설정이 소다봇에 저장 및 전송되었습니다!');
+                showToast('환영 인사를 저장하고 소다봇에 전송 요청했습니다.');
               }}
               className="mt-4 w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl transition-colors shadow-2xs flex items-center justify-center gap-1.5 cursor-pointer"
             >
@@ -1983,25 +1918,25 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
           </div>
 
 
-          {/* Card 3: 시작 시퀀스 & 대기 시간 */}
+          {/* Card 3: 시퀀스 & 대기 시간 */}
           <div className="bg-white border border-[#E5E5E3] hover:border-neutral-300 rounded-2xl p-5 shadow-2xs flex flex-col justify-between transition-all space-y-3">
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="w-5 h-5 rounded-md bg-neutral-100 border border-neutral-200/80 text-[11px] font-bold text-neutral-700 flex items-center justify-center">3</span>
-                  <span className="text-xs font-bold text-[#191919]">시작 시퀀스 설정</span>
+                  <span className="text-xs font-bold text-[#191919]">시퀀스 테스트</span>
                 </div>
                 <Zap className="w-4 h-4 text-neutral-400" />
               </div>
               <p className="text-[11px] text-[#787774] leading-relaxed">
-                전원을 켰을 때 실행할 단계(인사, 표정, 소리, 시계)를 직접 구성합니다.
+                인사·표정·소리를 순서대로 실행하는 테스트입니다. 실제 부팅 설정으로 저장되지 않으며, 전원을 다시 켜도 이 순서는 적용되지 않습니다.
               </p>
 
               {/* Dynamic Interactive Sequence List */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <label className="text-[10px] font-bold text-[#191919]">
-                    부팅 시퀀스 ({bootSequence.filter(s => s.enabled).length}개 활성)
+                    테스트 시퀀스 ({bootSequence.filter(s => s.enabled).length}개 활성)
                   </label>
                   <span className="text-[9px] text-[#787774]">순서 이동/설정</span>
                 </div>
@@ -2024,9 +1959,9 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
                             className="w-3.5 h-3.5 text-blue-600 rounded border-neutral-300 focus:ring-blue-500 cursor-pointer"
                           />
                           <span className="text-xs">{seq.icon}</span>
-                          <span className="text-[11px] font-bold text-[#191919] truncate">{seq.label}</span>
+                          <span className="text-[11px] font-bold text-[#191919] truncate">{seq.name}</span>
                           <span className="text-[9px] text-[#787774] truncate max-w-[80px]">
-                            {seq.type === 'greeting' ? `"${seq.value}"` : seq.type === 'expression' ? seq.value : seq.type === 'sound' ? seq.value : `${seq.duration}초`}
+                            {seq.type === 'greeting' ? `"${seq.value}"` : seq.type === 'expression' ? seq.value : seq.value}
                           </span>
                         </div>
 
@@ -2063,7 +1998,7 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
 
                 {/* Add Step Button Row */}
                 <div className="pt-1 border-t border-[#E5E5E3] space-y-1">
-                  <div className="grid grid-cols-4 gap-1">
+                  <div className="grid grid-cols-3 gap-1">
                     <button 
                       onClick={() => addSeqItem('greeting')}
                       className="py-1 px-1 bg-white hover:bg-neutral-50 border border-[#E5E5E3] text-[10px] font-medium text-neutral-700 rounded-lg flex items-center justify-center gap-0.5 transition-all cursor-pointer shadow-2xs"
@@ -2082,12 +2017,6 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
                     >
                       🎵 소리
                     </button>
-                    <button 
-                      onClick={() => addSeqItem('time')}
-                      className="py-1 px-1 bg-white hover:bg-neutral-50 border border-[#E5E5E3] text-[10px] font-medium text-neutral-700 rounded-lg flex items-center justify-center gap-0.5 transition-all cursor-pointer shadow-2xs"
-                    >
-                      ⏰ 시계
-                    </button>
                   </div>
                 </div>
               </div>
@@ -2102,7 +2031,6 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
                       setStandbyTime(e.target.value);
                       localStorage.setItem('sodabot_standby_time', e.target.value);
                       sendWsCommand("set_standby", JSON.stringify({
-                        mode: standbyFace,
                         timeout: e.target.value === '15초' ? 15000 : e.target.value === '1분' ? 60000 : e.target.value === '5분' ? 300000 : 30000
                       }), "대기 시간 변경 전송");
                     }}
@@ -2123,7 +2051,7 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
               className="mt-2 w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl transition-colors shadow-2xs flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <Play className="w-3.5 h-3.5" />
-              시작 시퀀스 실행
+              시퀀스 실행
             </button>
           </div>
 

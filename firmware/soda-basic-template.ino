@@ -127,6 +127,8 @@ void setupMicrophone() {
                 (MAX_RECORD_SAMPLES * sizeof(int16_t)) / 1024.0);
 }
 
+std::atomic<bool> buttonSoundPending{false};
+
 void microphoneTask(void*) {
   int32_t samples[256];
   bool lastRaw = digitalRead(BUTTON_PIN) == LOW;
@@ -155,6 +157,7 @@ void microphoneTask(void*) {
       } else {
         uint32_t duration = now - recordStarted;
         Serial.println("[버튼] 버튼을 놓았습니다.");
+        buttonSoundPending.store(true);
         if (duration < MIN_RECORD_MS || voiceSampleCount == 0) {
           voiceSampleCount = 0;
           Serial.println("[녹음 취소] 너무 짧습니다. 버튼을 조금 더 길게 누르고 말해주세요.");
@@ -1171,13 +1174,43 @@ uint32_t replyClient = 0;
 uint8_t replySource = 0;
 String replyId;
 
+// Configurable event sounds. Persist IDs, never arbitrary audio/code.
+const char* SOUND_EVENTS[] = {"power_on", "greeting", "button_click", "touch_react"};
+const char* SOUND_PRESETS[] = {"chime", "rise", "fall", "beep", "bounce", "off"};
+String eventSounds[] = {"chime", "rise", "beep", "bounce"};
+
+bool isSoundPreset(const String& name) {
+  for (const char* preset : SOUND_PRESETS) if (name == preset) return true;
+  return false;
+}
+void loadSoundSettings() {
+  Preferences soundPrefs;
+  if (!soundPrefs.begin("soda_sounds", true)) return;
+  for (int i = 0; i < 4; ++i) {
+    String value = soundPrefs.getString(SOUND_EVENTS[i], eventSounds[i]);
+    if (isSoundPreset(value)) eventSounds[i] = value;
+  }
+  soundPrefs.end();
+}
+void playConfiguredSound(String name) {
+  for (int i = 0; i < 4; ++i) if (name == SOUND_EVENTS[i]) { name = eventSounds[i]; break; }
+  if (!speakerReady || name == "off") return;
+  if (name == "chime") { playToneI2S(440, 150); playToneI2S(880, 250); }
+  else if (name == "rise") { playToneI2S(523, 120); playToneI2S(659, 120); playToneI2S(784, 200); }
+  else if (name == "fall") { playToneI2S(784, 120); playToneI2S(659, 120); playToneI2S(523, 200); }
+  else if (name == "beep") playToneI2S(1000, 80);
+  else if (name == "bounce") { playToneI2S(400, 100); playToneI2S(600, 150); }
+}
+
 void sendReply(const char* state, const char* reason = "", bool includeIp = false) {
-  StaticJsonDocument<256> doc;
+  StaticJsonDocument<512> doc;
   doc["id"] = replyId;
   doc["state"] = state;
   if (reason[0]) doc["reason"] = reason;
   if (includeIp) {
     doc["protocol"] = 1;
+    JsonObject soundSettings = doc["sound_settings"].to<JsonObject>();
+    for (int i = 0; i < 4; ++i) soundSettings[SOUND_EVENTS[i]] = eventSounds[i];
     if (WiFi.status() == WL_CONNECTED) doc["ip"] = WiFi.localIP().toString();
   }
   String json;
@@ -1267,7 +1300,7 @@ void configureSodaBleIdentity(const char* name) {
 
 void setupBLE() {
   BLEDevice::init(__SODA_BLE_NAME__);
-  configureSodaBleIdentity(__SODA_BLE_NAME__);
+  // Use the controller identity for reliable discovery across BLE clients.
   pServer = BLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
   BLEService* service = pServer->createService(SERVICE_UUID);
@@ -1282,19 +1315,12 @@ void setupBLE() {
   advertising->setMinPreferred(0x06);
   advertising->setMinPreferred(0x12);
 
-  // 31바이트 초과 방지: 기본 광고 패킷에는 플래그와 이름을 확실하게 전송
-  BLEAdvertisementData advData;
-  advData.setFlags(0x06); // General Discoverable + BR/EDR Not Supported
-  advData.setName(__SODA_BLE_NAME__);
-  advertising->setAdvertisementData(advData);
+  // Let the BLE library sequence advertisement configuration and startup.
+  // It places the name in the scan response when the service UUID fills the packet.
+  advertising->addServiceUUID(SERVICE_UUID);
+  bool started = advertising->start();
+  Serial.println(String("[BLE] ") + (started ? "광고 시작 요청: " : "광고 시작 실패: ") + __SODA_BLE_NAME__);
 
-  // 스캔 응답 패킷에 128비트 서비스 UUID 포함
-  BLEAdvertisementData scanData;
-  scanData.setCompleteServices(BLEUUID(SERVICE_UUID));
-  advertising->setScanResponseData(scanData);
-
-  BLEDevice::startAdvertising();
-  Serial.println("[BLE] 광고 시작: " + String(__SODA_BLE_NAME__));
 }
 
 inline uint32_t getUtf8Code(const String& s, size_t& i) {
@@ -1708,6 +1734,25 @@ void processMessage(const IncomingMessage& message) {
     } else { action = "set_expression"; value = raw; }
   }
   if (action == "get_status") { sendReply("success", "", true); return; }
+  if (action == "set_sound_settings") {
+    DynamicJsonDocument settings(512);
+    if (deserializeJson(settings, value) || !settings.is<JsonObject>()) { sendReply("error", "invalid_sound_settings"); return; }
+    for (int i = 0; i < 4; ++i) {
+      if (!settings[SOUND_EVENTS[i]].is<const char*>() || !isSoundPreset(settings[SOUND_EVENTS[i]].as<String>())) {
+        sendReply("error", "invalid_sound_preset"); return;
+      }
+    }
+    Preferences soundPrefs;
+    if (!soundPrefs.begin("soda_sounds", false)) { sendReply("error", "sound_storage_failed"); return; }
+    bool saved = true;
+    for (int i = 0; i < 4; ++i) {
+      if (!soundPrefs.putString(SOUND_EVENTS[i], settings[SOUND_EVENTS[i]].as<String>())) saved = false;
+    }
+    soundPrefs.end();
+    loadSoundSettings();
+    sendReply(saved ? "success" : "error", saved ? "" : "sound_storage_failed", true);
+    return;
+  }
   if (action == "configure_wifi" || doc["ssid"].is<const char*>()) {
     if (!doc["ssid"].is<const char*>() || !doc["password"].is<const char*>()) { sendReply("error", "invalid_wifi"); return; }
     WiFi.begin(doc["ssid"].as<const char*>(), doc["password"].as<const char*>());
@@ -1815,13 +1860,13 @@ void processMessage(const IncomingMessage& message) {
     customExpression = false;
     renderStandbyScreen();
   } else if (action == "play_sound" || action == "beep") {
-    if (speakerReady) {
-      value.toLowerCase();
-      if (action == "beep" || value == "beep" || value == "button_click") playToneI2S(1000, 80);
-      else if (value == "power_on") { playToneI2S(440, 150); playToneI2S(880, 250); }
-      else if (value == "greeting") { playToneI2S(523, 120); playToneI2S(659, 120); playToneI2S(784, 200); }
-      else if (value == "touch_react") { playToneI2S(400, 100); playToneI2S(600, 150); }
-    }
+    value.toLowerCase();
+    if (action == "beep") value = "beep";
+    bool valid = isSoundPreset(value);
+    for (const char* event : SOUND_EVENTS) if (value == event) valid = true;
+    if (!valid) { sendReply("error", "unknown_sound"); return; }
+    if (!speakerReady) { sendReply("error", "speaker_not_ready"); return; }
+    playConfiguredSound(value);
   } else if (action == "call_function" || action == "custom_func") {
     handleUserCustomFunction(value);
   } else {
@@ -2257,6 +2302,7 @@ void setup() {
   
   // 1. NVS에서 저장된 설정(환영인사, 기본표정 등) 불러오기
   loadSettingsFromNVS();
+  loadSoundSettings();
   loadSodaApiKey();
 
   // 2. LCD 디스플레이 초기화
@@ -2269,12 +2315,7 @@ void setup() {
 
   // 4. 부팅 시 환영인사 화면 표시 + 부팅 멜로디 출력
   drawMessage(welcomeMsg, 0);
-  if (speakerReady) {
-    playToneI2S(523, 100); // C5
-    playToneI2S(659, 100); // E5
-    playToneI2S(784, 150); // G5
-    playToneI2S(1046, 250); // C6
-  }
+  playConfiguredSound("power_on");
   delay(2500); // 2.5초 동안 환영 인사 표시
 
   // 5. 기본 표정으로 전환
@@ -2297,6 +2338,9 @@ void setup() {
 
 void loop() {
   uploadRecordedConversation();
+  if (!voiceUploadBusy.load() && !voiceUploadPending.load() && digitalRead(BUTTON_PIN) != LOW && buttonSoundPending.exchange(false)) {
+    playConfiguredSound("button_click");
+  }
   startWebServerIfReady();
   ws.cleanupClients();
   static String serialInput;
