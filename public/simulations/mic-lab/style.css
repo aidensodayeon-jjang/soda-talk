@@ -1,0 +1,2 @@
+@import url('../lcd-lab/style.css');
+#inputLevel,#levelMeter{display:block;width:100%;margin:12px 0;accent-color:#168571}#levelValue{font-weight:750;color:#168571}#copyCode{margin-top:12px;font-size:12px}header small{display:block}.bonus-card p{line-height:1.7}

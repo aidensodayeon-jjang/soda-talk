@@ -1,3 +1,4 @@
+import { normalizeFriendSettings, validateFriendSettings } from '../utils/friendSettings';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Users,
@@ -57,79 +58,21 @@ export default function SodabotFriendSettingsScreen({ currentUser }: SodabotFrie
   const userKey = currentUser?.id || currentUser?.username || 'default';
   const getScopedKey = (key: string) => `sodabot_${userKey}_${key}`;
 
-  // 1. 친구 설정 State
-  const [persona, setPersona] = useState<PersonaData>(() => {
+  const readInitialSettings = () => {
     try {
-      const saved = localStorage.getItem(getScopedKey("friend_persona")) || localStorage.getItem("soda_ailab_persona");
-      return saved
-        ? JSON.parse(saved)
-        : {
-            name: "루미",
-            intro: "언제나 나를 도와주는 든든한 AI 학습 파트너",
-            role: "공부친구",
-            tone: "친근한 친구말",
-            personality: "친절함",
-            callSign: currentUser?.displayName || "민준아"
-          };
-    } catch {
-      return {
-        name: "루미",
-        intro: "언제나 나를 도와주는 든든한 AI 학습 파트너",
-        role: "공부친구",
-        tone: "친근한 친구말",
-        personality: "친절함",
-        callSign: currentUser?.displayName || "민준아"
-      };
-    }
-  });
-
-  // 2. 프로필 설정 State
-  const [profile, setProfile] = useState<ProfileData>(() => {
-    try {
-      const saved = localStorage.getItem(getScopedKey("friend_profile")) || localStorage.getItem("soda_ailab_profile");
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        return {
-          userName: parsed.userName || currentUser?.displayName || "김민준",
-          school: parsed.school || "소다중학교 1학년",
-          interests: Array.isArray(parsed.interests)
-            ? parsed.interests
-            : typeof parsed.interests === "string" && parsed.interests
-            ? parsed.interests.split(",").map((s: string) => s.trim()).filter(Boolean)
-            : ["인공지능", "우주", "과학"],
-          goal: parsed.goal || "과학과 진학 및 AI 개발자가 되기"
-        };
-      }
-    } catch {}
-    return {
-      userName: currentUser?.displayName || "김민준",
-      school: "소다중학교 1학년",
-      interests: ["인공지능", "우주", "과학"],
-      goal: "과학과 진학 및 AI 개발자가 되기"
-    };
-  });
-
-  // 3. 기억 설정 State (최대 3개)
-  const [memories, setMemories] = useState<MemoryData[]>(() => {
-    try {
-      const saved = localStorage.getItem(getScopedKey("friend_memories")) || localStorage.getItem("soda_ailab_memories");
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed.slice(0, 3).map((m: any, idx: number) => ({
-            id: m.id || `mem_${idx + 1}`,
-            text: m.text || m.content || ""
-          })).filter(m => m.text);
-        }
-      }
-    } catch {}
-    return [
-      { id: "mem_1", text: "민준이는 축구와 코딩을 좋아한다." },
-      { id: "mem_2", text: "강아지 이름은 초코 (푸들종)." },
-      { id: "mem_3", text: "목표는 과학과 진학 및 소다봇 개발자가 되는 것이다." }
-    ];
-  });
-
+      return normalizeFriendSettings({
+        persona: JSON.parse(localStorage.getItem(getScopedKey('friend_persona')) || 'null'),
+        profile: JSON.parse(localStorage.getItem(getScopedKey('friend_profile')) || 'null'),
+        memories: JSON.parse(localStorage.getItem(getScopedKey('friend_memories')) || '[]'),
+      }, currentUser?.displayName);
+    } catch { return normalizeFriendSettings({}, currentUser?.displayName); }
+  };
+  const [persona, setPersona] = useState<PersonaData>(() => readInitialSettings().persona);
+  const [profile, setProfile] = useState<ProfileData>(() => readInitialSettings().profile);
+  const [memories, setMemories] = useState<MemoryData[]>(() => readInitialSettings().memories);
+  const dirty = useRef(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
   // UI Local States
   const [mobileTab, setMobileTab] = useState<'persona' | 'profile' | 'memories' | 'summary'>('persona');
   const [newInterestInput, setNewInterestInput] = useState("");
@@ -142,97 +85,53 @@ export default function SodabotFriendSettingsScreen({ currentUser }: SodabotFrie
   const profileCardRef = useRef<HTMLDivElement>(null);
   const memoryCardRef = useRef<HTMLDivElement>(null);
 
-  // Synchronize settings from server DB on mount
+  const publishSettings = (settings: {persona: PersonaData; profile: ProfileData; memories: MemoryData[]}) => {
+    localStorage.setItem(getScopedKey('friend_persona'), JSON.stringify(settings.persona));
+    localStorage.setItem(getScopedKey('friend_profile'), JSON.stringify(settings.profile));
+    localStorage.setItem(getScopedKey('friend_memories'), JSON.stringify(settings.memories));
+    window.dispatchEvent(new CustomEvent('sodabot-settings-updated', { detail: settings }));
+  };
   useEffect(() => {
-    const token = localStorage.getItem("authSessionId");
-    if (!token) return;
+    let active = true;
+    dirty.current = false;
+    const initial = readInitialSettings();
+    setPersona(initial.persona); setProfile(initial.profile); setMemories(initial.memories);
+    const token = localStorage.getItem('authSessionId');
+    if (token) void fetch('/api/user/friend-settings', {headers:{Authorization:`Bearer ${token}`}})
+      .then(async response => {
+        if (!response.ok) throw new Error('설정을 불러오지 못했습니다. 로그인 상태와 서버 연결을 확인해주세요.');
+        return response.json();
+      }).then(data => {
+        if (!active || dirty.current) return;
+        const settings = normalizeFriendSettings(data, currentUser?.displayName);
+        setPersona(settings.persona); setProfile(settings.profile); setMemories(settings.memories);
+        publishSettings(settings);
+      }).catch(error => { if(active) setSaveError(error.message); });
+    return () => { active = false; };
+  }, [userKey]);
 
-    fetch("/api/user/friend-settings", {
-      headers: { Authorization: `Bearer ${token}` }
-    })
-      .then(res => res.json())
-      .then(data => {
-        if (data.persona) {
-          const normPersona: PersonaData = {
-            name: data.persona.name || data.persona.robotName || "루미",
-            intro: data.persona.intro || "언제나 나를 도와주는 든든한 AI 학습 파트너",
-            role: data.persona.role || "공부친구",
-            tone: data.persona.tone || "친근한 친구말",
-            personality: data.persona.personality || "친절함",
-            callSign: data.persona.callSign || currentUser?.displayName || "민준아"
-          };
-          setPersona(normPersona);
-          localStorage.setItem(getScopedKey("friend_persona"), JSON.stringify(normPersona));
-          localStorage.setItem("soda_ailab_persona", JSON.stringify(normPersona));
-        }
-
-        if (data.profile) {
-          const normProfile: ProfileData = {
-            userName: data.profile.userName || data.profile.studentName || currentUser?.displayName || "김민준",
-            school: data.profile.school || "소다중학교 1학년",
-            interests: Array.isArray(data.profile.interests)
-              ? data.profile.interests
-              : typeof data.profile.interests === "string" && data.profile.interests
-              ? data.profile.interests.split(",").map((s: string) => s.trim()).filter(Boolean)
-              : ["인공지능", "우주", "과학"],
-            goal: data.profile.goal || data.profile.dream || "과학과 진학 및 AI 개발자가 되기"
-          };
-          setProfile(normProfile);
-          localStorage.setItem(getScopedKey("friend_profile"), JSON.stringify(normProfile));
-          localStorage.setItem("soda_ailab_profile", JSON.stringify(normProfile));
-        }
-
-        if (Array.isArray(data.memories) && data.memories.length > 0) {
-          const normMemories = data.memories.slice(0, 3).map((m: any, idx: number) => ({
-            id: m.id || `mem_${idx + 1}`,
-            text: m.text || m.content || ""
-          })).filter((m: any) => m.text);
-          if (normMemories.length > 0) {
-            setMemories(normMemories);
-            localStorage.setItem(getScopedKey("friend_memories"), JSON.stringify(normMemories));
-            localStorage.setItem("soda_ailab_memories", JSON.stringify(normMemories.map((m: any) => ({ id: m.id, content: m.text }))));
-          }
-        }
-      })
-      .catch(err => console.warn("Failed to fetch server friend settings:", err));
-  }, [currentUser?.id]);
-
-  // Synchronize to localStorage & Backend whenever changes occur
   const saveAllSettings = async () => {
-    localStorage.setItem(getScopedKey("friend_persona"), JSON.stringify(persona));
-    localStorage.setItem(getScopedKey("friend_profile"), JSON.stringify(profile));
-    localStorage.setItem(getScopedKey("friend_memories"), JSON.stringify(memories));
-
-    // Global AI lab sync
-    localStorage.setItem("soda_ailab_persona", JSON.stringify(persona));
-    localStorage.setItem("soda_ailab_profile", JSON.stringify(profile));
-    localStorage.setItem("soda_ailab_memories", JSON.stringify(memories.map(m => ({ id: m.id, content: m.text }))));
-
-    // AI Chat persona sync string
-    const personaSummary = `[소다봇 친구설정]\n• 봇 이름: ${persona.name} (${persona.intro})\n• 역할: ${persona.role}, 말투: ${persona.tone}, 성격: ${persona.personality}\n• 사용자: ${profile.userName} (${profile.school})\n• 사용자 호칭: ${persona.callSign}\n• 관심사: ${profile.interests.join(", ")}\n• 목표: ${profile.goal}\n• 기억하고 있는 내용:\n${memories.map((m, idx) => `  ${idx + 1}. ${m.text}`).join("\n")}`;
-    localStorage.setItem(getScopedKey("persona_summary"), personaSummary);
-
-    // Sync to backend DB
-    const token = localStorage.getItem("authSessionId");
-    if (token) {
-      try {
-        await fetch("/api/user/friend-settings", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`
-          },
-          body: JSON.stringify({ persona, profile, memories })
-        });
-      } catch (err) {
-        console.error("Failed to sync friend settings to server", err);
-      }
-    }
-
-    window.dispatchEvent(new CustomEvent('sodabot-settings-updated', { detail: { persona, profile, memories } }));
-
-    setSaveToast(true);
-    setTimeout(() => setSaveToast(false), 2500);
+    if (saving) return;
+    setSaveError('');
+    setSaveToast(false);
+    const settings = normalizeFriendSettings({persona, profile, memories}, currentUser?.displayName);
+    const validation = validateFriendSettings(settings);
+    if (validation) { setSaveError(validation); return; }
+    const token = localStorage.getItem('authSessionId');
+    if (!token) { setSaveError('로그인 후 설정을 저장해주세요.'); return; }
+    setSaving(true);
+    try {
+      const response = await fetch('/api/user/friend-settings', {
+        method:'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},
+        body:JSON.stringify(settings),
+      });
+      const data = await response.json().catch(() => ({error:'서버 응답을 확인하지 못했습니다. 다시 시도해주세요.'}));
+      if (!response.ok || data.success !== true) throw new Error(data.error || '서버에 설정을 저장하지 못했습니다.');
+      const saved = normalizeFriendSettings(data.friendSettings, currentUser?.displayName);
+      publishSettings(saved);
+      setSaveToast(true); setTimeout(() => setSaveToast(false), 2500);
+    } catch(error) { setSaveError(error instanceof Error ? error.message : '저장에 실패했습니다. 다시 시도해주세요.'); }
+    finally { setSaving(false); }
   };
 
   const handleAddInterest = () => {
@@ -275,7 +174,8 @@ export default function SodabotFriendSettingsScreen({ currentUser }: SodabotFrie
   };
 
   return (
-    <div className="flex-1 flex flex-col h-screen overflow-y-auto bg-[#F8FAFC] select-none text-[#1D1D1F]">
+    <div className="flex-1 flex flex-col h-screen overflow-y-auto bg-[#F8FAFC] select-none text-[#1D1D1F]"
+      onInputCapture={() => { dirty.current = true; }} onClickCapture={() => { dirty.current = true; }}>
       {/* Toast Alert */}
       {saveToast && (
         <div className="fixed top-6 right-6 z-50 bg-emerald-600 text-white px-5 py-3 rounded-2xl shadow-xl flex items-center gap-2.5 font-bold text-sm animate-fade-in">
@@ -466,17 +366,6 @@ export default function SodabotFriendSettingsScreen({ currentUser }: SodabotFrie
                 </div>
               </div>
 
-              {/* 나를 부르는 호칭 */}
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-[#334155] block">나를 부르는 호칭</label>
-                <input
-                  type="text"
-                  value={persona.callSign}
-                  onChange={e => setPersona(prev => ({ ...prev, callSign: e.target.value }))}
-                  placeholder="예: 민준아"
-                  className="w-full text-xs px-3.5 py-2.5 bg-[#FAF9F6] border border-[#E2E8F0] rounded-xl focus:outline-none focus:border-blue-500 font-semibold transition-all"
-                />
-              </div>
             </div>
           </div>
 
@@ -503,11 +392,12 @@ export default function SodabotFriendSettingsScreen({ currentUser }: SodabotFrie
 
               {/* 이름 */}
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-[#334155] block">이름</label>
+                <label htmlFor="friend-user-name" className="text-xs font-bold text-[#334155] block">내 이름 (AI가 부르는 이름)</label>
                 <input
                   type="text"
+                  id="friend-user-name"
                   value={profile.userName}
-                  onChange={e => setProfile(prev => ({ ...prev, userName: e.target.value }))}
+                  onChange={e => { const name=e.target.value; setProfile(prev => ({ ...prev, userName:name })); setPersona(prev => ({...prev,callSign:name})); }}
                   placeholder="예: 김민준"
                   className="w-full text-xs px-3.5 py-2.5 bg-[#FAF9F6] border border-[#E2E8F0] rounded-xl focus:outline-none focus:border-emerald-500 font-semibold transition-all"
                 />
@@ -742,8 +632,6 @@ export default function SodabotFriendSettingsScreen({ currentUser }: SodabotFrie
                   <span className="font-medium text-[#334155]">{persona.tone || "-"}</span>
                   <span className="text-[#94A3B8] font-medium">성격</span>
                   <span className="font-medium text-[#334155]">{persona.personality || "-"}</span>
-                  <span className="text-[#94A3B8] font-medium">호칭</span>
-                  <span className="font-bold text-[#334155]">{persona.callSign || "-"}</span>
                 </div>
               </div>
 
@@ -810,6 +698,7 @@ export default function SodabotFriendSettingsScreen({ currentUser }: SodabotFrie
 
         </div>
 
+        {saveError && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{saveError}</p>}
         {/* Bottom Save Action Bar */}
         <div className="bg-white rounded-3xl border border-[#E2E8F0] p-5 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-3 text-center sm:text-left">
@@ -821,17 +710,18 @@ export default function SodabotFriendSettingsScreen({ currentUser }: SodabotFrie
                 모든 친구 및 프로필 설정 준비 완료
               </div>
               <p className="text-xs text-[#64748B] font-medium">
-                저장 버튼을 누르면 AI 친구 성격, 사용자 프로필, 3가지 기억이 소다봇 대화에 즉시 적용됩니다.
+                서버에 저장되면 AI 친구 성격, 내 이름과 프로필, 기억이 다음 대화부터 적용됩니다.
               </p>
             </div>
           </div>
 
           <button
             onClick={saveAllSettings}
+            disabled={saving}
             className="w-full sm:w-auto px-8 py-3.5 bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white rounded-2xl text-sm font-bold transition-all shadow-lg shadow-blue-500/25 flex items-center justify-center gap-2.5 cursor-pointer shrink-0"
           >
             <Save className="w-5 h-5" />
-            <span>전체 설정 저장하기</span>
+            <span>{saving ? '저장 중…' : '전체 설정 저장하기'}</span>
           </button>
         </div>
       </div>

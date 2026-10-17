@@ -328,32 +328,20 @@ export function generateCustomFirmware(
   const cleanFunctions = (parts.functionCode || '').trim();
   const targetSlot = parts.targetSlot || 'CUSTOM_1';
 
-  if (/\bvoid\s+customFunction1\s*\(\s*\)/.test(cleanFunctions)) {
-    merged = merged.replace(/void customFunction1\(\)\s*\{[\s\S]*?\n\}/, '// (customFunction1은 상단 커스텀 영역에서 정의됨)');
-  } else if (targetSlot === 'CUSTOM_1' && mainFunctionName && mainFunctionName !== 'customFunction1') {
-    merged = merged.replace(
-      /void customFunction1\(\)\s*\{[\s\S]*?\n\}/,
-      `void customFunction1() {\n  Serial.println("[MY FUNCTION] customFunction1() 실행");\n  ${mainFunctionName}();\n}`
-    );
+  // Only replace the template slots, never a user definition inside the custom section.
+  const slotsStart = merged.indexOf('// === CUSTOM_FUNCTIONS_END ===');
+  const userPrefix = merged.slice(0, slotsStart);
+  let slotDefaults = merged.slice(slotsStart);
+  for (let index = 1; index <= 3; index++) {
+    const slotName = `customFunction${index}`;
+    const defined = parseFunctions(cleanFunctions).some(fn => fn.name === slotName && fn.isVoidZeroParam);
+    const pattern = new RegExp(`void ${slotName}\\(\\)\\s*\\{[\\s\\S]*?\\n\\}`);
+    if (defined) slotDefaults = slotDefaults.replace(pattern, `// ${slotName} is defined in the custom section.`);
+    else if (targetSlot === `CUSTOM_${index}` && mainFunctionName && mainFunctionName !== slotName) {
+      slotDefaults = slotDefaults.replace(pattern, `void ${slotName}() {\n  ${mainFunctionName}();\n}`);
+    }
   }
-
-  if (/\bvoid\s+customFunction2\s*\(\s*\)/.test(cleanFunctions)) {
-    merged = merged.replace(/void customFunction2\(\)\s*\{[\s\S]*?\n\}/, '// (customFunction2는 상단 커스텀 영역에서 정의됨)');
-  } else if (targetSlot === 'CUSTOM_2' && mainFunctionName && mainFunctionName !== 'customFunction2') {
-    merged = merged.replace(
-      /void customFunction2\(\)\s*\{[\s\S]*?\n\}/,
-      `void customFunction2() {\n  Serial.println("[MY FUNCTION] customFunction2() 실행");\n  ${mainFunctionName}();\n}`
-    );
-  }
-
-  if (/\bvoid\s+customFunction3\s*\(\s*\)/.test(cleanFunctions)) {
-    merged = merged.replace(/void customFunction3\(\)\s*\{[\s\S]*?\n\}/, '// (customFunction3는 상단 커스텀 영역에서 정의됨)');
-  } else if (targetSlot === 'CUSTOM_3' && mainFunctionName && mainFunctionName !== 'customFunction3') {
-    merged = merged.replace(
-      /void customFunction3\(\)\s*\{[\s\S]*?\n\}/,
-      `void customFunction3() {\n  Serial.println("[MY FUNCTION] customFunction3() 실행");\n  ${mainFunctionName}();\n}`
-    );
-  }
+  merged = userPrefix + slotDefaults;
 
   // 8. 병합 후 검증 단계
   if (cleanGlobals && cleanGlobals !== '없음' && cleanGlobals.toUpperCase() !== 'NONE') {
@@ -409,4 +397,51 @@ export function generateSodabotFirmware(
     /__SODA_WIFI_SSID__|__SODA_WIFI_PASSWORD__|__SODA_BLE_NAME__|__SODA_SERVER_HOST__|__SODA_API_KEY__/g,
     k => substitutions[k] ?? k
   );
+}
+
+/** Build one firmware containing every registered slot. Reject ambiguous collisions. */
+export function generateCustomFirmwareSet(
+  entries: CustomCodeParts[], robotName = 'LUMI', wifiSsid = '', wifiPass = '', apiKey = '', apiHost = ''
+): GeneratedFirmwareResult {
+  if (!entries.length || entries.length > 3) throw new Error('기능은 1~3개까지 병합할 수 있습니다.');
+  const slots = new Set<string>();
+  const functions = new Set<string>();
+  const clean = (value = '') => /^(없음|none)$/i.test(value.trim()) ? '' : value.trim();
+  const wrappers: string[] = [];
+  for (const entry of entries) {
+    const slot = entry.targetSlot || 'CUSTOM_1';
+    if (!/^CUSTOM_[123]$/.test(slot) || slots.has(slot)) throw new Error('기능 슬롯이 중복되었거나 올바르지 않습니다.');
+    slots.add(slot);
+    const validation = validateCustomCode(entry);
+    if (!validation.valid) throw new Error(`${entry.name}: ${validation.errors.join(' ')}`);
+    const slotFunction = `customFunction${slot.slice(-1)}`;
+    const parsed = parseFunctions(entry.functionCode);
+    for (const fn of parsed) {
+      if (functions.has(fn.name)) throw new Error(`함수 이름 '${fn.name}'이 다른 슬롯과 중복됩니다. 이름을 변경해주세요.`);
+      if (/^customFunction[123]$/.test(fn.name) && fn.name !== slotFunction) throw new Error(`${slot} 코드가 다른 슬롯의 함수를 정의하고 있습니다.`);
+      functions.add(fn.name);
+    }
+    if (!parsed.some(fn => fn.name === slotFunction && fn.isVoidZeroParam)) {
+      const main = findMainExecutableFunction(entry.functionCode);
+      if (!main) throw new Error(`${entry.name}: 인자 없이 실행할 함수가 없습니다.`);
+      wrappers.push(`void ${slotFunction}() {\n  ${main}();\n}`);
+    }
+  }
+  const result = generateCustomFirmware({
+    name: 'CustomFunctions', targetSlot: entries[0].targetSlot,
+    headers: [...new Set(entries.flatMap(entry => clean(entry.headers).split('\n')).filter(Boolean))].join('\n'),
+    globals: entries.map(entry => clean(entry.globals)).filter(Boolean).join('\n\n'),
+    setup: entries.map(entry => clean(entry.setup)).filter(Boolean).join('\n\n'),
+    functionCode: [...entries.map(entry => entry.functionCode.trim()), ...wrappers].join('\n\n'),
+  }, robotName, wifiSsid, wifiPass, apiKey, apiHost);
+  const revisions = Object.fromEntries(entries.map(entry => [entry.targetSlot || 'CUSTOM_1', customFunctionRevision(entry)]));
+  const mergedCode = result.mergedCode.replace('const char* SODA_CUSTOM_SLOTS = "{}";', `const char* SODA_CUSTOM_SLOTS = ${JSON.stringify(JSON.stringify(revisions))};`);
+  return { ...result, mergedCode, fileName: 'SODABOT_CustomFunctions.ino' };
+}
+
+export function customFunctionRevision(parts: CustomCodeParts): string {
+  const code = JSON.stringify([parts.targetSlot, parts.headers || '', parts.globals || '', parts.setup || '', parts.functionCode]);
+  let hash = 2166136261;
+  for (let i = 0; i < code.length; i++) hash = Math.imul(hash ^ code.charCodeAt(i), 16777619);
+  return (hash >>> 0).toString(16).padStart(8, '0');
 }

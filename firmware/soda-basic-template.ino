@@ -27,6 +27,7 @@
 // === CUSTOM_HEADERS_START ===
 // === CUSTOM_HEADERS_END ===
 
+const char* SODA_CUSTOM_SLOTS = "{}";
 const char* ssid = __SODA_WIFI_SSID__;
 const char* password = __SODA_WIFI_PASSWORD__;
 
@@ -1209,6 +1210,9 @@ void sendReply(const char* state, const char* reason = "", bool includeIp = fals
   if (reason[0]) doc["reason"] = reason;
   if (includeIp) {
     doc["protocol"] = 1;
+    StaticJsonDocument<256> customSlots;
+    deserializeJson(customSlots, SODA_CUSTOM_SLOTS);
+    doc["custom_slots"] = customSlots.as<JsonObject>();
     JsonObject soundSettings = doc["sound_settings"].to<JsonObject>();
     for (int i = 0; i < 4; ++i) soundSettings[SOUND_EVENTS[i]] = eventSounds[i];
     if (WiFi.status() == WL_CONNECTED) doc["ip"] = WiFi.localIP().toString();
@@ -1684,14 +1688,14 @@ void customFunction3() {
 }
 
 // 사용자 슬롯 명령(CUSTOM_1, CUSTOM_2, CUSTOM_3, WEATHER) 분기 핸들러
-void handleUserCustomFunction(const String& cmd) {
+bool handleUserCustomFunction(const String& cmd) {
   String upperCmd = cmd;
   upperCmd.toUpperCase();
   upperCmd.trim();
 
   if (upperCmd == "WEATHER" || upperCmd == "날씨" || upperCmd == "SHOWTODAYWEATHER") {
     showTodayWeather();
-    return;
+    return true;
   }
 
   if (upperCmd == "CUSTOM_1" || upperCmd == "CUSTOMFUNCTION1" || upperCmd == "1") {
@@ -1701,8 +1705,9 @@ void handleUserCustomFunction(const String& cmd) {
   } else if (upperCmd == "CUSTOM_3" || upperCmd == "CUSTOMFUNCTION3" || upperCmd == "3") {
     customFunction3();
   } else {
-    customFunction1();
+    return false;
   }
+  return true;
 }
 
 void startWebServerIfReady() {
@@ -1868,7 +1873,7 @@ void processMessage(const IncomingMessage& message) {
     if (!speakerReady) { sendReply("error", "speaker_not_ready"); return; }
     playConfiguredSound(value);
   } else if (action == "call_function" || action == "custom_func") {
-    handleUserCustomFunction(value);
+    if (!handleUserCustomFunction(value)) { sendReply("error", "unknown_custom_slot"); return; }
   } else {
     // 알 수 없는 명령이어도 안전하게 성공 응답 처리하여 웹 에러 방지
   }

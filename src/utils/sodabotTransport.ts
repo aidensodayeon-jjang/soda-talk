@@ -1,5 +1,5 @@
 // One live transport shared by every screen; persisted IP is only a reconnect hint.
-type Reply = { id?: string; state?: string; reason?: string; ip?: string; sound_settings?: Record<string, string> };
+type Reply = { id?: string; state?: string; reason?: string; ip?: string; custom_slots?: Record<string, string>; sound_settings?: Record<string, string> };
 class SodabotTransport {
   private ws: WebSocket | null = null;
   private opening: Promise<void> | null = null;

@@ -1,3 +1,4 @@
+import { normalizeFriendSettings, validateFriendSettings, friendToneInstruction, resolveFriendUser } from './src/utils/friendSettings';
 import express from "express";
 import path from "path";
 import fs from "fs";
@@ -881,47 +882,23 @@ function compileSkillPromptForServer(skill: any): string {
 }
 
 function buildSharedSystemPrompt(user: User, isHardwareVoice: boolean = false): string {
-  const friendSettings = user.friendSettings || {};
-  const persona = friendSettings.persona || {};
-  const profile = friendSettings.profile || {};
-  const memories = (friendSettings.memories || []).filter((m: any) => m && (m.text || m.content));
-
-  const botName = persona.name || persona.robotName || "루미봇";
-  // 웹 대화의 기본 프로필 규칙과 동일하게 유지한다.
-  const defaultStudentName = user.displayName && user.displayName !== "김루미" ? user.displayName : "에이든";
-  const studentName = profile.userName || profile.studentName || defaultStudentName;
-  const userCallSign = persona.callSign || studentName;
-  const roleName = persona.role || "공부친구";
-  const toneName = persona.tone || persona.speechStyle || "친근한 친구말";
-  const personalityName = persona.personality || "친절함";
-  const schoolName = profile.school || "소다중학교 1학년";
-  const interestsList = Array.isArray(profile.interests) ? profile.interests.join(", ") : (profile.interests || "인공지능, 우주, 과학");
-  const goalText = profile.goal || profile.dream || "과학과 진학 및 AI 개발자가 되기";
-
-  const studentWithJosa = getJosa(studentName, '은는');
-  const botWithJosa = getJosa(botName, '이야');
-  const interestsWithJosa = getJosa(interestsList, '을를');
-
-  let prompt = `당신은 학생 '${studentName}'의 친한 AI 로봇 '${botName}'입니다.
-
-[1. 대화하는 상대방(사용자) 정보 - 매우 중요]
-- 이름: ${studentName} (호칭: ${userCallSign})
-- 학교: ${schoolName}
-- 취미 및 관심사: ${interestsList}
-- 장래희망: ${goalText}
-★ 사용자가 "나는 누구야?", "나는 누군데?", "내 이름이 뭐야?", "내가 누구지?", "내 취미가 뭐야?", "내가 좋아하는 게 뭐야?"라고 질문하면:
-  -> 질문자는 바로 '${studentName}'입니다! 절대로 사용자보고 소다봇이나 로봇이라고 하지 마세요!
-  -> 반드시 사용자의 이름(${studentName}), 학교(${schoolName}), 취미(${interestsList})를 명확하게 설명해 주세요!
-  -> 답변: "너는 내 가장 소중한 친구 ${studentName}잖아! ${schoolName}에 다니고 있고, 취미는 ${interestsList}이지!"
-
-[2. 답변하는 당신(AI 반려 로봇) 정보]
+  const {persona, profile, memories} = normalizeFriendSettings(user.friendSettings, user.displayName);
+  const botName = persona.name;
+  const studentName = profile.userName || '친구';
+  let prompt = `당신은 사용자 '${studentName}'의 AI 로봇 '${botName}'입니다.
+[사용자 정보]
+- 이름과 부르는 이름: ${studentName}
+- 학교: ${profile.school || '미설정'}
+- 관심사: ${profile.interests.join(', ') || '미설정'}
+- 목표: ${profile.goal || '미설정'}
+입력되지 않은 학교, 취미, 목표, 가족·반려동물 정보는 만들어내지 마세요. 모르는 정보는 사용자에게 물어보세요.
+[AI 친구 정보]
 - 이름: ${botName}
-- 역할: ${roleName}
-- 성격: ${personalityName}
-- 말투: ${toneName === "존댓말" ? "다정한 존댓말" : "친근하고 다정한 반말 구어체(~했어?, ~야!, ~지!)"}
-★ 사용자가 "너는 누구야?", "너는 누군데?", "자기소개해줘"라고 질문하면:
-  -> 당신은 AI 로봇 '${botName}'입니다.
-  -> 답변: "안녕 ${userCallSign}! 나는 너의 ${roleName} ${botWithJosa}! 오늘 어떤 이야기를 해볼까?"`;
+- 소개: ${persona.intro || '미설정'}
+- 역할: ${persona.role}
+- 성격: ${persona.personality}
+- 말투: ${friendToneInstruction(persona.tone)}
+사용자와 로봇의 이름을 혼동하지 마세요.`;
 
   if (memories.length > 0) {
     prompt += `\n\n[3. 우리가 함께 나눈 기억들]:\n` + memories.map((m: any, idx: number) => `  ${idx + 1}. ${m.text || m.content}`).join("\n");
@@ -948,56 +925,26 @@ function buildSharedSystemPrompt(user: User, isHardwareVoice: boolean = false): 
 }
 
 function buildDeterministicIdentityReply(user: User, message: string): string | null {
-  const normalized = message.replace(/[^\p{L}\p{N}]/gu, "").toLowerCase();
-  const friendSettings = user.friendSettings || {};
-  const persona = friendSettings.persona || {};
-  const profile = friendSettings.profile || {};
-  const defaultStudentName = user.displayName && user.displayName !== "김루미" ? user.displayName : "에이든";
-  const studentName = profile.userName || profile.studentName || defaultStudentName;
-  const botName = persona.name || persona.robotName || "루미봇";
-  const userCallSign = persona.callSign || studentName;
-  const roleName = persona.role || "공부친구";
-  const schoolName = profile.school || "소다중학교 1학년";
-  const interestsList = Array.isArray(profile.interests)
-    ? profile.interests.join(", ")
-    : (profile.interests || "인공지능, 우주, 과학");
-
-  const asksAboutUser = [
-    "나는누구", "난누구", "내가누구", "내이름", "내취미", "내가좋아하는"
-  ].some(pattern => normalized.includes(pattern));
+  const normalized = message.replace(/[^\p{L}\p{N}]/gu, '').toLowerCase();
+  const {persona, profile} = normalizeFriendSettings(user.friendSettings, user.displayName);
+  const studentName = profile.userName || '친구';
+  const polite = persona.tone !== '친근한 친구말';
+  const asksAboutUser = ['나는누구','난누구','내가누구','내이름','내취미','내가좋아하는'].some(p => normalized.includes(p));
   if (asksAboutUser) {
-    return `안녕 ${studentName}! 너는 내 가장 소중한 친구 ${studentName}잖아! ${schoolName}에 다니고 있고, 취미는 ${interestsList}이지!`;
+    const details = [profile.school ? `학교는 ${profile.school}` : '', profile.interests.length ? `관심사는 ${profile.interests.join(', ')}` : ''].filter(Boolean).join(', ');
+    return polite ? `${studentName}님이시죠.${details ? ` ${details}입니다.` : ' 아직 학교와 관심사는 알려주지 않으셨어요.'}`
+      : `${studentName}${getJosa(studentName, '이야').slice(studentName.length)}!${details ? ` ${details}${getJosa(details, '이야').slice(details.length)}.` : ' 학교와 관심사도 알려줄래?'}`;
   }
-
-  const asksAboutBot = [
-    "너는누구", "넌누구", "네이름", "니이름", "자기소개"
-  ].some(pattern => normalized.includes(pattern));
-  if (asksAboutBot) {
-    return `안녕 ${userCallSign}! 나는 너의 ${roleName} ${getJosa(botName, "이야")}! 오늘 어떤 이야기를 해볼까?`;
-  }
-
+  const asksAboutBot = ['너는누구','넌누구','네이름','니이름','자기소개'].some(p => normalized.includes(p));
+  if (asksAboutBot) return polite ? `안녕하세요 ${studentName}님! 저는 ${persona.role} ${persona.name}입니다. 오늘 무엇을 도와드릴까요?`
+    : `안녕 ${studentName}! 나는 너의 ${persona.role} ${getJosa(persona.name, '이야')}! 오늘 어떤 이야기를 해볼까?`;
   return null;
 }
 
 function findUserByApiKey(token: string, db: DBStructure): User | undefined {
-  if (!token) return db.users.find(u => u.friendSettings?.persona) || db.users[0];
   const cleanToken = token.trim();
-  const user = db.users.find(u => u.personalApiKey === cleanToken);
-  if (user) return user;
-
-  // Session id 매핑
-  const sessionUser = getSession(cleanToken);
-  if (sessionUser) {
-    const u = db.users.find(usr => usr.id === sessionUser.id);
-    if (u) return u;
-  }
-
-  // 1. 친구설정을 직접 설정한 유저 우선
-  const userWithSettings = db.users.find(u => u.friendSettings && u.friendSettings.persona);
-  if (userWithSettings) return userWithSettings;
-
-  // 2. 현재 로그인된 관리자 또는 기본 admin
-  return db.users.find(u => u.username === "admin") || db.users[0];
+  const session = cleanToken ? getSession(cleanToken) : null;
+  return resolveFriendUser(cleanToken, db.users, session?.id);
 }
 
 // ----------------------------------------------------
@@ -1198,22 +1145,7 @@ app.get('/api/user/friend-settings', (req, res) => {
   const user = session ? db.users.find(u => u.id === session.id) : findUserByApiKey(token, db);
   if (!user) return res.status(401).json({ error: "User not found" });
 
-  res.json({
-    persona: user.friendSettings?.persona || {
-      robotName: "소다봇",
-      tone: "cute",
-      speechStyle: "friendly",
-      personality: "bright"
-    },
-    profile: user.friendSettings?.profile || {
-      studentName: user.displayName || "친구",
-      school: "",
-      grade: "",
-      interests: "",
-      dream: ""
-    },
-    memories: user.friendSettings?.memories || []
-  });
+  res.json(normalizeFriendSettings(user.friendSettings, user.displayName));
 });
 
 app.post('/api/user/friend-settings', express.json(), (req, res) => {
@@ -1226,8 +1158,9 @@ app.post('/api/user/friend-settings', express.json(), (req, res) => {
   const user = session ? db.users.find(u => u.id === session.id) : findUserByApiKey(token, db);
   if (!user) return res.status(401).json({ error: "User not found" });
 
-  const { persona, profile, memories } = req.body;
-  user.friendSettings = { persona, profile, memories };
+  const validation = validateFriendSettings(req.body);
+  if (validation) return res.status(400).json({ error: validation });
+  user.friendSettings = normalizeFriendSettings(req.body, user.displayName);
   writeDB(db);
   res.json({ success: true, friendSettings: user.friendSettings });
 });
@@ -1333,7 +1266,7 @@ function generateSkillSimulatedResponse(skill: any, userText: string, user: User
   const friendSettings = user.friendSettings || {};
   const persona = friendSettings.persona || {};
   const botName = persona.name || persona.robotName || "소다봇";
-  const studentName = user.displayName || "친구";
+  const studentName = normalizeFriendSettings(user.friendSettings, user.displayName).profile.userName || "친구";
 
   const skillType = skill?.type || 'english';
 
@@ -1404,9 +1337,7 @@ app.post('/api/ai-skills/test-chat', express.json(), async (req, res) => {
     const session = getSession(token);
     user = session ? db.users.find(u => u.id === session.id) || null : findUserByApiKey(token, db);
   }
-  if (!user) {
-    user = db.users[0] || { id: "guest", username: "student", displayName: "에이든", passwordHash: "" };
-  }
+  if (!user) return res.status(401).json({error:'로그인 또는 유효한 SODA API 키가 필요합니다.'});
 
   // 통합 시스템 프롬프트 구성 (사용자 프로필 + 친구설정 + 기억 + 현재 선택된 AI 스킬 규칙)
   let systemPrompt = buildSharedSystemPrompt(user, false);
@@ -2586,9 +2517,7 @@ app.post("/api/lmstudio/stream", async (req, res) => {
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     let customSystemPrompt = "";
-    if (user && (user.username === "aiden" || user.displayName === "에이든")) {
-      customSystemPrompt = " 너는 디랩(D-Lab) 코딩학원의 AI 마스코트 '소다봇'이야. 상대방은 디랩 학부모 설명회에 참석하신 에이든 학부모님이야. 설명회 참석에 깊은 감사와 반가움을 표현하면서, 아이들의 미래 코딩 교육과 소다봇의 역할에 대해 따뜻하고 다정하며 지혜롭고 전문성 있게 답변해줘. 초등/청소년 눈높이의 친근함과 학부모님을 향한 정중한 예의를 함께 갖춰줘.";
-    }
+
 
     const lmResponse = await fetch(fetchUrl, {
       method: "POST",

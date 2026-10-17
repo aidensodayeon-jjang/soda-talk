@@ -10,7 +10,7 @@ import {
   Copy, Code, ExternalLink
 } from 'lucide-react';
 import { 
-  generateCustomFirmware, 
+  generateCustomFirmwareSet, customFunctionRevision, findMainExecutableFunction,
   validateCustomCode, 
   CustomCodeParts, 
   GeneratedFirmwareResult 
@@ -87,6 +87,11 @@ ${targetDesc}
 \`\`\`
 
 코드 뒤에는 각 파트의 동작 설명을 간단히 덧붙여주세요.`;
+}
+
+interface RegisteredCustomFunction {
+  id: string; name: string; slot: string; arduinoFunction: string; description: string;
+  createdAt?: number; headers?: string; globals?: string; setupCode?: string; functionCode?: string;
 }
 
 interface SodabotSettingsScreenProps {
@@ -313,30 +318,22 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
   // Custom Function Real-time Interactive Test State (표정처럼 선택 시 즉시 테스트)
   const [selectedCustomSlot, setSelectedCustomSlot] = useState<string>('CUSTOM_1');
   const [activeCustomFuncSlot, setActiveCustomFuncSlot] = useState<string | null>(null);
-  const customFuncTimeoutRef = React.useRef<any>(null);
 
-  const triggerCustomFunction = (fn: any) => {
+  const triggerCustomFunction = async (fn: RegisteredCustomFunction) => {
+    if (activeCustomFuncSlot) return;
     setSelectedCustomSlot(fn.slot);
     setActiveCustomFuncSlot(fn.slot);
-
-    // 1. 소다봇 기기로 커스텀 함수 실행 명령 전송 (call_function)
-    sendWsCommand("call_function", fn.slot, `커스텀 기능 테스트 (${fn.name})`);
-
-    // 2. 시계 관련 기능이면 실시간 시간 텍스트 전송 및 시뮬레이터 표시
-    if (fn.name.includes('시계') || fn.slot === 'CUSTOM_1' || (fn.arduinoFunction && fn.arduinoFunction.toLowerCase().includes('clock'))) {
-      setBootingState('time');
-      const now = new Date();
-      const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-      sendWsCommand("send_message", `TIME\n${timeStr}`, `현재 시간 표시 (${timeStr})`);
-    }
-
-    showToast(`⚡ '${fn.name}' (${fn.arduinoFunction || 'customFunction'}()) 테스트 실행 중…`);
-
-    if (customFuncTimeoutRef.current) clearTimeout(customFuncTimeoutRef.current);
-    customFuncTimeoutRef.current = setTimeout(() => {
-      setActiveCustomFuncSlot(null);
-      setBootingState(null);
-    }, 3500);
+    try {
+      if (!fn.functionCode?.trim()) throw new Error('저장된 실행 코드가 없습니다. 기능 수정에서 코드를 입력해주세요.');
+      const status = await sodabotTransport.send('get_status');
+      if (status.custom_slots?.[fn.slot] !== customFunctionRevision(toCustomParts(fn))) {
+        throw new Error('현재 로봇에 이 기능의 최신 코드가 없습니다. 전체 펌웨어를 복사·업로드한 후 실행해주세요.');
+      }
+      await sodabotTransport.send('call_function', fn.slot);
+      showToast(`'${fn.name}' 실행 응답을 확인했습니다.`);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '커스텀 기능 실행 실패');
+    } finally { setActiveCustomFuncSlot(null); }
   };
 
   // Expression Studio Editor Modal State
@@ -676,14 +673,7 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
   ];
 
   // 사용자 정의 아두이노 기능 (MY FUNCTIONS) 상태 관리 (기본 더미 데이터 없음)
-  const [customFunctions, setCustomFunctions] = useState<Array<{
-    id: string;
-    name: string;
-    slot: string;
-    arduinoFunction: string;
-    description: string;
-    createdAt?: number;
-  }>>(() => {
+  const [customFunctions, setCustomFunctions] = useState<RegisteredCustomFunction[]>(() => {
     try {
       const saved = localStorage.getItem('sodabot_custom_functions');
       if (saved) {
@@ -695,6 +685,7 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
             const slotObj = USER_FUNCTION_SLOTS.find(s => s.slot === item.slot || s.arduinoFunction === item.functionName || s.arduinoFunction === item.arduinoFunction)
               || USER_FUNCTION_SLOTS[idx % USER_FUNCTION_SLOTS.length];
             return {
+              ...item,
               id: item.id || `func_${Date.now()}_${idx}`,
               name: item.name || `기능 ${idx + 1}`,
               slot: slotObj.slot,
@@ -710,9 +701,23 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
     }
   });
 
+  const toCustomParts = (fn: RegisteredCustomFunction): CustomCodeParts => ({
+    name: fn.name, description: fn.description, targetSlot: fn.slot,
+    headers: fn.headers || '', globals: fn.globals || '', setup: fn.setupCode || '', functionCode: fn.functionCode || '',
+  });
+  const buildAllCustomFirmware = (replacement: CustomCodeParts) => {
+    const entries = customFunctions.filter(fn => fn.slot !== replacement.targetSlot).map(toCustomParts);
+    entries.push(replacement);
+    return generateCustomFirmwareSet(entries,
+      localStorage.getItem(getScopedKey('custom_name')) || profileName || 'LUMI',
+      localStorage.getItem(getScopedKey('wifi_ssid')) || localStorage.getItem('sodabot_wifi_ssid') || '',
+      localStorage.getItem(getScopedKey('wifi_password')) || localStorage.getItem('sodabot_wifi_password') || '',
+      currentUser?.personalApiKey || localStorage.getItem(getScopedKey('api_key')) || '');
+  };
+
   // 모달 상태 관리
   const [showFuncModal, setShowFuncModal] = useState(false); // 새 기능 등록 모달
-  const [editingFunc, setEditingFunc] = useState<{ id: string; name: string; slot: string; arduinoFunction: string; description: string; createdAt?: number } | null>(null); // 수정 모달
+  const [editingFunc, setEditingFunc] = useState<RegisteredCustomFunction | null>(null); // 수정 모달
   const [deletingFunc, setDeletingFunc] = useState<{ id: string; name: string; slot: string; arduinoFunction: string } | null>(null); // 삭제 확인 모달
   const [funcNameInput, setFuncNameInput] = useState('');
   const [selectedSlot, setSelectedSlot] = useState('CUSTOM_1');
@@ -724,6 +729,11 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
   const [globalsInput, setGlobalsInput] = useState('');
   const [setupInput, setSetupInput] = useState('');
   const [functionInput, setFunctionInput] = useState('');
+  const hasUnsavedFunctionEdits = !!editingFunc && (
+    funcNameInput !== editingFunc.name || funcDescInput !== editingFunc.description ||
+    headersInput !== (editingFunc.headers || '') || globalsInput !== (editingFunc.globals || '') ||
+    setupInput !== (editingFunc.setupCode || '') || functionInput !== (editingFunc.functionCode || '')
+  );
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [generationResult, setGenerationResult] = useState<GeneratedFirmwareResult | null>(null);
   const [showCodePreview, setShowCodePreview] = useState(false);
@@ -779,7 +789,7 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
   };
 
   // 펌웨어 빌드 및 기능 등록
-  const handleBuildFirmware = (e: React.FormEvent) => {
+  const handleBuildFirmware = async (e: React.FormEvent) => {
     e.preventDefault();
     setValidationErrors([]);
 
@@ -801,10 +811,7 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
     }
 
     try {
-      const wifiSsid = localStorage.getItem('sodabot_wifi_ssid') || '';
-      const wifiPass = localStorage.getItem('sodabot_wifi_password') || localStorage.getItem('sodabot_wifi_pass') || '';
-      const userApiKey = currentUser?.personalApiKey || localStorage.getItem('sodabot_api_key') || localStorage.getItem(`sodabot_${currentUser?.id || currentUser?.username}_api_key`) || '';
-      const result = generateCustomFirmware(parts, profileName || 'LUMI', wifiSsid, wifiPass, userApiKey);
+      const result = buildAllCustomFirmware(parts);
       setGenerationResult(result);
 
       // SODA TALK 내 기능 목록에 등록
@@ -813,8 +820,8 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
         id: `func_${Date.now()}`,
         name: parts.name,
         slot: slotObj.slot,
-        arduinoFunction: result.mainFunctionName || slotObj.arduinoFunction,
-        functionName: result.mainFunctionName,
+        arduinoFunction: slotObj.arduinoFunction,
+        functionName: findMainExecutableFunction(parts.functionCode),
         description: parts.description || '',
         firmwareFileName: result.fileName,
         headers: parts.headers,
@@ -830,9 +837,13 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
       localStorage.setItem('sodabot_custom_functions', JSON.stringify(updatedList));
 
       // 생성된 전체 펌웨어 코드를 클립보드에 즉시 복사
-      navigator.clipboard.writeText(result.mergedCode);
-      setIsCopiedCode(true);
-      showToast(`📋 '${parts.name}' 전체 펌웨어 코드가 클립보드에 복사되었습니다!`);
+      try {
+        await navigator.clipboard.writeText(result.mergedCode);
+        setIsCopiedCode(true);
+        showToast(`📋 전체 슬롯의 펌웨어 코드를 복사했습니다.`);
+      } catch {
+        showToast('기능 등록과 코드 생성은 완료됐지만 복사는 실패했습니다. .ino 파일 다운로드를 이용해주세요.');
+      }
     } catch (err: any) {
       setValidationErrors([`펌웨어 생성 중 오류가 발생했습니다: ${err.message || '알 수 없는 오류'}`]);
     }
@@ -854,32 +865,31 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
   };
 
   // 병합된 코드 복사
-  const handleCopyMergedCode = () => {
+  const handleCopyMergedCode = async () => {
     if (!generationResult) return;
-    navigator.clipboard.writeText(generationResult.mergedCode);
-    setIsCopiedCode(true);
-    showToast('📋 전체 .ino 코드가 클립보드에 복사되었습니다.');
-    setTimeout(() => setIsCopiedCode(false), 2000);
+    try {
+      await navigator.clipboard.writeText(generationResult.mergedCode);
+      setIsCopiedCode(true);
+      showToast('전체 .ino 코드를 복사했습니다.');
+      setTimeout(() => setIsCopiedCode(false), 2000);
+    } catch { showToast('복사에 실패했습니다. .ino 파일 다운로드를 이용해주세요.'); }
   };
 
   // 등록된 커스텀 기능의 전체 펌웨어 코드를 언제든지 다시 복사
   const [copiedFuncId, setCopiedFuncId] = useState<string | null>(null);
-  const handleCopyCustomFunctionCode = (fn: any) => {
+  const handleCopyCustomFunctionCode = async (fn: RegisteredCustomFunction) => {
     try {
-      const wifiSsid = localStorage.getItem('sodabot_wifi_ssid') || '';
-      const wifiPass = localStorage.getItem('sodabot_wifi_password') || localStorage.getItem('sodabot_wifi_pass') || '';
-      const userApiKey = currentUser?.personalApiKey || localStorage.getItem('sodabot_api_key') || localStorage.getItem(`sodabot_${currentUser?.id || currentUser?.username}_api_key`) || '';
       const parts: CustomCodeParts = {
         name: fn.name,
         description: fn.description,
         headers: fn.headers || '',
         globals: fn.globals || '',
         setup: fn.setupCode || '',
-        functionCode: fn.functionCode || `void ${fn.arduinoFunction || 'customFunction'}() {\n  // 기능 코드\n}`,
+        functionCode: fn.functionCode || '',
         targetSlot: fn.slot
       };
-      const result = generateCustomFirmware(parts, profileName || 'LUMI', wifiSsid, wifiPass, userApiKey);
-      navigator.clipboard.writeText(result.mergedCode);
+      const result = buildAllCustomFirmware(parts);
+      await navigator.clipboard.writeText(result.mergedCode);
       setCopiedFuncId(fn.id);
       showToast(`📋 '${fn.name}' 전체 펌웨어 코드가 클립보드에 복사되었습니다!`);
       setTimeout(() => setCopiedFuncId(null), 2000);
@@ -889,10 +899,15 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
   };
 
   // 2. 기능 수정 모달 열기
-  const handleOpenEditFuncModal = (fn: { id: string; name: string; slot: string; arduinoFunction: string; description: string; createdAt?: number }) => {
+  const handleOpenEditFuncModal = (fn: RegisteredCustomFunction) => {
     setEditingFunc(fn);
     setFuncNameInput(fn.name);
     setFuncDescInput(fn.description);
+    setHeadersInput(fn.headers || '');
+    setGlobalsInput(fn.globals || '');
+    setSetupInput(fn.setupCode || '');
+    setFunctionInput(fn.functionCode || '');
+    setValidationErrors([]);
   };
 
   // 기능 수정 저장
@@ -908,12 +923,18 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
       return;
     }
 
+    try {
+      buildAllCustomFirmware({ name: trimmedName, description: trimmedDesc, targetSlot: editingFunc.slot,
+        headers: headersInput, globals: globalsInput, setup: setupInput, functionCode: functionInput });
+    } catch (error) { showToast(error instanceof Error ? error.message : '코드 검증 실패'); return; }
+
     const updatedList = customFunctions.map(item => {
       if (item.id === editingFunc.id) {
         return {
           ...item,
           name: trimmedName,
-          description: trimmedDesc
+          description: trimmedDesc,
+          headers: headersInput, globals: globalsInput, setupCode: setupInput, functionCode: functionInput,
         };
       }
       return item;
@@ -922,7 +943,7 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
     setCustomFunctions(updatedList);
     localStorage.setItem('sodabot_custom_functions', JSON.stringify(updatedList));
     setEditingFunc(null);
-    showToast(`'${trimmedName}' 기능이 수정되었습니다.`);
+    showToast(`'${trimmedName}' 코드를 저장했습니다. 전체 펌웨어를 다시 업로드해야 로봇에 반영됩니다.`);
   };
 
   // 3. 기능 삭제 확인 모달 열기
@@ -1028,19 +1049,8 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
     if (targetAction.startsWith('custom:') || targetAction.startsWith('CUSTOM_')) {
       const slotKey = targetAction.replace('custom:', '');
       const matchedFunc = customFunctions.find(f => f.slot === slotKey || f.arduinoFunction === slotKey);
-      const slotObj = USER_FUNCTION_SLOTS.find(s => s.slot === slotKey || s.arduinoFunction === slotKey);
-      const funcTitle = matchedFunc ? matchedFunc.name : slotKey;
-      const arduinoFnLabel = slotObj ? slotObj.label : matchedFunc ? `${matchedFunc.arduinoFunction}()` : `${slotKey}()`;
-
-      // 소다봇에 슬롯 명령 전송 (예: CUSTOM_1)
-      sendWsCommand("call_function", slotObj ? slotObj.slot : slotKey, `사용자 슬롯 '${funcTitle}(${slotKey})' 실행`);
-
-      // LCD 화면 시뮬레이터에 표시
-      setBootingState('greeting');
-      setBootingMessage(`[MY FUNCTION]\n${funcTitle}\n${arduinoFnLabel}`);
-      playWebSound('touch_react');
-      setTimeout(() => { setBootingState(null); setSelectedExpr(defaultIdleExpr); }, 3000);
-      showToast(`⚡ [${triggerName}] 내가 만든 기능 '${funcTitle} (${arduinoFnLabel})' 실행!`);
+      if (matchedFunc) void triggerCustomFunction(matchedFunc);
+      else showToast('등록된 기능을 찾을 수 없습니다. 커스텀 기능 목록을 확인해주세요.');
       return;
     }
 
@@ -2068,7 +2078,7 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
               </div>
               
               <p className="text-[11px] text-[#787774] leading-relaxed">
-                등록한 나만의 커스텀 기능을 표정처럼 선택하여 소다봇에서 즉시 테스트합니다.
+                등록·수정 후 전체 펌웨어를 업로드하면 기능을 선택해 테스트할 수 있습니다.
               </p>
 
               {/* Current Selected / Active Function Display */}
@@ -2593,7 +2603,7 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
       {/* 2. Modal: 기존 기능 정보 수정 (editingFunc) */}
       {editingFunc && (
         <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-white border border-[#E5E5E3] rounded-2xl max-w-sm sm:max-w-md w-full p-5 sm:p-6 shadow-xl space-y-4">
+          <div className="bg-white border border-[#E5E5E3] rounded-2xl max-w-sm sm:max-w-xl w-full p-5 sm:p-6 shadow-xl space-y-4 max-h-[90vh] overflow-y-auto">
             
             {/* Header */}
             <div className="flex items-center justify-between border-b border-[#E5E5E3] pb-3">
@@ -2606,7 +2616,7 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
                     기능 정보 수정
                   </h3>
                   <p className="text-[11px] text-[#787774]">
-                    등록된 기능의 이름과 설명을 수정해요.
+                    등록된 기능의 이름·설명과 실행 코드를 수정합니다.
                   </p>
                 </div>
               </div>
@@ -2658,14 +2668,29 @@ export default function SodabotSettingsScreen({ currentUser }: SodabotSettingsSc
                 </div>
               </div>
 
+              <p className="text-[11px] text-[#787774]">코드 변경은 저장 후 전체 펌웨어를 다시 업로드해야 적용됩니다.</p>
+              {[
+                { label: 'HEADERS', value: headersInput, change: setHeadersInput },
+                { label: 'GLOBALS', value: globalsInput, change: setGlobalsInput },
+                { label: 'SETUP (초기화 코드)', value: setupInput, change: setSetupInput },
+                { label: 'FUNCTION (실행 함수)', value: functionInput, change: setFunctionInput },
+              ].map(field => <label key={field.label} className="block space-y-1 text-xs font-bold">
+                <span>{field.label}</span>
+                <textarea aria-label={field.label} value={field.value} onChange={e => field.change(e.target.value)}
+                  rows={field.label.startsWith('FUNCTION') ? 7 : 3}
+                  className="w-full rounded-xl border border-[#E5E5E3] p-2 font-mono text-xs font-normal" />
+              </label>)}
+
               {/* 전체 펌웨어 코드 복사 버튼 */}
               <button
                 type="button"
                 onClick={() => handleCopyCustomFunctionCode(editingFunc)}
+                disabled={hasUnsavedFunctionEdits}
+                title={hasUnsavedFunctionEdits ? '수정 완료를 눌러 저장한 후 복사해주세요.' : '저장된 모든 슬롯의 전체 펌웨어 복사'}
                 className="w-full py-2 bg-blue-50/70 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-95 shadow-2xs"
               >
                 {copiedFuncId === editingFunc.id ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5 text-blue-600" />}
-                <span>{copiedFuncId === editingFunc.id ? '전체 코드 복사 완료!' : '전체 펌웨어 코드 복사하기'}</span>
+                <span>{hasUnsavedFunctionEdits ? '수정 완료 후 코드를 복사해주세요' : copiedFuncId === editingFunc.id ? '전체 코드 복사 완료!' : '전체 펌웨어 코드 복사하기'}</span>
               </button>
 
               {/* Action Buttons */}

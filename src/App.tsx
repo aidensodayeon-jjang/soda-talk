@@ -1,3 +1,4 @@
+import { normalizeFriendSettings, friendToneInstruction } from './utils/friendSettings';
 import { sodabotTransport } from './utils/sodabotTransport';
 import { renderTextToBitmapPayload } from './utils/textBitmapRenderer';
 import React, { useState, useEffect, useRef } from "react";
@@ -102,71 +103,14 @@ export default function App() {
   // Helper: Always fetch latest Friend Settings, Profile, and Memories
   const getLatestFriendSettings = () => {
     const userKey = user?.id || user?.username || 'default';
-    const currentName = user?.displayName && user.displayName !== '김루미' ? user.displayName : '에이든';
-    let persona: any = {
-      name: "루미봇",
-      intro: "언제나 나를 도와주는 든든한 AI 학습 파트너",
-      role: "공부친구",
-      tone: "친근한 친구말",
-      personality: "친절함",
-      callSign: currentName
-    };
-    let profile: any = {
-      userName: currentName,
-      school: "소다중학교 1학년",
-      interests: ["인공지능", "우주", "과학"],
-      goal: "과학과 진학 및 AI 개발자가 되기"
-    };
-    let memories: any[] = [
-      { id: "mem_1", text: `${currentName}는 축구와 코딩을 좋아한다.` },
-      { id: "mem_2", text: "강아지 이름은 초코 (푸들종)." },
-      { id: "mem_3", text: "목표는 과학과 진학 및 소다봇 개발자가 되는 것이다." }
-    ];
-
+    if (user?.friendSettings) return normalizeFriendSettings(user.friendSettings, user.displayName);
     try {
-      const savedPersona = localStorage.getItem(`sodabot_${userKey}_friend_persona`) || localStorage.getItem("soda_ailab_persona");
-      if (savedPersona) persona = { ...persona, ...JSON.parse(savedPersona) };
-
-      const savedProfile = localStorage.getItem(`sodabot_${userKey}_friend_profile`) || localStorage.getItem("soda_ailab_profile");
-      if (savedProfile) profile = { ...profile, ...JSON.parse(savedProfile) };
-
-      const savedMemories = localStorage.getItem(`sodabot_${userKey}_friend_memories`) || localStorage.getItem("soda_ailab_memories");
-      if (savedMemories) {
-        const parsed = JSON.parse(savedMemories);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          memories = parsed.map((m: any) => ({ id: m.id, text: m.text || m.content || "" })).filter((m: any) => m.text);
-        }
-      }
-    } catch (e) {}
-
-    // Fallback/Merge with user.friendSettings from backend
-    if (user?.friendSettings) {
-      if (user.friendSettings.persona) {
-        persona = {
-          ...persona,
-          ...user.friendSettings.persona,
-          name: user.friendSettings.persona.name || user.friendSettings.persona.robotName || persona.name
-        };
-      }
-      if (user.friendSettings.profile) {
-        profile = {
-          ...profile,
-          ...user.friendSettings.profile,
-          userName: user.friendSettings.profile.userName || user.friendSettings.profile.studentName || profile.userName,
-          goal: user.friendSettings.profile.goal || user.friendSettings.profile.dream || profile.goal,
-          interests: Array.isArray(user.friendSettings.profile.interests)
-            ? user.friendSettings.profile.interests
-            : typeof user.friendSettings.profile.interests === 'string' && user.friendSettings.profile.interests
-            ? user.friendSettings.profile.interests.split(',').map((s: string) => s.trim()).filter(Boolean)
-            : profile.interests
-        };
-      }
-      if (user.friendSettings.memories && user.friendSettings.memories.length > 0) {
-        memories = user.friendSettings.memories.map((m: any) => ({ id: m.id, text: m.text || m.content || "" })).filter((m: any) => m.text);
-      }
-    }
-
-    return { persona, profile, memories };
+      return normalizeFriendSettings({
+        persona: JSON.parse(localStorage.getItem(`sodabot_${userKey}_friend_persona`) || 'null'),
+        profile: JSON.parse(localStorage.getItem(`sodabot_${userKey}_friend_profile`) || 'null'),
+        memories: JSON.parse(localStorage.getItem(`sodabot_${userKey}_friend_memories`) || '[]'),
+      }, user?.displayName);
+    } catch { return normalizeFriendSettings({}, user?.displayName); }
   };
 
   // Main Navigation Tab: 'dev' (수업 & 펌웨어 개발실) vs 'chat' (소다봇 제어 & AI 코딩)
@@ -199,7 +143,7 @@ export default function App() {
   // Core Data States
   const [chats, setChats] = useState<ChatRoom[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
-  const [currentView, setCurrentView] = useState<'welcome' | 'chat' | 'sodabot' | 'settings' | 'sodabot_builder' | 'mic_circuit' | 'firmware_v4' | 'firmware_v8' | 'firmware_v9' | 'assembly_v9' | 'ai_skills' | 'dev' | 'friends' | 'mobile_guide'>('welcome');
+  const [currentView, setCurrentView] = useState<'welcome' | 'chat' | 'sodabot' | 'settings' | 'sodabot_builder' | 'mic_circuit' | 'mic_lab' | 'firmware_v4' | 'firmware_v8' | 'firmware_v9' | 'assembly_v9' | 'ai_skills' | 'dev' | 'friends' | 'mobile_guide'>('welcome');
   const [inputText, setInputText] = useState("");
   const [sending, setSending] = useState(false);
   const [clearingChat, setClearingChat] = useState(false);
@@ -1036,21 +980,21 @@ export default function App() {
         console.warn("Failed to sync web friend settings", settingsError);
       }
 
-      const botName = persona.name || persona.robotName || "루미";
-      const studentName = profile.userName || profile.studentName || "김민준";
-      const userCallSign = persona.callSign || studentName;
+      const botName = persona.name || "소다봇";
+      const studentName = profile.userName || user?.displayName || "친구";
+      const userCallSign = studentName;
       const roleName = persona.role || "공부친구";
-      const toneName = persona.tone || persona.speechStyle || "친근한 친구말";
+      const toneName = persona.tone || "친근한 친구말";
       const personalityName = persona.personality || "친절함";
-      const schoolName = profile.school || "소다중학교 1학년";
-      const interestsList = Array.isArray(profile.interests) ? profile.interests.join(", ") : (profile.interests || "인공지능, 우주, 과학");
-      const goalText = profile.goal || profile.dream || "과학과 진학 및 AI 개발자가 되기";
+      const schoolName = profile.school || "미설정";
+      const interestsList = Array.isArray(profile.interests) ? profile.interests.join(", ") : (profile.interests || "미설정");
+      const goalText = profile.goal || "미설정";
 
       const studentWithJosa = getJosa(studentName, '은는');
       const botWithJosa = getJosa(botName, '이야');
       const interestsWithJosa = getJosa(interestsList, '을를');
 
-      let sodabotPersona = `당신은 학생 '${studentName}'의 친한 AI 로봇 '${botName}'입니다.
+      let sodabotPersona = `미설정된 개인정보는 추측하거나 만들어내지 마세요. 이름은 사용자를 부르는 이름으로도 사용합니다.\n당신은 학생 '${studentName}'의 친한 AI 로봇 '${botName}'입니다.
 
 [1. 대화하는 상대방(사용자) 정보 - 매우 중요]
 - 이름: ${studentName} (호칭: ${userCallSign})
@@ -1059,14 +1003,13 @@ export default function App() {
 - 장래희망: ${goalText}
 ★ 사용자가 "나는 누구야?", "나는 누군데?", "내 이름이 뭐야?", "내가 누구지?", "내 취미가 뭐야?", "내가 좋아하는 게 뭐야?"라고 질문하면:
   -> 질문자는 바로 '${studentName}'입니다! 절대로 사용자보고 소다봇이나 로봇이라고 하지 마세요!
-  -> 반드시 사용자의 이름(${studentName}), 학교(${schoolName}), 취미(${interestsList})를 명확하게 설명해 주세요!
-  -> 답변: "너는 내 가장 소중한 친구 ${studentName}잖아! ${schoolName}에 다니고 있고, 취미는 ${interestsList}이지!"
+  -> 저장된 정보만 사용하고, 미설정인 학교나 취미는 아직 모른다고 말한 뒤 물어보세요.
 
 [2. 답변하는 당신(AI 반려 로봇) 정보]
 - 이름: ${botName}
 - 역할: ${roleName}
 - 성격: ${personalityName}
-- 말투: ${toneName === "존댓말" ? "다정한 존댓말" : "친근하고 다정한 반말 구어체(~했어?, ~야!, ~지!)"}
+- 말투: ${friendToneInstruction(toneName)}
 ★ 사용자가 "너는 누구야?", "너는 누군데?", "자기소개해줘"라고 질문하면:
   -> 당신은 AI 로봇 '${botName}'입니다.
   -> 답변: "안녕 ${userCallSign}! 나는 너의 ${roleName} ${botWithJosa}! 오늘 어떤 이야기를 해볼까?"`;
@@ -2678,6 +2621,17 @@ export default function App() {
                           </span>
                         </button>
 
+                        <button
+                          onClick={() => setCurrentView('mic_lab')}
+                          className={`w-full text-left px-2.5 py-1.5 rounded-xl text-xs font-medium flex items-center justify-between transition-all cursor-pointer ${currentView === 'mic_lab' ? 'bg-blue-50/70 text-blue-900 font-bold border border-blue-200/70 shadow-2xs' : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20 hover:text-[#1D1D1F]'}`}
+                        >
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <Code2 className="w-3.5 h-3.5 shrink-0 text-indigo-500" />
+                            <span className="truncate text-xs">3. 마이크 배선 실습</span>
+                          </div>
+                          <span className="text-[8px] text-indigo-700 bg-indigo-50 border border-indigo-200/60 px-1.5 py-0.5 rounded font-mono font-semibold shrink-0">7-3</span>
+                        </button>
+
                         {/* 3. 마이크 입력 테스트 (soda-6-3) */}
                         <button
                           onClick={() => {
@@ -2691,7 +2645,7 @@ export default function App() {
                         >
                           <div className="flex items-center gap-1.5 min-w-0">
                             <Code2 className={`w-3.5 h-3.5 shrink-0 ${currentView === 'firmware_v4' ? 'text-blue-600' : 'text-indigo-500'}`} />
-                            <span className="truncate text-xs">3. 마이크 입력 테스트</span>
+                            <span className="truncate text-xs">4. 마이크 입력 테스트</span>
                           </div>
                           <span className="text-[8px] text-indigo-700 bg-indigo-50 border border-indigo-200/60 px-1.5 py-0.5 rounded font-mono font-semibold shrink-0">
                             코드
@@ -2711,7 +2665,7 @@ export default function App() {
                         >
                           <div className="flex items-center gap-1.5 min-w-0">
                             <Users className={`w-3.5 h-3.5 shrink-0 ${currentView === 'sodabot_builder' ? 'text-blue-600' : 'text-blue-500'}`} />
-                            <span className="truncate text-xs">4. 소다봇 친구설정</span>
+                            <span className="truncate text-xs">5. 소다봇 친구설정</span>
                           </div>
                           <span className="text-[8px] text-blue-700 bg-blue-50 border border-blue-200/60 px-1.5 py-0.5 rounded font-mono font-semibold shrink-0">
                             설정
@@ -3133,7 +3087,7 @@ export default function App() {
               {(() => {
                 const latestSettings = getLatestFriendSettings();
                 const botName = latestSettings.persona.name || "루미";
-                const studentName = latestSettings.profile.userName || "김민준";
+                const studentName = latestSettings.profile.userName || user?.displayName || "친구";
                 const roleName = latestSettings.persona.role || "공부친구";
                 const toneName = latestSettings.persona.tone || "친근한 친구말";
                 const memoryCount = latestSettings.memories.length;
@@ -3252,7 +3206,7 @@ export default function App() {
                       {activeChat.messages.map((msg) => {
                         const isUser = msg.sender === "user";
                         const isSodabotSource = msg.source === "sodabot";
-                        const botName = user?.friendSettings?.persona?.robotName || "소다봇";
+                        const botName = user?.friendSettings?.persona?.name || user?.friendSettings?.persona?.robotName || "소다봇";
 
                         return (
                           <div
@@ -3417,6 +3371,8 @@ export default function App() {
           <SodabotConnectScreen currentUser={user} />
         ) : currentView === 'sodabot_builder' ? (
           <SodabotFriendSettingsScreen currentUser={user} />
+        ) : currentView === 'mic_lab' ? (
+          <iframe src="/simulations/mic-lab/index.html" title="7-3 마이크 배선 실습" className="flex-1 w-full h-full min-h-0 border-0" />
         ) : currentView === 'mic_circuit' ? (
           <div className="flex-1 flex flex-col h-screen overflow-y-auto bg-[#FAF9F6] p-4 sm:p-8 scrollbar-thin">
             <div className="max-w-4xl w-full mx-auto space-y-6 animate-fade-in">
