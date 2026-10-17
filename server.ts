@@ -162,7 +162,7 @@ const DEFAULT_COURSE_CONTENTS: CourseContent[] = [
   },
   {
     id: "content-week-2-circuit-diagram",
-    week: 2,
+    week: 3,
     title: "[배선도] 버튼 + LED + 스피커 회로 연결도",
     description: "ESP32-S3 SuperMini 보드와 MAX98357A I2S 앰프, 버튼(GPIO4), LED(GPIO2)의 핀 연결 배선도 및 하드웨어 회로 가이드입니다.",
     filename: "circuit_btn_led_speaker.png",
@@ -187,9 +187,18 @@ const DEFAULT_COURSE_CONTENTS: CourseContent[] = [
 // 동작: 버튼을 누르면(LOW) LED 켜짐 + 도-미-솔 사운드 출력`
   },
   {
+    id: "content-week-2-amplifier-lab", week: 3,
+    title: "3-1. 앰프 · 스피커 추가하기",
+    description: "LED와 버튼이 연결된 회로에 MAX98357A 앰프와 스피커를 추가하는 회로 실습입니다.",
+    filename: "soda-1-1.ino", language: "arduino", contentType: "interactive",
+    imageUrl: "/simulations/amplifier-lab/index.html",
+    tags: ["I2S", "앰프", "스피커", "시뮬레이션"],
+    code: getFirmwareCode("soda-1-1.ino"),
+  },
+  {
     id: "content-week-2-sound",
-    week: 2,
-    title: "2-4. 스피커테스트 도레미파솔라시도",
+    week: 3,
+    title: "3-2. 스피커테스트 도레미파솔라시도",
     description: "I2S 디지털 앰프/스피커 핀(BCLK:5, LRC:3, DOUT:44)을 초기화하고 도레미파솔라시도 음계를 재생하는 소다봇 사운드 기초 실습입니다.",
     filename: "soda-1-1.ino",
     language: "arduino",
@@ -200,8 +209,8 @@ const DEFAULT_COURSE_CONTENTS: CourseContent[] = [
   },
   {
     id: "content-week-2-btn-led-sound",
-    week: 2,
-    title: "2-5. 버튼 + LED + 스피커",
+    week: 3,
+    title: "3-3. 버튼 + LED + 스피커",
     description: "버튼(D4)을 누르면 LED(D2)가 켜지며 MAX98357A I2S 앰프 스피커를 통해 도-미-솔 화음 사운드를 출력하는 인터랙션 예제입니다.",
     filename: "soda-1-2.ino",
     language: "arduino",
@@ -251,7 +260,7 @@ const DEFAULT_COURSE_CONTENTS: CourseContent[] = [
   {
     id: "content-week-3-lcd-hello",
     week: 3,
-    title: "3-1. LCD 기본 출력 - Hello SODA!",
+    title: "3-4. LCD 기본 출력 - Hello SODA!",
     description: "Waveshare 2.0인치 ST7789 LCD 디스플레이를 초기화하고 화면 중앙에 'Hello SODA!' 글씨를 출력하는 가장 기본적이고 심플한 3주차 첫 실습 코드입니다.",
     filename: "soda-3-1.ino",
     language: "arduino",
@@ -263,7 +272,7 @@ const DEFAULT_COURSE_CONTENTS: CourseContent[] = [
   {
     id: "content-week-3-lcd-basic",
     week: 3,
-    title: "3-2. LCD 기본코드 - 메인화면 표시 버튼클릭시 증가표시",
+    title: "3-5. LCD 기본코드 - 메인화면 표시 버튼클릭시 증가표시",
     description: "ST7789 2.0인치 LCD 화면에 메인 그래픽을 표시하고, 버튼을 누를 때마다 클릭 카운트 증가 화면 및 도-미-솔 사운드를 출력하는 3주차 실습입니다.",
     filename: "soda-3-2.ino",
     language: "arduino",
@@ -275,7 +284,7 @@ const DEFAULT_COURSE_CONTENTS: CourseContent[] = [
   {
     id: "content-week-3-lcd-shapes",
     week: 3,
-    title: "3-3. LCD 다양한 도형 그리기",
+    title: "3-6. LCD 다양한 도형 그리기",
     description: "ST7789 2.0인치 LCD 디스플레이에 선(Line), 사각형(Rect), 원(Circle), 채운 원(FillCircle) 등 다양한 2D 그래픽 도형을 2초 간격으로 순차 렌더링하는 3주차 실습입니다.",
     filename: "soda-3-3.ino",
     language: "arduino",
@@ -287,7 +296,7 @@ const DEFAULT_COURSE_CONTENTS: CourseContent[] = [
   {
     id: "content-week-3-lcd-editor",
     week: 3,
-    title: "3-4. 2.0\" LCD 화면편집기 (소다봇 표정 스튜디오)",
+    title: "3-7. 2.0\" LCD 화면편집기 (소다봇 표정 스튜디오)",
     description: "마우스로 소다봇 표정 및 픽셀 아트를 직접 그리고 2장 표정 전환 애니메이션을 아두이노 C++ 코드로 생성/다운로드하는 3주차 전용 그래픽 도구입니다.",
     filename: "soda-3-4.ino",
     language: "arduino",
@@ -629,6 +638,18 @@ function readDB(): DBStructure {
     }
   }
   for (const item of db.courseContents || []) {
+    const movedToWeek3 = ["content-week-2-circuit-diagram", "content-week-2-amplifier-lab", "content-week-2-sound", "content-week-2-btn-led-sound"];
+    const week3Numbers: Record<string, string> = {
+      "content-week-2-amplifier-lab": "3-1.", "content-week-2-sound": "3-2.", "content-week-2-btn-led-sound": "3-3.",
+      "content-week-3-lcd-hello": "3-4.", "content-week-3-lcd-basic": "3-5.", "content-week-3-lcd-shapes": "3-6.", "content-week-3-lcd-editor": "3-7."
+    };
+    if (movedToWeek3.includes(item.id) && item.week !== 3) { item.week = 3; changed = true; }
+    const prefix = week3Numbers[item.id];
+    if (prefix) {
+      const title = item.title.replace(/^[23]-\d+\./, prefix);
+      if (title !== item.title) { item.title = title; changed = true; }
+    }
+
     if (item.id === "content-week-2-sound-lab" && item.filename === "soda-1-1.ino") {
       const updated = DEFAULT_COURSE_CONTENTS.find(c => c.id === item.id)!;
       item.filename = updated.filename; item.code = updated.code; changed = true;
@@ -637,8 +658,6 @@ function readDB(): DBStructure {
       item.title = item.title.replace("SODA CIRCUIT LAB — ", "");
       changed = true;
     }
-    if (item.id === "content-week-2-sound" && /^2-[234]\. 스피커테스트 도레미파솔라시도$/.test(item.title) && item.title !== "2-4. 스피커테스트 도레미파솔라시도") { item.title = "2-4. 스피커테스트 도레미파솔라시도"; changed = true; }
-    if (item.id === "content-week-2-btn-led-sound" && /^2-[345]\. 버튼 \+ LED \+ 스피커$/.test(item.title) && item.title !== "2-5. 버튼 + LED + 스피커") { item.title = "2-5. 버튼 + LED + 스피커"; changed = true; }
   }
   if (!db.friendProfiles || !Array.isArray(db.friendProfiles)) {
     db.friendProfiles = [];
@@ -2164,7 +2183,10 @@ app.get("/api/course-contents", (req, res) => {
     }
     return c;
   }).sort((a, b) => {
-    const rank = (id: string) => id === "content-week-2-breadboard-secret" ? -3 : id === "content-week-2-circuit-lab" ? -2 : id === "content-week-2-sound-lab" ? -1 : 0;
+    const rank = (id: string) => ({
+      "content-week-2-breadboard-secret": -5, "content-week-2-circuit-lab": -4, "content-week-2-sound-lab": -3,
+      "content-week-2-circuit-diagram": -4, "content-week-2-amplifier-lab": -3, "content-week-2-sound": -2, "content-week-2-btn-led-sound": -1
+    }[id] || 0);
     return a.week - b.week || rank(a.id) - rank(b.id);
   });
 

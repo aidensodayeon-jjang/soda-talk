@@ -102,7 +102,7 @@ const SAMPLE_CODES: CodeItem[] = [
   },
   {
     id: "content-week-2-circuit-diagram",
-    week: 2,
+    week: 3,
     title: "[배선도] 버튼 + LED + 스피커 회로 연결도",
     description: "ESP32-S3 SuperMini 보드와 MAX98357A I2S 앰프, 버튼(GPIO4), LED(GPIO2)의 핀 연결 배선도 및 하드웨어 회로 가이드입니다.",
     filename: "circuit_btn_led_speaker.png",
@@ -127,9 +127,18 @@ const SAMPLE_CODES: CodeItem[] = [
 // 동작: 버튼을 누르면(LOW) LED 켜짐 + 도-미-솔 사운드 출력`
   },
   {
+    id: "content-week-2-amplifier-lab", week: 3,
+    title: "3-1. 앰프 · 스피커 추가하기",
+    description: "LED와 버튼이 연결된 회로에 MAX98357A 앰프와 스피커를 추가하는 회로 실습입니다.",
+    filename: "soda-1-1.ino", language: "arduino", contentType: "interactive",
+    imageUrl: "/simulations/amplifier-lab/index.html",
+    tags: ["I2S", "앰프", "스피커", "시뮬레이션"],
+    code: soundLabCode,
+  },
+  {
     id: "content-week-2-sound",
-    week: 2,
-    title: "2-4. 스피커테스트 도레미파솔라시도",
+    week: 3,
+    title: "3-2. 스피커테스트 도레미파솔라시도",
     description: "I2S 디지털 앰프/스피커 핀(BCLK:5, LRC:3, DOUT:44)을 초기화하고 도레미파솔라시도 음계를 재생하는 소다봇 사운드 기초 실습입니다.",
     filename: "soda-1-1.ino",
     language: "arduino",
@@ -261,8 +270,8 @@ void loop() {
   },
   {
     id: "content-week-2-btn-led-sound",
-    week: 2,
-    title: "2-5. 버튼 + LED + 스피커",
+    week: 3,
+    title: "3-3. 버튼 + LED + 스피커",
     description: "버튼(D4)을 누르면 LED(D2)가 켜지며 MAX98357A I2S 앰프 스피커를 통해 도-미-솔 화음 사운드를 출력하는 인터랙션 예제입니다.",
     filename: "soda-1-2.ino",
     language: "arduino",
@@ -513,7 +522,7 @@ void playTone(float frequency, int duration_ms) {
   {
     id: "content-week-3-lcd-hello",
     week: 3,
-    title: "3-1. LCD 기본 출력 - Hello SODA!",
+    title: "3-4. LCD 기본 출력 - Hello SODA!",
     description: "Waveshare 2.0인치 ST7789 LCD 디스플레이를 초기화하고 화면 중앙에 'Hello SODA!' 글씨를 출력하는 가장 기본적이고 심플한 3주차 첫 실습 코드입니다.",
     filename: "soda-3-1.ino",
     language: "arduino",
@@ -563,7 +572,7 @@ void loop() {
   {
     id: "content-week-3-lcd-basic",
     week: 3,
-    title: "3-2. LCD 기본코드 - 메인화면 표시 버튼클릭시 증가표시",
+    title: "3-5. LCD 기본코드 - 메인화면 표시 버튼클릭시 증가표시",
     description: "ST7789 2.0인치 LCD 화면에 메인 그래픽을 표시하고, 버튼을 누를 때마다 클릭 카운트 증가 화면 및 도-미-솔 사운드를 출력하는 3주차 실습입니다.",
     filename: "soda-3-2.ino",
     language: "arduino",
@@ -763,7 +772,7 @@ void playTone(float frequency, int duration_ms) {
   {
     id: "content-week-3-lcd-shapes",
     week: 3,
-    title: "3-3. LCD 다양한 도형 그리기",
+    title: "3-6. LCD 다양한 도형 그리기",
     description: "ST7789 2.0인치 LCD 디스플레이에 선(Line), 사각형(Rect), 원(Circle), 채운 원(FillCircle) 등 다양한 2D 그래픽 도형을 2초 간격으로 순차 렌더링하는 3주차 실습입니다.",
     filename: "soda-3-3.ino",
     language: "arduino",
@@ -842,7 +851,7 @@ void loop() {
   {
     id: "content-week-3-lcd-editor",
     week: 3,
-    title: "3-4. 2.0\" LCD 화면편집기 (소다봇 표정 스튜디오)",
+    title: "3-7. 2.0\" LCD 화면편집기 (소다봇 표정 스튜디오)",
     description: "마우스로 소다봇 표정 및 픽셀 아트를 직접 그리고 2장 표정 전환 애니메이션을 아두이노 C++ 코드로 생성/다운로드하는 3주차 전용 그래픽 도구입니다.",
     filename: "soda-3-4.ino",
     language: "arduino",
