@@ -1,3 +1,8 @@
+import { compileAiSkillPrompt } from './src/utils/aiSkillUtils';
+import { reserveGptRoute, withProviderFallback } from './src/utils/aiRouting';
+import { createRequestCapacity } from './src/utils/requestCapacity';
+import { fetchHardwareSpeech } from './src/utils/hardwareTts';
+import { quizTurn, parseQuizQuestion, hasUntrackedQuiz, type QuizState } from './src/utils/quiz';
 import { normalizeFriendSettings, validateFriendSettings, friendToneInstruction, resolveFriendUser } from './src/utils/friendSettings';
 import express from "express";
 import path from "path";
@@ -18,6 +23,12 @@ env.allowLocalModels = false;
 dotenv.config();
 
 const app = express();
+const aiCapacity = createRequestCapacity(8, req => {
+  const token = String(req.headers.authorization || "").replace(/^Bearer /, "").trim();
+  if (!token) return "";
+  const session = getSession(token);
+  return session?.id || findUserByApiKey(token, readDB())?.id || token;
+});
 const PORT = parseInt(process.env.PORT || "7989", 10);
 
 // MySQL Connection Pool for Student Master DB (edupilot)
@@ -52,6 +63,7 @@ interface Message {
 }
 
 interface ChatRoom {
+  quizState?: QuizState;
   id: string;
   userId: string;
   title: string;
@@ -625,7 +637,7 @@ function initDB() {
         modelName: "llama-3-korean-bllossom-8b",
         fallbackMode: true,
         hybridModeEnabled: false,
-        dailyGptQuota: 3
+        dailyGptQuota: 30
       },
       chats: [
         {
@@ -656,10 +668,13 @@ function initDB() {
 
 initDB();
 
+let sharedDB: DBStructure | undefined;
 function readDB(): DBStructure {
+  if (sharedDB) return sharedDB;
   initDB();
   const raw = fs.readFileSync(DB_FILE, "utf8");
   const db: DBStructure = JSON.parse(raw);
+  sharedDB = db;
   let changed = false;
   if (!db.curriculumWeekShiftVersion) {
     for (const item of db.courseContents || []) {
@@ -745,27 +760,14 @@ function readDB(): DBStructure {
 }
 
 function writeDB(data: DBStructure) {
-  fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), "utf8");
+  const temp = DB_FILE + ".tmp";
+  fs.writeFileSync(temp, JSON.stringify(data, null, 2), "utf8");
+  fs.renameSync(temp, DB_FILE);
+  sharedDB = data;
 }
 
 function checkHybridQuotaAndRoute(user: User, db: DBStructure) {
-  const currentDate = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
-  
-  if (user.lastGptDate !== currentDate) {
-    user.lastGptDate = currentDate;
-    user.gptUsageCount = 0;
-  }
-
-  let useGpt = false;
-  if (db.settings.aiProvider === "openai") {
-    useGpt = true;
-  } else if (db.settings.hybridModeEnabled) {
-    const quota = db.settings.dailyGptQuota || 3;
-    if ((user.gptUsageCount || 0) < quota) {
-      useGpt = true;
-      user.gptUsageCount = (user.gptUsageCount || 0) + 1;
-    }
-  }
+  const useGpt = reserveGptRoute(user, db.settings);
 
   if (useGpt) {
     return {
@@ -780,6 +782,25 @@ function checkHybridQuotaAndRoute(user: User, db: DBStructure) {
       routedToGpt: false
     };
   }
+}
+
+function providerConfig(gpt: boolean, db: DBStructure) {
+  return {url:gpt ? "https://api.openai.com/v1/chat/completions" : `${db.settings.lmStudioUrl}/v1/chat/completions`,
+    auth:gpt ? `Bearer ${db.settings.openaiApiKey || ""}` : "Bearer lm-studio",
+    model:gpt ? "gpt-4o-mini" : db.settings.modelName};
+}
+async function completeWithFallback(user: User, db: DBStructure, body: any) {
+  const primary = checkHybridQuotaAndRoute(user,db).routedToGpt;
+  writeDB(db);
+  return withProviderFallback(primary, async gpt => {
+    if (gpt && !db.settings.openaiApiKey) throw new Error("GPT API key is not configured");
+    const config=providerConfig(gpt,db);
+    const response=await fetch(config.url,{method:"POST",headers:{"Content-Type":"application/json",Authorization:config.auth},body:JSON.stringify({...body,model:config.model,stream:false})});
+    if(!response.ok) { await response.body?.cancel(); throw new Error(`AI HTTP ${response.status}`); }
+    const data=await response.json();
+    if(!data.choices?.[0]?.message?.content?.trim()) throw new Error("Empty AI response");
+    return data;
+  });
 }
 
 function getJosa(word: string, type: '은는' | '을를' | '이가' | '아야' | '이야'): string {
@@ -799,86 +820,7 @@ function getJosa(word: string, type: '은는' | '을를' | '이가' | '아야' |
 }
 
 function compileSkillPromptForServer(skill: any): string {
-  if (!skill) return "";
-  let instructions: string[] = [];
-
-  switch (skill.type) {
-    case 'english': {
-      const opts = skill.englishOptions || { level: 'beginner', ratio: 50, koreanHint: true, grammarCorrection: true, length: 'short', wordQuiz: false, roleplay: false };
-      const levelStr = opts.level === 'beginner' ? '초등/입문 수준의 쉬운 단어와 짧은 문장' : opts.level === 'intermediate' ? '중급 수준의 실용 회화 표현' : '고급 수준의 다양한 어휘와 자연스러운 영미권 표현';
-      const lenStr = opts.length === 'short' ? '1~2문장으로 아주 간결하게' : opts.length === 'medium' ? '2~3문장 정도' : '풍부하고 상세한 문장';
-      instructions.push(`[10-11주차 프로젝트 활성 AI 스킬: 영어친구 (English Buddy)]`);
-      instructions.push(`- 난이도: ${levelStr}`);
-      instructions.push(`- 언어 비율: 영어 약 ${opts.ratio}%, 한국어 ${100 - opts.ratio}%`);
-      instructions.push(`- 답변 길이: ${lenStr}`);
-      if (opts.grammarCorrection) instructions.push(`- 문장 교정: 사용자 영어에 오류가 있다면 [💡 교정: "..."] 형태로 친절하게 교정해주세요.`);
-      if (opts.koreanHint) instructions.push(`- 한국어 힌트: 영어 표현 뒤에 괄호 (한국어 해석)을 함께 달아주세요.`);
-      if (opts.wordQuiz) instructions.push(`- 단어 퀴즈: 대화 중 재미있는 관련 영단어 1문제를 퀴즈로 물어보세요.`);
-      if (opts.roleplay) instructions.push(`- 상황극 모드: '${opts.roleplayScenario || "일상"}' 역할극 상황에 맞추어 대화하세요.`);
-      break;
-    }
-    case 'coding': {
-      const opts = skill.codingOptions || { level: 'elementary', codeGenMode: 'hint', explainError: true, suggestFix: true, addComments: true, useHardwareInfo: true };
-      const levelStr = opts.level === 'elementary' ? '초등학생/엔트리 수준의 쉬운 설명' : opts.level === 'middle' ? '중등 아두이노 C++ 기초' : 'ESP32 심화';
-      instructions.push(`[10-11주차 프로젝트 활성 AI 스킬: 코딩친구 (Coding Tutor)]`);
-      instructions.push(`- 설명 수준: ${levelStr}`);
-      if (opts.codeGenMode === 'hint') instructions.push(`- 코드 제공 원칙: 전체 정답 코드를 주지 말고, 스스로 풀 수 있도록 단계별 힌트와 1~2줄의 핵심 코드 조각만 주세요.`);
-      else if (opts.codeGenMode === 'step_by_step') instructions.push(`- 코드 제공 원칙: 한 번에 한 단계씩 코드를 설명하고 확인하며 진행하세요.`);
-      else instructions.push(`- 코드 제공 원칙: 동작 가능한 완성 예제 코드를 제공하고 원리를 설명하세요.`);
-      if (opts.explainError) instructions.push(`- 에러 설명: 에러 이유를 학생 눈높이에 맞추어 공감하며 친절히 설명하세요.`);
-      if (opts.suggestFix) instructions.push(`- 수정 제안: 올바른 수정 방법과 팁을 단계별로 안내하세요.`);
-      if (opts.addComments) instructions.push(`- 주석: 코드에는 친절한 한글 주석(//)을 명확하게 달아주세요.`);
-      if (opts.useHardwareInfo) instructions.push(`- 소다봇 핀맵 참고: ST7789 LCD(11,12,13,7,6), I2S 마이크(9,10,8), I2S 스피커(5,3,44), 버튼(GPIO4), LED(GPIO2)`);
-      break;
-    }
-    case 'study': {
-      const opts = skill.studyOptions || { subject: 'science', method: 'socratic', quizMode: true, cheerLevel: 'high', provideSummaryNotes: true };
-      instructions.push(`[10-11주차 프로젝트 활성 AI 스킬: 공부도우미 (Study Helper)]`);
-      instructions.push(`- 담당 과목: ${opts.subject}`);
-      if (opts.method === 'socratic') instructions.push(`- 교수법: 일방적 정답 대신 "왜 그렇게 생각해?"처럼 소크라테스식 질문으로 학생의 생각을 유도하세요.`);
-      else if (opts.method === 'analogy') instructions.push(`- 교수법: 일상의 쉬운 비유와 예시를 들어 개념을 설명하세요.`);
-      else instructions.push(`- 교수법: 핵심 요점을 1-2-3 목록으로 명확히 정리하세요.`);
-      if (opts.quizMode) instructions.push(`- 퀴즈 모드: 대화 끝에 확인 퀴즈 1문제를 출제하세요.`);
-      if (opts.cheerLevel === 'high') instructions.push(`- 칭찬 격려: 폭풍 칭찬과 따뜻한 응원을 듬뿍 담아주세요.`);
-      if (opts.provideSummaryNotes) instructions.push(`- 핵심 요약: 답변 마지막에 [📌 3줄 핵심 요약]을 붙여주세요.`);
-      break;
-    }
-    case 'daily': {
-      const opts = skill.dailyOptions || { checkGreeting: true, checkSchedule: true, memoryAssist: true, familyMessageMode: false, shortReply: true, easyExpression: true, safetyStrict: true };
-      instructions.push(`[10-11주차 프로젝트 활성 AI 스킬: 생활친구 (Daily Companion)]`);
-      if (opts.checkGreeting) instructions.push(`- 안부 챙김: 오늘의 기분과 일상을 다정하게 물어보세요.`);
-      if (opts.checkSchedule) instructions.push(`- 일정 확인: 숙제나 준비물 등 오늘의 할 일을 챙겨주세요.`);
-      if (opts.memoryAssist) instructions.push(`- 기억 보조: 친구의 취미와 관심사를 자연스럽게 대화에 반영하세요.`);
-      if (opts.shortReply) instructions.push(`- 답변 길이: 1~2문장으로 귀엽고 간결하게 답하세요.`);
-      if (opts.easyExpression) instructions.push(`- 쉬운 표현: 순화된 쉬운 우리말과 이모지를 사용하세요.`);
-      if (opts.safetyStrict) {
-        instructions.push(`- ★안전 규칙 (절대 준수)★: 의학/질병 판단, 위험한 행동 권유는 절대 하지 말고 부모님이나 전문가 상담을 권유하세요.`);
-      }
-      break;
-    }
-    case 'presentation': {
-      const opts = skill.presentationOptions || { topic: '소다봇 소개', targetAudience: '친구들', focusAreas: ['자신감'], mockQa: true, timeManagementTips: true };
-      instructions.push(`[10-11주차 프로젝트 활성 AI 스킬: 발표연습 (Presentation Coach)]`);
-      instructions.push(`- 발표 주제: "${opts.topic}" (청중: ${opts.targetAudience})`);
-      instructions.push(`- 코칭: 학생의 발표 멘트를 더 자신감 있고 설득력 있게 다듬어주세요.`);
-      if (opts.mockQa) instructions.push(`- 모의 Q&A: 발표 내용에 대한 예상 질문 1개를 던져 연습을 도와주세요.`);
-      if (opts.timeManagementTips) instructions.push(`- 스피치 팁: 말하는 속도와 시선 처리 팁을 조언해주세요.`);
-      break;
-    }
-    case 'custom': {
-      const inputs = skill.customInputs || {};
-      instructions.push(`[10-11주차 프로젝트 활성 AI 스킬: ${inputs.skillName || skill.name || '나만의 맞춤 AI 스킬'}]`);
-      if (inputs.forWhom) instructions.push(`- 대상: ${inputs.forWhom}`);
-      if (inputs.targetProblem) instructions.push(`- 목적 및 해결 문제: ${inputs.targetProblem}`);
-      if (inputs.mustDo) instructions.push(`- 반드시 해야 할 행동 (DO): ${inputs.mustDo}`);
-      if (inputs.mustNotDo) instructions.push(`- 하지 말아야 할 행동 (DON'T): ${inputs.mustNotDo}`);
-      if (inputs.memoriesToUse) instructions.push(`- 기억 활용: ${inputs.memoriesToUse}`);
-      if (inputs.responseStyle) instructions.push(`- 답변 방식: ${inputs.responseStyle}`);
-      break;
-    }
-  }
-
-  return instructions.join("\n");
+  return skill ? compileAiSkillPrompt(skill) : "";
 }
 
 function buildSharedSystemPrompt(user: User, isHardwareVoice: boolean = false): string {
@@ -959,73 +901,16 @@ app.post('/v1/chat/completions', express.json(), async (req, res) => {
   const user = findUserByApiKey(token, db);
   if (!user) return res.status(403).json({ error: "Invalid SODA API Key" });
 
-  const routeConfig = checkHybridQuotaAndRoute(user, db);
-  writeDB(db); // Save quota increments immediately
-
   let responseData: any = null;
   let modelUsed = "Unknown Model";
   let promptMessage = req.body.messages?.[req.body.messages.length - 1]?.content || "No prompt";
   let replyMessage = "No reply";
 
-  // 1차 시도: routeConfig에 따라 호출
   try {
-    const controller = new AbortController();
-    const timeoutMs = routeConfig.routedToGpt ? 30000 : 5000; // 로컬 LM Studio는 5초 내 미응답시 타임아웃
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-    const mainRes = await fetch(routeConfig.url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": routeConfig.auth,
-        "ngrok-skip-browser-warning": "true"
-      },
-      body: JSON.stringify({
-        ...req.body,
-        model: routeConfig.routedToGpt ? (req.body.model || "gpt-4o-mini") : db.settings.modelName
-      }),
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
-
-    if (mainRes.ok) {
-      responseData = await mainRes.json();
-      modelUsed = responseData.model || (routeConfig.routedToGpt ? "gpt-4o-mini" : db.settings.modelName);
-      replyMessage = responseData.choices?.[0]?.message?.content || "";
-    } else {
-      throw new Error(`Primary engine HTTP ${mainRes.status}`);
-    }
-  } catch (primaryErr: any) {
-    console.warn(`[Hardware Gateway] 1차 엔진(${routeConfig.routedToGpt ? 'GPT' : 'LM Studio'}) 실패:`, primaryErr.message);
-
-    // 2차 시도: 로컬 LM Studio 실패 시 OpenAI로 자동 폴백
-    if (!routeConfig.routedToGpt && db.settings.openaiApiKey) {
-      console.log("[Hardware Gateway] OpenAI로 자동 폴백 시도...");
-      try {
-        const fallbackRes = await fetch("https://api.openai.com/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${db.settings.openaiApiKey}`
-          },
-          body: JSON.stringify({
-            ...req.body,
-            model: "gpt-4o-mini"
-          })
-        });
-
-        if (fallbackRes.ok) {
-          responseData = await fallbackRes.json();
-          modelUsed = "gpt-4o-mini (Fallback)";
-          replyMessage = responseData.choices?.[0]?.message?.content || "";
-        } else {
-          throw new Error(`OpenAI Fallback HTTP ${fallbackRes.status}`);
-        }
-      } catch (fallbackErr: any) {
-        console.error("[Hardware Gateway] OpenAI 폴백도 실패:", fallbackErr.message);
-      }
-    }
-  }
+    responseData=await completeWithFallback(user,db,req.body);
+    modelUsed=responseData.model || "AI";
+    replyMessage=responseData.choices[0].message.content;
+  }catch(error){console.warn("[Hardware Gateway] 두 모델 연결 실패");}
 
   if (responseData) {
     let chat = db.chats.find(c => c.userId === user.id && c.title === "아두이노 소다봇 대화");
@@ -1076,11 +961,11 @@ async function getTranscriber() {
   return transcriber;
 }
 
-// ESP32용 TTS 프록시: OpenAI의 24kHz 16-bit mono PCM을 저장하지 않고 즉시 전달한다.
-app.post('/api/hw/tts', express.json({ limit: '16kb' }), async (req, res) => {
+// ESP32용 TTS: 완전한 24kHz 16-bit mono PCM만 전달하고 중간 수신 실패는 한 번 재시도한다.
+app.post('/api/hw/tts', aiCapacity, express.json({ limit: '16kb' }), async (req, res) => {
   const authHeader = req.headers.authorization;
   const text = typeof req.body?.text === "string" ? req.body.text.trim() : "";
-  console.log(`[HW-TTS] 하드웨어 TTS 요청 수신: text="${text}", Auth="${authHeader}"`);
+  console.log(`[HW-TTS] 요청 수신: ${text.length}자`);
 
   const token = authHeader ? authHeader.replace("Bearer ", "").trim() : "";
   const db = readDB();
@@ -1094,44 +979,24 @@ app.post('/api/hw/tts', express.json({ limit: '16kb' }), async (req, res) => {
   }
 
   const controller = new AbortController();
-  res.on("close", () => {
-    if (!res.writableEnded) controller.abort();
-  });
-
+  const timeout = setTimeout(() => controller.abort(new Error("TTS timeout")), 70000);
+  const onClose = () => { if (!res.writableEnded) controller.abort(); };
+  res.on("close", onClose);
   try {
-    const speechRes = await fetch("https://api.openai.com/v1/audio/speech", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${db.settings.openaiApiKey}`
-      },
-      body: JSON.stringify({
-        model: "tts-1",
-        voice: "nova",
-        input: text,
-        response_format: "pcm"
-      }),
-      signal: controller.signal
-    });
-
-    if (!speechRes.ok) {
-      const errorText = await speechRes.text();
-      console.error("TTS API error:", speechRes.status, errorText);
-      return res.status(502).json({ error: `TTS API failed: ${speechRes.status}` });
-    }
-    const arrayBuffer = await speechRes.arrayBuffer();
-    const pcmBuffer = Buffer.from(arrayBuffer);
-
+    const pcmBuffer = await fetchHardwareSpeech(db.settings.openaiApiKey, text, controller.signal);
+    if (res.destroyed) return;
     res.status(200);
     res.setHeader("Content-Type", "audio/pcm");
     res.setHeader("Content-Length", String(pcmBuffer.length));
     res.setHeader("Cache-Control", "no-store");
     res.end(pcmBuffer);
   } catch (err: any) {
-    if (err?.name === "AbortError") return;
-    console.error("Hardware TTS error:", err);
-    if (!res.headersSent) res.status(500).json({ error: "Internal TTS Error" });
-    else res.status(500).json({ error: err.message });
+    if (res.destroyed) return;
+    console.error("[HW-TTS] 음성 수신 실패:", err?.cause?.code || err?.name || "Error");
+    res.status(controller.signal.aborted ? 504 : 502).json({ error: "음성을 가져오지 못했습니다. 다시 요청해주세요." });
+  } finally {
+    clearTimeout(timeout);
+    res.off("close", onClose);
   }
 });
 
@@ -1201,6 +1066,8 @@ app.post('/api/user/ai-skills', express.json(), (req, res) => {
   if (!user) return res.status(401).json({ error: "User not found" });
 
   const { activeSkillId, skills, testLogs, versionSnapshots, report } = req.body;
+  if ((skills !== undefined && (!Array.isArray(skills) || skills.length > 50 || skills.some(s => !s || typeof s.id !== "string" || typeof s.name !== "string" || !["english","coding","study","daily","presentation","custom"].includes(s.type)))) || (testLogs !== undefined && !Array.isArray(testLogs)) || (versionSnapshots !== undefined && !Array.isArray(versionSnapshots))) return res.status(400).json({error:"스킬 저장 형식이 올바르지 않습니다."});
+  if (activeSkillId && !(skills || user.aiSkillState?.skills || []).some(s => s.id === activeSkillId)) return res.status(400).json({error:"활성 스킬이 목록에 없습니다."});
   user.aiSkillState = {
     activeSkillId: activeSkillId || user.aiSkillState?.activeSkillId || 'skill-english-buddy',
     skills: skills || user.aiSkillState?.skills || [],
@@ -1224,6 +1091,7 @@ app.post('/api/user/ai-skills/activate', express.json(), (req, res) => {
   if (!user) return res.status(401).json({ error: "User not found" });
 
   const { skillId } = req.body;
+  if (!user.aiSkillState?.skills?.some(s => s.id === skillId)) return res.status(400).json({error:"저장된 스킬을 선택해주세요."});
   if (!user.aiSkillState) {
     user.aiSkillState = { activeSkillId: skillId, skills: [], testLogs: [], versionSnapshots: [] };
   } else {
@@ -1325,9 +1193,9 @@ function generateSkillSimulatedResponse(skill: any, userText: string, user: User
   }
 }
 
-app.post('/api/ai-skills/test-chat', express.json(), async (req, res) => {
+app.post('/api/ai-skills/test-chat', aiCapacity, express.json(), async (req, res) => {
   const { text, skill, history } = req.body;
-  if (!text) return res.status(400).json({ error: "메시지 텍스트가 필요합니다." });
+  if (typeof text !== "string" || !text.trim()) return res.status(400).json({ error: "메시지 텍스트가 필요합니다." });
 
   const authHeader = req.headers.authorization;
   const db = readDB();
@@ -1340,7 +1208,7 @@ app.post('/api/ai-skills/test-chat', express.json(), async (req, res) => {
   if (!user) return res.status(401).json({error:'로그인 또는 유효한 SODA API 키가 필요합니다.'});
 
   // 통합 시스템 프롬프트 구성 (사용자 프로필 + 친구설정 + 기억 + 현재 선택된 AI 스킬 규칙)
-  let systemPrompt = buildSharedSystemPrompt(user, false);
+  let systemPrompt = buildSharedSystemPrompt({...user,aiSkillState:undefined}, false);
   if (skill) {
     const customSkillPrompt = compileSkillPromptForServer(skill);
     if (customSkillPrompt) {
@@ -1355,89 +1223,10 @@ app.post('/api/ai-skills/test-chat', express.json(), async (req, res) => {
       }))
     : [];
 
-  let assistantReply = "";
-  const openaiKey = db.settings.openaiApiKey;
-
-  // 1차: OpenAI API가 있으면 가장 스마트한 실제 GPT 모델로 우선 응답 생성
-  if (openaiKey) {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
-
-      const gptRes = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${openaiKey}`
-        },
-        body: JSON.stringify({
-          model: "gpt-4o-mini",
-          messages: [
-            { role: "system", content: systemPrompt },
-            ...conversationHistory,
-            { role: "user", content: text }
-          ],
-          temperature: 0.7,
-          max_tokens: 1024
-        }),
-        signal: controller.signal
-      });
-      clearTimeout(timeoutId);
-
-      if (gptRes.ok) {
-        const data = await gptRes.json();
-        assistantReply = data.choices?.[0]?.message?.content || "";
-      }
-    } catch (gptErr: any) {
-      console.warn("[AI Skill Test Chat] OpenAI call failed:", gptErr.message);
-    }
-  }
-
-  // 2차: OpenAI가 안 되거나 키가 없을 때 로컬 LM Studio 시도
-  if (!assistantReply && db.settings.lmStudioUrl) {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6000);
-
-      const lmRes = await fetch(`${db.settings.lmStudioUrl}/v1/chat/completions`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": "Bearer lm-studio"
-        },
-        body: JSON.stringify({
-          model: db.settings.modelName || "llama-3-korean-bllossom-8b",
-          messages: [
-            { role: "system", content: systemPrompt },
-            ...conversationHistory,
-            { role: "user", content: text }
-          ],
-          temperature: 0.7,
-          max_tokens: 1024
-        }),
-        signal: controller.signal
-      });
-      clearTimeout(timeoutId);
-
-      if (lmRes.ok) {
-        const data = await lmRes.json();
-        assistantReply = data.choices?.[0]?.message?.content || "";
-      }
-    } catch (lmErr: any) {
-      console.warn("[AI Skill Test Chat] Local LM Studio unreachable:", lmErr.message);
-    }
-  }
-
-  // 3차: 네트워크 및 로컬 엔진 모두 불가용 시 지능형 시뮬레이션
-  if (!assistantReply || assistantReply.includes("로컬 엔진이 잠시 쉬고 있어")) {
-    assistantReply = generateSkillSimulatedResponse(skill, text, user);
-  }
-
-  res.json({
-    success: true,
-    reply: assistantReply,
-    timestamp: new Date().toISOString()
-  });
+  try {
+    const data=await completeWithFallback(user,db,{messages:[{role:"system",content:systemPrompt},...conversationHistory,{role:"user",content:text}],temperature:0.7,max_tokens:1024});
+    res.json({success:true,reply:data.choices[0].message.content,model:data.model,simulated:false,timestamp:new Date().toISOString()});
+  }catch(error){res.status(502).json({error:"AI 테스트 연결에 실패했습니다. 이 응답은 테스트 기록에 저장되지 않습니다."});}
 });
 
 app.post('/api/user/ai-skills/report', express.json(), (req, res) => {
@@ -1463,7 +1252,7 @@ app.post('/api/user/ai-skills/report', express.json(), (req, res) => {
   res.json({ success: true, report: user.aiSkillState.report });
 });
 
-app.post('/api/hw/audio-chat', upload.single('file'), async (req, res) => {
+app.post('/api/hw/audio-chat', aiCapacity, upload.single('file'), async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
 
@@ -1516,6 +1305,17 @@ app.post('/api/hw/audio-chat', upload.single('file'), async (req, res) => {
         return new Date(lastB).getTime() - new Date(lastA).getTime();
       })[0];
 
+    if (!chat) {
+      chat = {
+        id: "chat-" + crypto.randomUUID(),
+        userId: user.id,
+        title: "소다와 대화하기 ✨",
+        createdAt: new Date().toISOString(),
+        messages: []
+      };
+      db.chats.push(chat);
+    }
+
     const recentHistory = (chat?.messages || [])
       .filter(m => !m.text.includes("로컬 엔진이 잠시 쉬고 있어"))
       .slice(-19)
@@ -1525,54 +1325,23 @@ app.post('/api/hw/audio-chat', upload.single('file'), async (req, res) => {
       }));
 
     // 신원 질문은 작은 로컬 모델의 대명사 혼동을 피하고 웹과 완전히 같은 프로필 답변을 보장한다.
-    let replyMessage = buildDeterministicIdentityReply(user, transcript);
-    let modelUsed = "SODA Profile";
+    const quizReply = await handleQuiz(chat, transcript, user, db);
+    let replyMessage = quizReply ?? buildDeterministicIdentityReply(user, transcript);
+    let modelUsed = quizReply !== null ? "SODA Quiz" : "SODA Profile";
 
     if (!replyMessage) {
-      const routeConfig = checkHybridQuotaAndRoute(user, db);
-      writeDB(db);
-
-      const openaiRes = await fetch(routeConfig.url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": routeConfig.auth
-        },
-        body: JSON.stringify({
-          model: routeConfig.routedToGpt ? "gpt-4o-mini" : db.settings.modelName,
-          messages: [
-            { role: "system", content: voiceSystemPrompt },
-            ...recentHistory,
-            { role: "user", content: transcript }
-          ],
-          temperature: db.settings.temperature ?? 0.7,
-          max_tokens: Math.min(db.settings.maxTokens || 1024, 1024)
-        })
+      const data = await completeWithFallback(user,db,{
+        messages:[{role:"system",content:voiceSystemPrompt},...recentHistory,{role:"user",content:transcript}],
+        temperature:db.settings.temperature ?? 0.7,max_tokens:Math.min(db.settings.maxTokens || 1024,1024)
       });
-
-      if (!openaiRes.ok) {
-        const errorText = await openaiRes.text();
-        throw new Error(`Chat completion failed: ${openaiRes.status} ${errorText}`);
-      }
-
-      const data = await openaiRes.json();
-      replyMessage = data.choices?.[0]?.message?.content || "앗, 오류가 났어요.";
-      modelUsed = data.model || (routeConfig.routedToGpt ? "gpt-4o-mini" : db.settings.modelName);
+      replyMessage=data.choices[0].message.content;
+      modelUsed=data.model || "AI";
     }
 
     replyMessage = replyMessage.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, "").trim();
 
     // 3. Save to Unified DB Conversation Thread
-    if (!chat) {
-      chat = {
-        id: "chat-" + Date.now(),
-        userId: user.id,
-        title: "소다와 대화하기 ✨",
-        createdAt: new Date().toISOString(),
-        messages: []
-      };
-      db.chats.push(chat);
-    }
+
 
     const hwUserMsg: Message = {
       id: "msg-" + Date.now() + "-hw-user",
@@ -1935,7 +1704,7 @@ app.get("/api/auth/me", (req, res) => {
 
   // 세션이 메모리에 없을 때 (서버 재시작 등) DB 또는 기본 유저 매칭 복구
   if (!session) {
-    const matchedUser = db.users.find(u => u.id === token || u.username === token || u.personalApiKey === token) || db.users[0];
+    const matchedUser = db.users.find(u => u.personalApiKey === token);
     if (matchedUser) {
       const isUserAdmin = matchedUser.username === "admin" || matchedUser.role === "admin";
       const apiKey = ensureUserApiKey(matchedUser, db);
@@ -1995,15 +1764,8 @@ app.get("/api/auth/current-key", (req, res) => {
         return res.json({ apiKey: ensureUserApiKey(dbUser, db) });
       }
     }
-    const userByToken = db.users.find(u => u.id === token || u.username === token);
-    if (userByToken) {
-      return res.json({ apiKey: ensureUserApiKey(userByToken, db) });
-    }
   }
-  // 기본 키 반환 (첫 번째 유저 또는 admin)
-  const defaultUser = db.users.find(u => u.username === "admin") || db.users[0];
-  const key = defaultUser ? ensureUserApiKey(defaultUser, db) : ("sk-soda-" + crypto.randomBytes(16).toString("hex"));
-  res.json({ apiKey: key });
+  return res.status(401).json({error:"로그인이 필요합니다."});
 });
 
 // ----------------------------------------------------
@@ -2289,7 +2051,7 @@ app.get("/api/admin/users/:id/stats", requireAdmin, (req, res) => {
     },
     settings: {
       hybridModeEnabled: db.settings.hybridModeEnabled,
-      dailyGptQuota: db.settings.dailyGptQuota || 3
+      dailyGptQuota: db.settings.dailyGptQuota ?? 30
     }
   });
 });
@@ -2314,7 +2076,7 @@ app.get("/api/admin/stats/all", requireAdmin, (req, res) => {
     users: allUsersStats,
     settings: {
       hybridModeEnabled: db.settings.hybridModeEnabled,
-      dailyGptQuota: db.settings.dailyGptQuota || 3
+      dailyGptQuota: db.settings.dailyGptQuota ?? 30
     }
   });
 });
@@ -2447,8 +2209,23 @@ app.post("/api/lmstudio/test", async (req, res) => {
   }
 });
 
+async function handleQuiz(chat: ChatRoom, text: string, user: User, db: DBStructure) {
+  const state = chat.quizState || {topic:""};
+  const reply = await quizTurn(state, text, async topic => {
+    const result = await completeWithFallback(user,db,{
+      messages:[{role:"system",content:'한국어 객관식 퀴즈 한 문제. 요청한 주제와 난이도를 따르고 정확한 사실만 사용하세요. 정답 하나, 보기 3개. JSON만 출력: {"question":"질문","choices":["보기1","보기2","보기3"],"answer":1,"explanation":"정답 이유"}. answer는 1~3 정수.'},{role:"user",content:topic}],temperature:0.7,max_tokens:600
+    });
+    return parseQuizQuestion(result.choices?.[0]?.message?.content || "");
+  });
+  if (reply !== null) chat.quizState = state;
+  if (reply === null && !state.question && hasUntrackedQuiz(chat.messages)) {
+    return '이전 문제는 정답이 저장되지 않아 정확하게 채점할 수 없어요. 앞서 맞다고 한 답변도 신뢰할 수 없어요. “새 퀴즈 내줘”라고 말하면 정답을 저장한 새 문제로 시작할게요.';
+  }
+  return reply;
+}
+
 // Streaming proxy to LM Studio with virtual emulator fallback
-app.post("/api/lmstudio/stream", async (req, res) => {
+app.post("/api/lmstudio/stream", aiCapacity, async (req, res) => {
   req.socket.setNoDelay(true);
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: "인증 필요" });
@@ -2460,162 +2237,53 @@ app.post("/api/lmstudio/stream", async (req, res) => {
   const db = readDB();
   const user = db.users.find(u => u.id === session.id);
   
-  let fetchUrl = `${db.settings.lmStudioUrl}/v1/chat/completions`;
-  let authHeaderValue = "Bearer lm-studio";
-
-  let routedToGpt = false;
-  if (user) {
-    const routeConfig = checkHybridQuotaAndRoute(user, db);
-    fetchUrl = routeConfig.url;
-    authHeaderValue = routeConfig.auth;
-    routedToGpt = routeConfig.routedToGpt;
-    writeDB(db);
-  }
-
-  const fallbackMode = db.settings.fallbackMode;
-
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Connection", "keep-alive");
-
-  const streamFallback = async () => {
-    const fallbackText = "안녕! 지금 엔진이 오프라인 상태라서 가상 에뮬레이터 모드로 동작 중이야. 🤖\n\nAI 엔진 설정을 올바르게 입력하면 진짜 인공지능과 대화할 수 있어! 어떤 코딩 힌트가 필요해? 🌱";
-    const segments = fallbackText.split(/(\s+)/);
-    for (const segment of segments) {
-      if (segment) {
-        const chunk = {
-          choices: [
-            {
-              delta: { content: segment },
-              finish_reason: null
-            }
-          ]
-        };
-        res.write(`data: ${JSON.stringify(chunk)}\n\n`);
-        await new Promise(resolve => setTimeout(resolve, 50));
-      }
-    }
-    res.write("data: [DONE]\n\n");
-    res.end();
-  };
-
-  const sendNoticeChunk = (notice: string) => {
-    const chunk = {
-      choices: [
-        {
-          delta: { content: notice },
-          finish_reason: null
-        }
-      ]
-    };
-    res.write(`data: ${JSON.stringify(chunk)}\n\n`);
-  };
-
-  try {
-    const controller = new AbortController();
-    const timeoutMs = routedToGpt ? 60000 : 6000; // 로컬 LM Studio는 6초 이내 연결 안 되면 바로 전환
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-    let customSystemPrompt = "";
-
-
-    const lmResponse = await fetch(fetchUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": authHeaderValue,
-        "ngrok-skip-browser-warning": "true"
-      },
-      body: JSON.stringify({
-        ...req.body,
-        messages: req.body.messages ? req.body.messages.map((m: any, idx: number) => {
-          if (idx === 0 && m.role === "system" && customSystemPrompt) {
-            return { ...m, content: m.content + customSystemPrompt };
-          }
-          return m;
-        }) : req.body.messages,
-        model: routedToGpt ? "gpt-4o-mini" : req.body.model,
-        stream: true
-      }),
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
-
-    if (!lmResponse.ok) {
-      throw new Error(`Engine returned status ${lmResponse.status}`);
-    }
-
-    if (!lmResponse.body) {
-      throw new Error("ReadableStream not supported on backend response");
-    }
-
-    const reader = lmResponse.body.getReader();
-    let done = false;
-
-    while (!done) {
-      const { value, done: readerDone } = await reader.read();
-      done = readerDone;
-      if (value) {
-        res.write(value);
-      }
-    }
-    res.end();
-  } catch (err: any) {
-    console.warn("[Stream API] 1차 엔진 호출 실패:", err.message || err);
-
-    // 2차 시도: 로컬 LM Studio 실패 시 OpenAI로 자동 폴백 스트리밍
-    if (!routedToGpt && db.settings.openaiApiKey) {
-      console.log("[Stream API] OpenAI(gpt-4o-mini)로 자동 전환 스트리밍 시작...");
-      try {
-        sendNoticeChunk("⚡ [안내] 로컬 LM Studio 연결이 원활하지 않아 OpenAI(GPT)로 자동 전환하여 답변합니다.\n\n");
-
-        const gptController = new AbortController();
-        const gptTimeoutId = setTimeout(() => gptController.abort(), 60000);
-
-        const gptResponse = await fetch("https://api.openai.com/v1/chat/completions", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${db.settings.openaiApiKey}`
-          },
-          body: JSON.stringify({
-            ...req.body,
-            model: "gpt-4o-mini",
-            stream: true
-          }),
-          signal: gptController.signal
-        });
-        clearTimeout(gptTimeoutId);
-
-        if (gptResponse.ok && gptResponse.body) {
-          const reader = gptResponse.body.getReader();
-          let done = false;
-          while (!done) {
-            const { value, done: readerDone } = await reader.read();
-            done = readerDone;
-            if (value) {
-              res.write(value);
-            }
-          }
-          res.end();
-          return;
-        } else {
-          throw new Error(`OpenAI stream status ${gptResponse.status}`);
-        }
-      } catch (gptErr: any) {
-        console.error("[Stream API] OpenAI 폴백 스트리밍도 실패:", gptErr.message);
-      }
-    }
-
-    // 3차 폴백: 둘 다 실패했거나 fallbackMode인 경우
-    if (fallbackMode) {
-      await streamFallback();
-    } else {
-      sendNoticeChunk(`\n\n[⚠️ AI 엔진 연결 실패: 로컬 LM Studio 및 OpenAI 연결이 원활하지 않습니다. 설정을 확인해 주세요.]`);
-      res.write("data: [DONE]\n\n");
-      res.end();
+  const quizChat = req.body.chatId ? db.chats.find(c => c.id === req.body.chatId && c.userId === session.id) : undefined;
+  if (req.body.chatId && !quizChat) return res.status(404).json({error:"대화방을 찾을 수 없습니다."});
+  const latestText = Array.isArray(req.body.messages) ? [...req.body.messages].reverse().find(m => m.role === "user")?.content : undefined;
+  if (quizChat && user && typeof latestText === "string") {
+    const reply = await handleQuiz(quizChat, latestText, user, db);
+    if (reply !== null) {
+      writeDB(db);
+      res.setHeader("Content-Type","text/event-stream");
+      res.setHeader("Cache-Control","no-cache");
+      res.write(`data: ${JSON.stringify({model:"SODA Quiz",choices:[{delta:{content:reply},finish_reason:"stop"}]})}\n\n`);
+      return res.end("data: [DONE]\n\n");
     }
   }
+  delete req.body.chatId;
+  if (user && Array.isArray(req.body.messages)) {
+    req.body.messages = [{role:"system",content:buildSharedSystemPrompt(user,false)},...req.body.messages.filter(m => m.role !== "system")];
+  }
+  if (!user) return res.status(401).json({error:"사용자를 찾을 수 없습니다."});
+  const primary=checkHybridQuotaAndRoute(user,db).routedToGpt;
+  writeDB(db);
+  res.setHeader("Content-Type","text/event-stream");
+  res.setHeader("Cache-Control","no-cache");
+  const controller=new AbortController();
+  res.once("close",()=>{if(!res.writableEnded)controller.abort();});
+  let started=false;
+  for (const gpt of [primary,!primary]) {
+    try {
+      const config=providerConfig(gpt,db);
+      const upstream=await fetch(config.url,{method:"POST",headers:{"Content-Type":"application/json",Authorization:config.auth},body:JSON.stringify({...req.body,model:config.model,stream:true}),signal:controller.signal});
+      if(!upstream.ok || !upstream.body) {await upstream.body?.cancel();throw new Error(`AI HTTP ${upstream.status}`);}
+      const reader=upstream.body.getReader();
+      while(true) {
+        const {value,done}=await reader.read();
+        if(done)break;
+        if(value?.length){started=true;res.write(value);}
+      }
+      if(!started)throw new Error("Empty AI stream");
+      return res.end();
+    }catch(error){
+      if(res.destroyed || controller.signal.aborted)return;
+      // Never concatenate a second model's answer onto a partial answer.
+      if(started)break;
+      console.warn(`[AI] ${gpt ? "GPT" : "LM Studio"} 실패, 대체 모델 시도`);
+    }
+  }
+  res.write(`data: ${JSON.stringify({choices:[{delta:{content:"\n응답 연결이 중단됐습니다. 두 모델의 연결 상태를 확인해주세요."}}]})}\n\n`);
+  res.end("data: [DONE]\n\n");
 });
 
 
@@ -2636,7 +2304,7 @@ app.get("/api/chats", (req, res) => {
 
   if (userChats.length === 0) {
     const newChat: ChatRoom = {
-      id: "chat-" + Date.now(),
+      id: "chat-" + crypto.randomUUID(),
       userId: session.id,
       title: "새로운 대화 ✨",
       createdAt: new Date().toISOString(),
@@ -2662,7 +2330,7 @@ app.post("/api/chats", (req, res) => {
   const db = readDB();
 
   const newChat: ChatRoom = {
-    id: "chat-" + Date.now(),
+    id: "chat-" + crypto.randomUUID(),
     userId: session.id,
     title: title || "새로운 대화 ✨",
     createdAt: new Date().toISOString(),
@@ -2679,10 +2347,12 @@ app.delete("/api/chats/:id", (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: "인증 필요" });
 
+  const session = getSession(authHeader.replace("Bearer ", ""));
+  if (!session) return res.status(401).json({error:"세션 만료"});
   const { id } = req.params;
   const db = readDB();
 
-  const chatIdx = db.chats.findIndex(c => c.id === id);
+  const chatIdx = db.chats.findIndex(c => c.id === id && c.userId === session.id);
   if (chatIdx !== -1) {
     db.chats.splice(chatIdx, 1);
     writeDB(db);
@@ -2697,11 +2367,13 @@ app.post("/api/chats/:id/sync", (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: "인증 필요" });
 
+  const session = getSession(authHeader.replace("Bearer ", ""));
+  if (!session) return res.status(401).json({error:"세션 만료"});
   const { id } = req.params;
   const { messages, title } = req.body;
 
   const db = readDB();
-  const chat = db.chats.find(c => c.id === id);
+  const chat = db.chats.find(c => c.id === id && c.userId === session.id);
 
   if (!chat) {
     return res.status(404).json({ error: "대화방을 찾을 수 없습니다." });
@@ -2712,7 +2384,8 @@ app.post("/api/chats/:id/sync", (req, res) => {
     if (req.body.replace) {
       chat.messages = messages;
     } else {
-      chat.messages.push(...messages);
+      const ids = new Set(chat.messages.map(m => m.id));
+      chat.messages.push(...messages.filter(m => m && typeof m.id === "string" && !ids.has(m.id)));
     }
   }
 
@@ -2729,24 +2402,11 @@ app.post("/api/chats/clear-all", (req, res) => {
   const session = getSession(token);
   if (!session) return res.status(401).json({ error: "세션 만료" });
 
-  const { currentChatId, chatIds } = req.body || {};
   const db = readDB();
-  const isAdmin = session.role === "admin" || session.username === "admin";
-  
-  const idsToRemove = new Set<string>();
-  if (currentChatId) idsToRemove.add(currentChatId);
-  if (Array.isArray(chatIds)) chatIds.forEach((id: string) => idsToRemove.add(id));
-
-  // 모든 관련 대화방 삭제 (세션 유저, 넘겨받은 chatIds, 관리자인 경우 전체 방 정리)
-  db.chats = db.chats.filter(c => {
-    if (idsToRemove.has(c.id)) return false;
-    if (c.userId === session.id) return false;
-    if (isAdmin) return false;
-    return true;
-  });
+  db.chats = db.chats.filter(c => c.userId !== session.id);
 
   const newChat: ChatRoom = {
-    id: "chat-" + Date.now(),
+    id: "chat-" + crypto.randomUUID(),
     userId: session.id,
     title: "새로운 대화 ✨",
     createdAt: new Date().toISOString(),
@@ -2764,15 +2424,18 @@ app.post("/api/chats/:id/clear", (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: "인증 필요" });
 
+  const session = getSession(authHeader.replace("Bearer ", ""));
+  if (!session) return res.status(401).json({error:"세션 만료"});
   const { id } = req.params;
   const db = readDB();
-  const chat = db.chats.find(c => c.id === id);
+  const chat = db.chats.find(c => c.id === id && c.userId === session.id);
 
   if (!chat) {
     return res.status(404).json({ error: "대화방을 찾을 수 없습니다." });
   }
 
   chat.messages = [];
+  delete chat.quizState;
   chat.createdAt = new Date().toISOString();
   writeDB(db);
   res.json({ success: true, chat });
@@ -2829,7 +2492,7 @@ ${textHistory}
 }
 
 // Send Message & Get Stream-compatible response from LM Studio (or Fallback Emulator)
-app.post("/api/chats/:id/messages", async (req, res) => {
+app.post("/api/chats/:id/messages", aiCapacity, async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: "인증 필요" });
 
@@ -2871,6 +2534,13 @@ app.post("/api/chats/:id/messages", async (req, res) => {
     chat.title = text.substring(0, 16) + (text.length > 16 ? "..." : "");
   }
 
+  const quizReply = dbUser ? await handleQuiz(chat, text, dbUser, db) : null;
+  if (quizReply !== null) {
+    const assistantMessage: Message = {id:"msg-" + crypto.randomUUID(), sender:"assistant", text:quizReply, timestamp:new Date().toISOString(), modelUsed:"SODA Quiz"};
+    chat.messages.push(assistantMessage);
+    writeDB(db);
+    return res.json({success:true,userMessage:userMsg,assistantMessage,usedEmulator:false,chatTitle:chat.title});
+  }
   const settings = db.settings;
 
   // 5. Trigger Auto-Memory Extraction every 2 messages (1 turn) for easier testing
@@ -2899,44 +2569,12 @@ app.post("/api/chats/:id/messages", async (req, res) => {
     sodabotPersona = `${sodabotPersona}\n\n[특별 관리자 지시사항]\n${userRecord.persona}`;
   }
 
-  const actualModel = settings.modelName || "llama-3-korean-bllossom-8b";
-
+  let actualModel = "AI";
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 300000); // 300s timeout for local LLM
-
-    const targetUrl = settings.lmStudioUrl || "https://granular-kindly-morally.ngrok-free.dev";
-    
-    const lmResponse = await fetch(`${targetUrl}/v1/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": "Bearer lm-studio" // Dummy key to bypass API key checks
-      },
-      body: JSON.stringify({
-        model: actualModel,
-        messages: [
-          { role: "system", content: sodabotPersona },
-          ...conversationHistory
-        ],
-        temperature: 0.7,
-        max_tokens: 1024
-      }),
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
-
-    if (lmResponse.ok) {
-      const resData = await lmResponse.json();
-      assistantOutput = resData.choices?.[0]?.message?.content || "";
-    } else {
-      console.warn("LM Studio returned an error:", lmResponse.status, lmResponse.statusText);
-      assistantOutput = "로컬 엔진이 잠시 쉬고 있어! 잠시 후 다시 시도해줘.";
-    }
-  } catch (err: any) {
-    console.warn("LM Studio connection failed or timed out:", err.message || err);
-    assistantOutput = "로컬 엔진이 잠시 쉬고 있어! 잠시 후 다시 시도해줘.";
-  }
+    const result=await completeWithFallback(dbUser!,db,{messages:[{role:"system",content:sodabotPersona},...conversationHistory],temperature:0.7,max_tokens:1024});
+    assistantOutput=result.choices[0].message.content;
+    actualModel=result.model || "AI";
+  }catch(error){assistantOutput="두 AI 모델에 연결하지 못했습니다. 연결 상태를 확인해주세요.";}
 
   // 4. Save Assistant Message
   const assistantMsg: any = {
@@ -3475,6 +3113,8 @@ app.post("/api/friends/messages/:friendId", (req, res) => {
     return res.status(400).json({ error: "메시지 내용을 입력해주세요." });
   }
 
+  if (content.trim().length > 500) return res.status(400).json({error:"메시지는 500자까지 보낼 수 있습니다."});
+
   const db = readDB();
 
   // 친구 관계 및 차단 여부 검증
@@ -3524,8 +3164,7 @@ app.post("/api/friends/messages/:messageId/play-sodabot", (req, res) => {
     return res.status(403).json({ error: "권한이 없습니다." });
   }
 
-  dm.playedOnSodabot = true;
-  writeDB(db);
+  if (req.body?.played === true) { dm.playedOnSodabot = true; writeDB(db); }
 
   const senderUser = db.users.find(u => u.id === dm.senderId);
   const senderProfile = senderUser ? getOrCreatePublicProfile(senderUser, db) : null;
@@ -3592,6 +3231,7 @@ app.get("/api/friends/groups", (req, res) => {
   const userRooms = db.groupChatRooms.filter(r => (r.memberIds || []).includes(currentUserId));
 
   const enrichedRooms = userRooms.map(room => {
+    const latestMessage = db.groupChatMessages.filter(m => m.roomId === room.id).at(-1);
     const members = (room.memberIds || []).map(mId => {
       const u = db.users.find(user => user.id === mId);
       const p = u ? getOrCreatePublicProfile(u, db) : null;
@@ -3611,15 +3251,23 @@ app.get("/api/friends/groups", (req, res) => {
 
     return {
       ...room,
+      lastMessage: latestMessage || room.lastMessage,
       members,
       unreadCount
     };
   });
 
+  enrichedRooms.sort((a,b) => new Date(b.lastMessage?.createdAt || b.createdAt).getTime() - new Date(a.lastMessage?.createdAt || a.createdAt).getTime());
   res.json({ groups: enrichedRooms });
 });
 
 // 16. Group Chat - Create New Group Room
+function validInvitedFriends(ids: unknown, userId: string, db: DBStructure): ids is string[] {
+  return Array.isArray(ids) && ids.length <= 30 && ids.every(id => typeof id === "string" &&
+    db.users.some(u => u.id === id) && (id === userId || (db.friendships || []).some(f => f.status === "accepted" &&
+    ((f.requesterId === userId && f.receiverId === id) || (f.receiverId === userId && f.requesterId === id)))));
+}
+
 app.post("/api/friends/groups", (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: "인증 필요" });
@@ -3628,16 +3276,18 @@ app.post("/api/friends/groups", (req, res) => {
   if (!session) return res.status(401).json({ error: "세션 만료" });
 
   const { name, memberIds } = req.body;
-  if (!name || !name.trim()) return res.status(400).json({ error: "그룹 이름을 입력하세요." });
+  if (typeof name !== "string" || !name.trim()) return res.status(400).json({ error: "그룹 이름을 입력하세요." });
 
+  if (name.trim().length > 40) return res.status(400).json({error:"그룹 이름은 40자까지 입력할 수 있습니다."});
   const db = readDB();
+  if (!validInvitedFriends(memberIds || [], session.id, db)) return res.status(400).json({error:"등록된 친구만 초대할 수 있습니다."});
   if (!db.groupChatRooms) db.groupChatRooms = [];
   if (!db.groupChatMessages) db.groupChatMessages = [];
 
   const currentUserId = session.id;
   const allMemberIds = Array.from(new Set([currentUserId, ...(Array.isArray(memberIds) ? memberIds : [])]));
 
-  const newRoomId = `group_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+  const newRoomId = crypto.randomUUID();
   const currentUser = db.users.find(u => u.id === currentUserId);
   const currentProfile = currentUser ? getOrCreatePublicProfile(currentUser, db) : null;
   const creatorName = currentProfile?.botName || currentUser?.displayName || "소다봇";
@@ -3649,7 +3299,7 @@ app.post("/api/friends/groups", (req, res) => {
     memberIds: allMemberIds,
     createdAt: new Date().toISOString(),
     lastMessage: {
-      id: `sys_${Date.now()}`,
+      id: crypto.randomUUID(),
       content: `${creatorName}님이 그룹 대화방을 생성했습니다.`,
       senderId: "system",
       senderName: "시스템",
@@ -3661,7 +3311,7 @@ app.post("/api/friends/groups", (req, res) => {
 
   // Add initial system message
   db.groupChatMessages.push({
-    id: `msg_${Date.now()}_sys`,
+    id: crypto.randomUUID(),
     roomId: newRoomId,
     senderId: "system",
     senderName: "시스템",
@@ -3743,7 +3393,9 @@ app.post("/api/friends/groups/:roomId/messages", (req, res) => {
 
   const { roomId } = req.params;
   const { content } = req.body;
-  if (!content || !content.trim()) return res.status(400).json({ error: "메시지 내용을 입력하세요." });
+  if (typeof content !== "string" || !content.trim()) return res.status(400).json({ error: "메시지 내용을 입력하세요." });
+
+  if (content.trim().length > 500) return res.status(400).json({error:"메시지는 500자까지 보낼 수 있습니다."});
 
   const db = readDB();
   if (!db.groupChatRooms) db.groupChatRooms = [];
@@ -3763,7 +3415,7 @@ app.post("/api/friends/groups/:roomId/messages", (req, res) => {
   const senderAvatar = currentProfile?.avatarUrl || "soda_smile";
 
   const newMsg = {
-    id: `gmsg_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+    id: crypto.randomUUID(),
     roomId,
     senderId: currentUserId,
     senderName,
@@ -3803,6 +3455,7 @@ app.post("/api/friends/groups/:roomId/invite", (req, res) => {
   }
 
   const db = readDB();
+  if (!validInvitedFriends(memberIds, session.id, db)) return res.status(400).json({error:"등록된 친구만 초대할 수 있습니다."});
   const room = (db.groupChatRooms || []).find(r => r.id === roomId);
   if (!room) return res.status(404).json({ error: "그룹 대화방을 찾을 수 없습니다." });
 
@@ -3811,7 +3464,7 @@ app.post("/api/friends/groups/:roomId/invite", (req, res) => {
     return res.status(403).json({ error: "권한이 없습니다." });
   }
 
-  const newMembersToAdd = memberIds.filter(id => !room.memberIds.includes(id));
+  const newMembersToAdd = [...new Set(memberIds)].filter(id => !room.memberIds.includes(id));
   if (newMembersToAdd.length === 0) {
     return res.json({ success: true, room });
   }
@@ -3823,7 +3476,7 @@ app.post("/api/friends/groups/:roomId/invite", (req, res) => {
   const inviterName = currentProfile?.botName || currentUser?.displayName || "소다봇";
 
   db.groupChatMessages.push({
-    id: `sys_${Date.now()}`,
+    id: crypto.randomUUID(),
     roomId,
     senderId: "system",
     senderName: "시스템",
@@ -3852,6 +3505,7 @@ app.post("/api/friends/groups/:roomId/leave", (req, res) => {
   if (!room) return res.status(404).json({ error: "그룹 대화방을 찾을 수 없습니다." });
 
   const currentUserId = session.id;
+  if (!room.memberIds.includes(currentUserId)) return res.status(403).json({error:"이 그룹의 멤버가 아닙니다."});
   room.memberIds = room.memberIds.filter(id => id !== currentUserId);
 
   const currentUser = db.users.find(u => u.id === currentUserId);
@@ -3866,7 +3520,7 @@ app.post("/api/friends/groups/:roomId/leave", (req, res) => {
       room.creatorId = room.memberIds[0];
     }
     db.groupChatMessages.push({
-      id: `sys_${Date.now()}`,
+      id: crypto.randomUUID(),
       roomId,
       senderId: "system",
       senderName: "시스템",
@@ -3896,8 +3550,9 @@ app.post("/api/friends/groups/messages/:messageId/play-sodabot", (req, res) => {
   const msg = (db.groupChatMessages || []).find(m => m.id === messageId);
   if (!msg) return res.status(404).json({ error: "메시지를 찾을 수 없습니다." });
 
-  msg.playedOnSodabot = true;
-  writeDB(db);
+  const room = (db.groupChatRooms || []).find(r => r.id === msg.roomId);
+  if (!room?.memberIds.includes(session.id)) return res.status(403).json({error:"이 그룹의 멤버가 아닙니다."});
+  if (req.body?.played === true) { msg.playedOnSodabot = true; writeDB(db); }
 
   res.json({
     success: true,

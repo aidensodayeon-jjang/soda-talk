@@ -333,19 +333,20 @@ export function generateInitialReport(
   activeSkill: AiSkillConfig,
   logs: AiSkillTestLog[]
 ): AiSkillProjectReport {
+  logs = logs.filter(l => l.skillId === activeSkill.id).sort((a,b) => new Date(b.timestamp).getTime()-new Date(a.timestamp).getTime());
   const v1Logs = logs.filter(l => l.version === 1);
   const v2Logs = logs.filter(l => l.version >= 2);
 
   const sampleV1 = v1Logs[0];
-  const sampleV2 = v2Logs[v2Logs.length - 1] || v1Logs[v1Logs.length - 1];
+  const sampleV2 = v2Logs.find(l => l.userQuestion.trim() === v1Logs[0]?.userQuestion.trim());
 
   return {
     id: `report-${Date.now()}`,
     userId: '',
-    title: `10~11주차 SODABOT AI 스킬 프로젝트 보고서 - ${activeSkill.name}`,
+    title: `11주차 SODABOT AI 스킬 프로젝트 보고서 - ${activeSkill.name}`,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
-    sodabotIntro: `나의 소다봇 '${botName}'(은)는 학생 ${userDisplayName}의 반려 로봇으로, 10~11주차 프로젝트를 통해 '${activeSkill.name}' 기능을 부여받았습니다.`,
+    sodabotIntro: `나의 소다봇 '${botName}'(은)는 학생 ${userDisplayName}의 반려 로봇으로, 11주차 프로젝트를 통해 '${activeSkill.name}' 답변 규칙을 설정하는 프로젝트를 진행합니다.`,
     targetProblem: activeSkill.type === 'english'
       ? '원어민과 영어로 대화할 기회가 부족하고 문법이 틀릴까 봐 두려운 문제를 해결하고자 합니다.'
       : activeSkill.type === 'coding'
@@ -359,16 +360,16 @@ export function generateInitialReport(
       : (activeSkill.customInputs?.targetProblem || '일상 속 불편함을 해결하고 유익한 대화를 나누고자 합니다.'),
     selectedSkill: `${activeSkill.name} (버전: V${activeSkill.version}) - ${activeSkill.description}`,
     usageScenario: `${userDisplayName}(이)가 소다봇에게 음성이나 웹 대화로 상황에 맞는 질문을 하면, 소다봇이 설정된 AI 스킬 규칙에 따라 즉시 맞춤형 응답을 제공하는 시나리오입니다.`,
-    actualLogs: logs.slice(-5),
-    goodPoints: sampleV2?.goodPoints || '질문의 의도를 잘 파악하고 친근한 어조로 즉시 답변을 제공하여 만족스러웠습니다.',
-    painPoints: sampleV1?.badPoints || '초기 버전(V1)에서는 설명이 다소 길거나 원하는 방식(힌트 위주 등)과 조금 차이가 있었습니다.',
-    modifications: sampleV2?.modifications || 'AI 스킬 옵션 조정을 통해 답변 길이와 규칙을 세분화하고, 핵심 피드백을 추가하도록 설정을 개선했습니다.',
+    actualLogs: logs.slice(0, 5),
+    goodPoints: logs[0]?.goodPoints || '아직 작성하지 않았습니다. 실제 테스트를 보고 직접 작성해주세요.',
+    painPoints: sampleV1?.badPoints || '아직 작성하지 않았습니다. 실제 테스트를 보고 직접 작성해주세요.',
+    modifications: sampleV2?.modifications || '아직 작성하지 않았습니다. 실제 테스트를 보고 직접 작성해주세요.',
     comparisonV1V2: {
       v1Summary: `V1 초기 설정: ${sampleV1?.situation || '기본 질문 테스트'}`,
-      v1Response: sampleV1?.aiResponse || '초기 AI 응답 예시',
+      v1Response: sampleV1?.aiResponse || 'V1 테스트 기록이 없습니다.',
       v2Summary: `V2 개선 설정: ${sampleV2?.situation || '설정 튜닝 후 동일 질문 재테스트'}`,
-      v2Response: sampleV2?.aiResponse || '개선된 맞춤형 AI 응답 예시',
-      improvements: '규칙을 세밀하게 조정한 후 답변의 정확도와 친밀도가 대폭 향상되었습니다.'
+      v2Response: sampleV2?.aiResponse || 'V1과 같은 질문으로 새 버전을 테스트하고 기록해주세요.',
+      improvements: '아직 작성하지 않았습니다. 실제 테스트를 보고 직접 작성해주세요.'
     },
     futureFeatures: '앞으로 소다봇의 LCD 화면 표정 애니메이션 및 모션과 AI 스킬을 더욱 긴밀하게 연동하고 싶습니다.',
     attachedImages: [],
@@ -448,3 +449,12 @@ export function generateSkillSimulatedReply(
   }
 }
 
+
+// Remove conclusions inserted by the old template, while preserving student writing.
+export function sanitizeLegacySkillReport(report: AiSkillProjectReport): AiSkillProjectReport {
+  const next = {...report, comparisonV1V2:{...report.comparisonV1V2}};
+  const defaults = ['질문의 의도를 잘 파악하고 친근한 어조로 즉시 답변을 제공하여 만족스러웠습니다.','초기 버전(V1)에서는 설명이 다소 길거나 원하는 방식(힌트 위주 등)과 조금 차이가 있었습니다.','AI 스킬 옵션 조정을 통해 답변 길이와 규칙을 세분화하고, 핵심 피드백을 추가하도록 설정을 개선했습니다.','규칙을 세밀하게 조정한 후 답변의 정확도와 친밀도가 대폭 향상되었습니다.'];
+  for (const key of ['goodPoints','painPoints','modifications'] as const) if(defaults.includes(next[key])) next[key]='아직 작성하지 않았습니다. 실제 테스트를 보고 직접 작성해주세요.';
+  if(defaults.includes(next.comparisonV1V2.improvements))next.comparisonV1V2.improvements='실제 수정 전후 답변을 보고 직접 평가해주세요.';
+  return next;
+}

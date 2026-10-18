@@ -78,6 +78,9 @@ import {
 } from "lucide-react";
 import { ChatRoom, Message, LMStudioConfig, CourseContent } from "./types";
 
+// Temporarily hide manual playback of chat answers on the robot.
+const SHOW_SODABOT_VOICE_PLAYBACK = false;
+
 export default function App() {
   const [token, setToken] = useState<string | null>(localStorage.getItem("authSessionId"));
   const [user, setUser] = useState<{ id: string; username: string; displayName: string; role?: string; canAccessChat?: boolean; personalApiKey?: string; friendSettings?: any } | null>(null);
@@ -355,7 +358,7 @@ export default function App() {
   const [modelName, setModelName] = useState("meta-llama-3-8b-instruct");
   const [fallbackMode, setFallbackMode] = useState(true);
   const [hybridModeEnabled, setHybridModeEnabled] = useState(false);
-  const [dailyGptQuota, setDailyGptQuota] = useState(3);
+  const [dailyGptQuota, setDailyGptQuota] = useState(30);
   const [lmStudioConnected, setLmStudioConnected] = useState<boolean | null>(null);
   const [testingConnection, setTestingConnection] = useState(false);
   const [testMessage, setTestMessage] = useState("");
@@ -1025,6 +1028,7 @@ export default function App() {
           "Authorization": `Bearer ${token}`
         },
         body: JSON.stringify({
+          chatId: targetChatId,
           model: modelName,
           messages: [
             { role: "system", content: sodabotPersona },
@@ -1091,12 +1095,13 @@ export default function App() {
         }
       }
 
+      if (!assistantMsgText.trim()) throw new Error("AI가 빈 응답을 보냈습니다. 다시 질문해주세요.");
       console.log("Stream completely finished!");
 
     } catch (err: any) {
       console.warn("Client-side LM Studio connect error:", err);
       const errDetails = err.message || err.toString();
-      assistantMsgText = "로컬 엔진이 잠시 쉬고 있어! 에러 원인: [" + errDetails + "]";
+      assistantMsgText = (assistantMsgText ? assistantMsgText + "\n\n" : "") + (err.name === "TimeoutError" || err.name === "AbortError" ? "응답 대기 시간이 초과됐습니다. 다시 질문해주세요." : "응답을 받지 못했습니다. " + errDetails);
       setChats(prev => prev.map(c => {
         if (c.id === targetChatId) {
           return {
@@ -1107,6 +1112,7 @@ export default function App() {
         return c;
       }));
     } finally {
+      setSending(false);
       // Sync finalized Assistant Message to backend
       const assistantMsgFinal: Message = {
         id: assistantMsgId,
@@ -1119,6 +1125,7 @@ export default function App() {
       try {
         await fetch(`/api/chats/${targetChatId}/sync`, {
           method: "POST",
+          signal: AbortSignal.timeout(5000),
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
           body: JSON.stringify({ messages: [assistantMsgFinal] })
         });
@@ -1503,7 +1510,7 @@ export default function App() {
                                 {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                               </span>
 
-                              {!isUser && (
+                              {SHOW_SODABOT_VOICE_PLAYBACK && !isUser && (
                                 <button
                                   type="button"
                                   disabled={!canReachSodabot || speakingMessageId !== null}
@@ -1829,7 +1836,7 @@ export default function App() {
                   </thead>
                   <tbody className="divide-y divide-[#EAE6DF]">
                     {globalStats?.users?.map((u: any) => {
-                      const quota = globalStats?.settings?.dailyGptQuota || dailyGptQuota || 3;
+                      const quota = globalStats?.settings?.dailyGptQuota || dailyGptQuota || 30;
                       const usage = u.gptUsageCount || 0;
                       const percentage = Math.min((usage / quota) * 100, 100);
                       const isExhausted = usage >= quota;
@@ -2761,43 +2768,6 @@ export default function App() {
                           </span>
                         </button>
 
-                        {/* 4. 9주차 모바일 소다봇 & PWA (8-4) */}
-                        <button
-                          onClick={() => {
-                            setCurrentView('mobile_guide');
-                          }}
-                          className={`w-full text-left px-2.5 py-1.5 rounded-xl text-xs font-medium flex items-center justify-between transition-all cursor-pointer ${
-                            currentView === 'mobile_guide'
-                              ? 'bg-blue-50/70 text-blue-900 font-bold border border-blue-200/70 shadow-2xs'
-                              : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20 hover:text-[#1D1D1F]'
-                          }`}
-                        >
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <Smartphone className={`w-3.5 h-3.5 shrink-0 ${currentView === 'mobile_guide' ? 'text-blue-600' : 'text-indigo-500'}`} />
-                            <span className="truncate text-xs">4. 모바일 소다봇</span>
-                          </div>
-                          <span className="text-[8px] text-indigo-700 bg-indigo-50 border border-indigo-200/60 px-1.5 py-0.5 rounded font-mono font-semibold shrink-0">
-                            8-4
-                          </span>
-                        </button>
-                        <button
-                          onClick={() => setCurrentView('friends')}
-                          title="소다봇 친구 목록 및 1:1 메시지"
-                          className={`w-full text-left px-2.5 py-1.5 rounded-xl text-xs font-medium flex items-center justify-between transition-all cursor-pointer ${
-                            currentView === 'friends'
-                              ? 'bg-indigo-50 text-indigo-900 font-bold border border-indigo-200 shadow-2xs'
-                              : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20 hover:text-[#1D1D1F]'
-                          }`}
-                        >
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <Users className="w-3.5 h-3.5 shrink-0 text-indigo-500" />
-                            <span className="truncate text-xs">5. 소다봇 친구</span>
-                            {unreadFriendMessages > 0 && (
-                              <span className="px-1.5 rounded-full bg-rose-500 text-white text-[9px] font-bold">{unreadFriendMessages}</span>
-                            )}
-                          </div>
-                          <span className="text-[8px] text-indigo-700 bg-indigo-50 border border-indigo-200/60 px-1.5 py-0.5 rounded font-mono font-semibold shrink-0">9-5</span>
-                        </button>
                       </div>
                     )}
                   </div>
@@ -2820,7 +2790,27 @@ export default function App() {
 
                     {isWeek9Expanded && (
                       <div className="pl-3.5 space-y-0.5 border-l-2 border-indigo-100 ml-3.5 my-1">
-                        {/* 1. 10주차 PCB 기본 펌웨어 (soda-9-1) */}
+                        {/* 1. 10주차 모바일 소다봇 */}
+                        <button
+                          onClick={() => {
+                            setCurrentView('mobile_guide');
+                          }}
+                          className={`w-full text-left px-2.5 py-1.5 rounded-xl text-xs font-medium flex items-center justify-between transition-all cursor-pointer ${
+                            currentView === 'mobile_guide'
+                              ? 'bg-blue-50/70 text-blue-900 font-bold border border-blue-200/70 shadow-2xs'
+                              : 'text-[#5C5B57] hover:bg-[#EAE6DF]/20 hover:text-[#1D1D1F]'
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <Smartphone className={`w-3.5 h-3.5 shrink-0 ${currentView === 'mobile_guide' ? 'text-blue-600' : 'text-indigo-500'}`} />
+                            <span className="truncate text-xs">1. 모바일 소다봇</span>
+                          </div>
+                          <span className="text-[8px] text-indigo-700 bg-indigo-50 border border-indigo-200/60 px-1.5 py-0.5 rounded font-mono font-semibold shrink-0">
+                            10-1
+                          </span>
+                        </button>
+
+                        {/* 2. 10주차 PCB 기본 펌웨어 */}
                         <button
                           onClick={() => {
                             const userKey = user?.id || user?.username || 'default';
@@ -2841,14 +2831,14 @@ export default function App() {
                         >
                           <div className="flex items-center gap-1.5 min-w-0">
                             <Code2 className={`w-3.5 h-3.5 shrink-0 ${currentView === 'firmware_v9' ? 'text-blue-600' : 'text-indigo-500'}`} />
-                            <span className="truncate text-xs">1. 소다봇 PCB 기본 펌웨어</span>
+                            <span className="truncate text-xs">2. 소다봇 PCB 기본 펌웨어</span>
                           </div>
                           <span className="text-[8px] text-indigo-700 bg-indigo-50 border border-indigo-200/60 px-1.5 py-0.5 rounded font-mono font-semibold shrink-0">
-                            9-1
+                            10-2
                           </span>
                         </button>
 
-                        {/* 2. 10주차 소다봇 조립하기 (9-2) */}
+                        {/* 3. 10주차 소다봇 조립하기 */}
                         <button
                           onClick={() => {
                             setCurrentView('assembly_v9');
@@ -2861,10 +2851,10 @@ export default function App() {
                         >
                           <div className="flex items-center gap-1.5 min-w-0">
                             <Wrench className={`w-3.5 h-3.5 shrink-0 ${currentView === 'assembly_v9' ? 'text-blue-600' : 'text-indigo-500'}`} />
-                            <span className="truncate text-xs">2. 소다봇 조립하기</span>
+                            <span className="truncate text-xs">3. 소다봇 조립하기</span>
                           </div>
                           <span className="text-[8px] text-indigo-700 bg-indigo-50 border border-indigo-200/60 px-1.5 py-0.5 rounded font-mono font-semibold shrink-0">
-                            9-2
+                            10-3
                           </span>
                         </button>
                       </div>
@@ -3252,7 +3242,7 @@ export default function App() {
                                 </span>
 
                                 {/* Speak on Sodabot Button: Only for web-generated AI responses */}
-                                {!isUser && !isSodabotSource && (
+                                {SHOW_SODABOT_VOICE_PLAYBACK && !isUser && !isSodabotSource && (
                                   <button
                                     type="button"
                                     disabled={!canReachSodabot || speakingMessageId !== null}
@@ -3352,6 +3342,7 @@ export default function App() {
           </>
         ) : currentView === 'ai_skills' ? (
           <SodaAiSkillScreen
+            key={user?.id || "guest"}
             currentUser={user}
             onNavigateToChat={() => setCurrentView('chat')}
             isSodabotConnected={isSodabotConnected}

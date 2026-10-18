@@ -126,6 +126,8 @@ export const SodabotFriendsScreen: React.FC<SodabotFriendsScreenProps> = ({
   const [pendingTotal, setPendingTotal] = useState(0);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const activeView = useRef({friendId:selectedFriend?.userId, roomId:selectedGroup?.id, token});
+  activeView.current = {friendId:selectedFriend?.userId, roomId:selectedGroup?.id, token};
 
   // 1. Initial Load & Periodic Presence Ping
   useEffect(() => {
@@ -169,6 +171,7 @@ export const SodabotFriendsScreen: React.FC<SodabotFriendsScreenProps> = ({
   useEffect(() => {
     if (!token || !selectedFriend) return;
 
+    setChatMessages([]);
     fetchMessages(selectedFriend.userId, true);
 
     const msgInterval = setInterval(() => {
@@ -182,6 +185,7 @@ export const SodabotFriendsScreen: React.FC<SodabotFriendsScreenProps> = ({
   useEffect(() => {
     if (!token || !selectedGroup) return;
 
+    setGroupMessages([]);
     fetchGroupMessages(selectedGroup.id, true);
 
     const groupMsgInterval = setInterval(() => {
@@ -315,6 +319,7 @@ export const SodabotFriendsScreen: React.FC<SodabotFriendsScreenProps> = ({
       });
       if (res.ok) {
         const data = await res.json();
+        if (activeView.current.friendId !== friendId || activeView.current.token !== token) return;
         setChatMessages(data.messages || []);
         if (data.friend) {
           setSelectedFriend(prev => prev ? { ...prev, ...data.friend } : data.friend);
@@ -335,8 +340,15 @@ export const SodabotFriendsScreen: React.FC<SodabotFriendsScreenProps> = ({
       const res = await fetch(`/api/friends/groups/${roomId}/messages`, {
         headers: { Authorization: `Bearer ${token}` }
       });
+      if (!res.ok) {
+        if (activeView.current.roomId === roomId && activeView.current.token === token && (res.status === 403 || res.status === 404)) {
+          setSelectedGroup(null);setGroupMessages([]);
+        }
+        return;
+      }
       if (res.ok) {
         const data = await res.json();
+        if (activeView.current.roomId !== roomId || activeView.current.token !== token) return;
         setGroupMessages(data.messages || []);
         if (data.room) {
           setSelectedGroup(prev => prev ? { ...prev, ...data.room, members: data.members } : data.room);
@@ -476,7 +488,6 @@ export const SodabotFriendsScreen: React.FC<SodabotFriendsScreenProps> = ({
     if (!inputMessage.trim() || !selectedFriend || sendingDm) return;
 
     const content = inputMessage.trim();
-    setInputMessage('');
     setSendingDm(true);
 
     try {
@@ -488,11 +499,17 @@ export const SodabotFriendsScreen: React.FC<SodabotFriendsScreenProps> = ({
         },
         body: JSON.stringify({ content })
       });
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({}));
+        throw new Error(error.error || "메시지를 보내지 못했습니다.");
+      }
       if (res.ok) {
+        setInputMessage(current => current.trim() === content ? "" : current);
         await fetchMessages(selectedFriend.userId, true);
         fetchFriends(false);
       }
     } catch (err) {
+      setPlayStatusMessage(err instanceof Error ? err.message : '메시지를 보내지 못했습니다. 입력 내용은 유지됩니다.');
       console.error('Failed to send message', err);
     } finally {
       setSendingDm(false);
@@ -508,12 +525,14 @@ export const SodabotFriendsScreen: React.FC<SodabotFriendsScreenProps> = ({
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` }
       });
+      if (!res.ok) throw new Error("메시지 재생 권한이나 연결 상태를 확인해주세요.");
       const data = await res.json();
       const textToSpeak = data.speechText || `${selectedFriend?.botName || '친구'}의 메시지: ${message.content}`;
 
       if (isSodabotConnected) {
         try {
           await sodabotTransport.send('speak', textToSpeak);
+          await fetch(`/api/friends/messages/${message.id}/play-sodabot`, {method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({played:true})});
           setPlayStatusMessage('🔊 실물 소다봇에서 음성을 재생했습니다!');
         } catch (transportErr) {
           console.warn('sodabotTransport speak error:', transportErr);
@@ -557,6 +576,10 @@ export const SodabotFriendsScreen: React.FC<SodabotFriendsScreenProps> = ({
           memberIds: selectedFriendsForGroup
         })
       });
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({}));
+        throw new Error(error.error || '그룹 요청을 처리하지 못했습니다.');
+      }
       if (res.ok) {
         const data = await res.json();
         setNewGroupName('');
@@ -569,6 +592,7 @@ export const SodabotFriendsScreen: React.FC<SodabotFriendsScreenProps> = ({
         }
       }
     } catch (err) {
+      alert(err instanceof Error ? err.message : "그룹 요청을 처리하지 못했습니다.");
       console.error('Failed to create group room', err);
     } finally {
       setCreatingGroup(false);
@@ -580,7 +604,6 @@ export const SodabotFriendsScreen: React.FC<SodabotFriendsScreenProps> = ({
     if (!inputMessage.trim() || !selectedGroup || sendingDm) return;
 
     const content = inputMessage.trim();
-    setInputMessage('');
     setSendingDm(true);
 
     try {
@@ -592,11 +615,17 @@ export const SodabotFriendsScreen: React.FC<SodabotFriendsScreenProps> = ({
         },
         body: JSON.stringify({ content })
       });
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({}));
+        throw new Error(error.error || "메시지를 보내지 못했습니다.");
+      }
       if (res.ok) {
+        setInputMessage(current => current.trim() === content ? "" : current);
         await fetchGroupMessages(selectedGroup.id, true);
         fetchGroupRooms(false);
       }
     } catch (err) {
+      setPlayStatusMessage(err instanceof Error ? err.message : '메시지를 보내지 못했습니다. 입력 내용은 유지됩니다.');
       console.error('Failed to send group message', err);
     } finally {
       setSendingDm(false);
@@ -619,6 +648,10 @@ export const SodabotFriendsScreen: React.FC<SodabotFriendsScreenProps> = ({
           memberIds: selectedFriendsForInvite
         })
       });
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({}));
+        throw new Error(error.error || '그룹 요청을 처리하지 못했습니다.');
+      }
       if (res.ok) {
         setSelectedFriendsForInvite([]);
         setShowInviteGroupModal(false);
@@ -626,6 +659,7 @@ export const SodabotFriendsScreen: React.FC<SodabotFriendsScreenProps> = ({
         fetchGroupRooms();
       }
     } catch (err) {
+      alert(err instanceof Error ? err.message : "그룹 요청을 처리하지 못했습니다.");
       console.error('Failed to invite members', err);
     } finally {
       setInvitingMembers(false);
@@ -639,12 +673,17 @@ export const SodabotFriendsScreen: React.FC<SodabotFriendsScreenProps> = ({
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` }
       });
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({}));
+        throw new Error(error.error || '그룹 요청을 처리하지 못했습니다.');
+      }
       if (res.ok) {
         setSelectedGroup(null);
         fetchGroupRooms();
         fetchNotifications();
       }
     } catch (err) {
+      alert(err instanceof Error ? err.message : "그룹 요청을 처리하지 못했습니다.");
       console.error('Failed to leave group', err);
     }
   };
@@ -658,12 +697,14 @@ export const SodabotFriendsScreen: React.FC<SodabotFriendsScreenProps> = ({
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` }
       });
+      if (!res.ok) throw new Error("메시지 재생 권한이나 연결 상태를 확인해주세요.");
       const data = await res.json();
       const textToSpeak = data.speechText || `${message.senderName}의 그룹 메시지: ${message.content}`;
 
       if (isSodabotConnected) {
         try {
           await sodabotTransport.send('speak', textToSpeak);
+          await fetch(`/api/friends/groups/messages/${message.id}/play-sodabot`, {method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'},body:JSON.stringify({played:true})});
           setPlayStatusMessage('🔊 실물 소다봇에서 음성을 재생했습니다!');
         } catch (transportErr) {
           console.warn('sodabotTransport speak error:', transportErr);

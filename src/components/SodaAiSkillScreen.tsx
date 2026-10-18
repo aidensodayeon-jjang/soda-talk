@@ -49,10 +49,11 @@ import {
   DEFAULT_AI_SKILL_TEMPLATES,
   compileAiSkillPrompt,
   generateInitialReport,
-  generateSkillSimulatedReply
+  sanitizeLegacySkillReport
 } from '../utils/aiSkillUtils';
 
 interface SodaAiSkillScreenProps {
+  key?: string;
   currentUser?: User | null;
   onNavigateToChat?: () => void;
   isSodabotConnected?: boolean;
@@ -98,6 +99,7 @@ export default function SodaAiSkillScreen({
   ]);
   const [inputQuery, setInputQuery] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
+  const testContext = useRef({id:selectedSkillId,version:1});
 
   // 활용/테스트 기록
   const [testLogs, setTestLogs] = useState<AiSkillTestLog[]>(() => {
@@ -140,9 +142,9 @@ export default function SodaAiSkillScreen({
     const active = skills.find(s => s.id === activeSkillId) || skills[0] || DEFAULT_AI_SKILL_TEMPLATES[0];
     try {
       const saved = localStorage.getItem(getScopedKey('ai_skill_report'));
-      if (saved) return JSON.parse(saved);
+      if (saved) return sanitizeLegacySkillReport(JSON.parse(saved));
     } catch {}
-    return generateInitialReport(currentUser?.displayName || '소다학생', '루미봇', active, []);
+    return generateInitialReport(currentUser?.displayName || '소다학생', currentUser?.friendSettings?.persona?.robotName || '소다봇', active, []);
   });
 
   const [showPromptPreview, setShowPromptPreview] = useState(false);
@@ -152,33 +154,47 @@ export default function SodaAiSkillScreen({
   // 현재 선택된 스킬 객체
   const currentSkill = skills.find(s => s.id === selectedSkillId) || skills[0] || DEFAULT_AI_SKILL_TEMPLATES[0];
 
+  const [loaded, setLoaded] = useState(false);
+  const [syncStatus, setSyncStatus] = useState('설정을 불러오는 중…');
+  const saveQueue = useRef<Promise<unknown>>(Promise.resolve());
+  const persist = (payload: unknown) => {
+    const token = localStorage.getItem('soda_token') || currentUser?.personalApiKey;
+    const task = saveQueue.current.catch(() => {}).then(async () => {
+      if (!token) throw new Error('로그인이 필요합니다.');
+      const response = await fetch('/api/user/ai-skills', {method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},body:JSON.stringify(payload)});
+      if (!response.ok) throw new Error('서버에 저장하지 못했습니다.');
+      return response.json();
+    });
+    saveQueue.current = task;
+    return task;
+  };
+
+  useEffect(() => {
+    setTestMessages([]);setLogForm({situation:'',userQuestion:'',aiResponse:'',goodPoints:'',badPoints:'',modifications:''});
+  }, [selectedSkillId, currentSkill.version]);
+
+  const selectedContext = useRef({id:currentSkill.id,version:currentSkill.version});
+  selectedContext.current = {id:currentSkill.id,version:currentSkill.version};
+
+  const comparison = generateInitialReport(currentUser?.displayName || "학생", "소다봇", currentSkill, testLogs).comparisonV1V2;
+
   // 로컬 스토리지 & 서버 동기화
   useEffect(() => {
+    if (!loaded) return;
     localStorage.setItem(getScopedKey('ai_skills'), JSON.stringify(skills));
     localStorage.setItem(getScopedKey('active_skill_id'), activeSkillId);
     localStorage.setItem(getScopedKey('ai_skill_logs'), JSON.stringify(testLogs));
     localStorage.setItem(getScopedKey('ai_skill_snapshots'), JSON.stringify(versionSnapshots));
     localStorage.setItem(getScopedKey('ai_skill_report'), JSON.stringify(report));
 
-    // 서버로 백업 동기화
-    const token = localStorage.getItem('soda_token') || currentUser?.personalApiKey;
-    if (token) {
-      fetch('/api/user/ai-skills', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          activeSkillId,
-          skills,
-          testLogs,
-          versionSnapshots,
-          report
-        })
-      }).catch(err => console.warn('AI Skill cloud sync failed:', err));
-    }
-  }, [skills, activeSkillId, testLogs, versionSnapshots, report]);
+    const timer = setTimeout(() => {
+      setSyncStatus('저장 중…');
+      persist({activeSkillId,skills,testLogs,versionSnapshots,report})
+        .then(() => setSyncStatus('서버 저장 완료'))
+        .catch(() => setSyncStatus('서버 저장 실패 — 이 기기에만 보관 중'));
+    },400);
+    return () => clearTimeout(timer);
+  }, [loaded, skills, activeSkillId, testLogs, versionSnapshots, report]);
 
   // 컴포넌트 마운트 시 서버에서 데이터 불러오기
   useEffect(() => {
@@ -189,7 +205,7 @@ export default function SodaAiSkillScreen({
           'Authorization': `Bearer ${token}`
         }
       })
-        .then(res => res.json())
+        .then(res => { if (!res.ok) throw new Error("불러오기 실패"); return res.json(); })
         .then(data => {
           if (data.success && data.aiSkillState) {
             const state = data.aiSkillState;
@@ -197,10 +213,11 @@ export default function SodaAiSkillScreen({
             if (state.activeSkillId) setActiveSkillId(state.activeSkillId);
             if (state.testLogs) setTestLogs(state.testLogs);
             if (state.versionSnapshots) setVersionSnapshots(state.versionSnapshots);
-            if (state.report) setReport(state.report);
+            if (state.report) setReport(sanitizeLegacySkillReport(state.report));
           }
         })
-        .catch(err => console.warn('Failed to load remote AI skill state:', err));
+        .then(() => { setLoaded(true); setSyncStatus('서버 설정 확인 완료'); })
+        .catch(() => setSyncStatus('설정을 불러오지 못했습니다. 새로고침해주세요. 자동 저장을 중지했습니다.'));
     }
   }, []);
 
@@ -234,32 +251,19 @@ export default function SodaAiSkillScreen({
   };
 
   // 스킬 활성화 (내 소다봇에 적용)
-  const handleActivateSkill = (skillId: string) => {
-    setActiveSkillId(skillId);
-    setSkills(prev =>
-      prev.map(s => ({
-        ...s,
-        isActive: s.id === skillId
-      }))
-    );
-    const token = localStorage.getItem('soda_token') || currentUser?.personalApiKey;
-    if (token) {
-      fetch('/api/user/ai-skills/activate', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ skillId })
-      }).catch(console.error);
-    }
-    const target = skills.find(s => s.id === skillId);
-    triggerToast(`✨ '${target?.name || 'AI 스킬'}'이(가) 내 소다봇에 즉시 적용되었습니다! (펌웨어 수정 불필요)`);
+  const handleActivateSkill = async (skillId: string) => {
+    if (!loaded) { triggerToast('설정을 먼저 불러와야 합니다.'); return; }
+    const nextSkills = skills.map(s => ({...s,isActive:s.id === skillId}));
+    try {
+      await persist({activeSkillId:skillId,skills:nextSkills,testLogs,versionSnapshots,report});
+      setActiveSkillId(skillId);setSkills(nextSkills);
+      triggerToast('서버에 적용했습니다. 다음 웹·로봇 대화부터 이 규칙을 사용합니다.');
+    } catch { triggerToast('적용하지 못했습니다. 연결을 확인해주세요.'); }
   };
 
   // 테스트 메시지 전송
   const handleSendTestMessage = async () => {
-    if (!inputQuery.trim() || isGenerating) return;
+    if (!inputQuery.trim() || isGenerating || !loaded) return;
 
     const userText = inputQuery.trim();
     setInputQuery('');
@@ -273,6 +277,7 @@ export default function SodaAiSkillScreen({
 
     const nextHistory = [...testMessages, userMsg];
     setTestMessages(nextHistory);
+    testContext.current = {id:currentSkill.id,version:currentSkill.version};
     setIsGenerating(true);
 
     try {
@@ -280,32 +285,11 @@ export default function SodaAiSkillScreen({
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      let reply = "";
-
-      // 1. AI 스킬 테스트 전용 엔드포인트 호출
-      try {
-        const res = await fetch('/api/ai-skills/test-chat', {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            text: userText,
-            skill: currentSkill,
-            history: nextHistory.map(m => ({ sender: m.sender, text: m.text }))
-          })
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          if (data.reply) reply = data.reply;
-        }
-      } catch (netErr) {
-        console.warn('Backend test chat call failed, falling back to instant client simulator:', netErr);
-      }
-
-      // 2. 서버가 응답하지 않거나 오프라인인 경우에도 완벽한 지능형 시뮬레이션 응답 즉시 생성
-      if (!reply) {
-        reply = generateSkillSimulatedReply(currentSkill, userText, currentUser?.displayName || '친구');
-      }
+      const res = await fetch('/api/ai-skills/test-chat', {method:'POST',headers,body:JSON.stringify({text:userText,skill:currentSkill,history:testMessages.filter(m => m.id !== 'init-msg').map(m => ({sender:m.sender,text:m.text}))})});
+      const data = await res.json();
+      if (!res.ok || !data.reply) throw new Error(data.error || '실제 AI 응답을 받지 못했습니다.');
+      if (selectedContext.current.id !== currentSkill.id || selectedContext.current.version !== currentSkill.version) return;
+      const reply = data.reply;
 
       const assistantMsg: Message = {
         id: `msg-${Date.now()}-bot`,
@@ -327,16 +311,8 @@ export default function SodaAiSkillScreen({
       });
     } catch (err: any) {
       console.error('Test chat error:', err);
-      const fallbackReply = generateSkillSimulatedReply(currentSkill, userText, currentUser?.displayName || '친구');
-      setTestMessages(prev => [
-        ...prev,
-        {
-          id: `msg-${Date.now()}-bot`,
-          sender: 'assistant',
-          text: fallbackReply,
-          timestamp: new Date().toISOString()
-        }
-      ]);
+      triggerToast(err.message || 'AI 연결에 실패했습니다. 테스트 기록을 만들지 않았습니다.');
+      setInputQuery(userText);
     } finally {
       setIsGenerating(false);
     }
@@ -351,9 +327,9 @@ export default function SodaAiSkillScreen({
 
     const newLog: AiSkillTestLog = {
       id: `log-${Date.now()}`,
-      skillId: currentSkill.id,
-      skillName: currentSkill.name,
-      version: currentSkill.version,
+      skillId: testContext.current.id,
+      skillName: skills.find(s => s.id === testContext.current.id)?.name || currentSkill.name,
+      version: testContext.current.version,
       situation: logForm.situation || '일상 대화 테스트',
       userQuestion: logForm.userQuestion,
       aiResponse: logForm.aiResponse,
@@ -366,7 +342,7 @@ export default function SodaAiSkillScreen({
 
     setTestLogs(prev => [newLog, ...prev]);
     setShowLogModal(false);
-    triggerToast('📝 프로젝트 활용 기록에 성공적으로 저장되었습니다!');
+    triggerToast('기록을 추가했습니다. 상단의 서버 저장 상태를 확인해주세요.');
 
     // 보고서 자동 업데이트
     setReport(prev => ({
@@ -409,14 +385,15 @@ export default function SodaAiSkillScreen({
 
   // 보고서 자동 완성 생성
   const handleAutoGenerateReport = () => {
+    if (!confirm("현재 보고서를 선택한 스킬의 기록으로 다시 작성할까요? 직접 수정한 내용은 바뀝니다.")) return;
     const generated = generateInitialReport(
       currentUser?.displayName || '소다학생',
-      '루미봇',
+      currentUser?.friendSettings?.persona?.robotName || '소다봇',
       currentSkill,
       testLogs
     );
     setReport(generated);
-    triggerToast('📊 10대 항목 프로젝트 보고서가 자동으로 구성되었습니다!');
+    triggerToast('📊 실제 기록으로 보고서 초안을 만들었습니다. 평가와 결론은 직접 작성해주세요.');
   };
 
   // 스킬 아이콘 렌더러
@@ -432,6 +409,8 @@ export default function SodaAiSkillScreen({
     }
   };
 
+  if (!loaded) return <div className="p-8 space-y-4"><h1 className="text-xl font-bold">11주차 AI 스킬 프로젝트</h1><p role="status">{syncStatus}</p><button className="text-blue-600 underline" onClick={() => window.location.reload()}>다시 불러오기</button></div>;
+
   return (
     <div className="flex-1 flex flex-col h-full bg-[#F5F5F7] overflow-y-auto text-[#1D1D1F]">
       {/* 1. 상단 헤더 & 배너 */}
@@ -440,7 +419,7 @@ export default function SodaAiSkillScreen({
           <div>
             <div className="flex items-center gap-2 mb-1">
               <span className="px-2 py-0.5 text-[10px] font-bold bg-blue-50 text-blue-700 rounded-full border border-blue-200">
-                10~11주차 프로젝트
+                11주차 프로젝트
               </span>
               <span className="text-xs text-neutral-500 font-medium flex items-center gap-1">
                 <Cpu className="w-3.5 h-3.5 text-indigo-500" />
@@ -473,6 +452,13 @@ export default function SodaAiSkillScreen({
               <ChevronRight className="w-3.5 h-3.5 text-neutral-500" />
             </button>
           </div>
+        </div>
+
+        <div className="mt-4 p-4 rounded-2xl bg-blue-50 text-sm text-slate-700 space-y-2">
+          <p><strong>이번 미션: 같은 질문에 답하는 방식을 바꿔보세요.</strong></p>
+          <p>예: 코딩친구에게 “LED 켜는 코드를 알려줘” → V1 답변 기록 → 새 버전에서 ‘힌트만 제공’으로 변경 → 같은 질문 다시 하기 → 차이와 아쉬운 점 기록</p>
+          <p>스킬은 AI 모델을 새로 학습시키는 기능이 아니라 답변 규칙을 정하는 기능입니다. 보고서는 실제 테스트를 모은 초안이며, 개선 여부는 직접 확인합니다.</p>
+          <p role="status" className="text-xs font-semibold">{syncStatus}</p>
         </div>
 
         {/* 2. 단계별 탭 네비게이터 (AI 스킬 -> 설정 -> 테스트 -> 결과 기록 -> 개선 -> 보고서) */}
@@ -524,7 +510,7 @@ export default function SodaAiSkillScreen({
             <div className="bg-white p-6 rounded-3xl border border-[#EAE6DF] shadow-xs">
               <div className="max-w-2xl">
                 <h2 className="text-lg font-bold text-[#1D1D1F] mb-1">
-                  10~11주차: 소다봇에 부여할 AI 스킬을 선택하세요
+                  11주차: 소다봇에 부여할 AI 스킬을 선택하세요
                 </h2>
                 <p className="text-xs text-neutral-500 leading-relaxed">
                   소다봇의 하드웨어 펌웨어를 수정하지 않고, 서버의 AI 규칙과 설정을 바꾸어 원하는 전문 역할을 즉시 장착할 수 있습니다.
@@ -1843,14 +1829,14 @@ export default function SodaAiSkillScreen({
                   <div className="p-3 bg-neutral-50 rounded-2xl">
                     <div className="font-bold text-neutral-500 text-[10px] mb-1">초기 문제점 / 아쉬웠던 점</div>
                     <p className="text-neutral-700 leading-relaxed">
-                      {report.painPoints || '초기 설정에서는 답변이 다소 길거나 구체적인 힌트가 부족했습니다.'}
+                      {report.painPoints || 'V1 답변을 보고 아쉬운 점을 직접 기록해주세요.'}
                     </p>
                   </div>
 
                   <div className="p-3 bg-neutral-50 rounded-2xl">
                     <div className="font-bold text-neutral-500 text-[10px] mb-1">V1 AI 답변 예시</div>
                     <p className="text-neutral-700 leading-relaxed font-mono">
-                      {testLogs.filter(l => l.version === 1)[0]?.aiResponse || 'V1 테스트 답변 기록이 표시됩니다.'}
+                      {comparison.v1Response}
                     </p>
                   </div>
                 </div>
@@ -1869,14 +1855,14 @@ export default function SodaAiSkillScreen({
                   <div className="p-3 bg-blue-50/50 rounded-2xl border border-blue-100">
                     <div className="font-bold text-blue-700 text-[10px] mb-1">수정한 규칙 및 개선점</div>
                     <p className="text-neutral-800 leading-relaxed">
-                      {report.modifications || '스킬 세부 옵션을 조율하여 힌트 제공 규칙과 간결한 어조를 적용했습니다.'}
+                      {report.modifications || '실제로 수정한 옵션을 기록해주세요.'}
                     </p>
                   </div>
 
                   <div className="p-3 bg-blue-50/50 rounded-2xl border border-blue-100">
                     <div className="font-bold text-blue-700 text-[10px] mb-1">V2 개선된 AI 답변 예시</div>
                     <p className="text-neutral-800 leading-relaxed font-mono">
-                      {testLogs.filter(l => l.version >= 2)[0]?.aiResponse || 'V2 개선 답변 기록이 표시됩니다.'}
+                      {comparison.v2Response}
                     </p>
                   </div>
                 </div>
@@ -1905,14 +1891,14 @@ export default function SodaAiSkillScreen({
         )}
 
         {/* ========================================================
-            STEP 6. 10~11주차 최종 프로젝트 보고서 화면
+            STEP 6. 11주차 최종 프로젝트 보고서 화면
             ======================================================== */}
         {currentStep === 'report' && (
           <div className="space-y-6">
             <div className="bg-white p-6 rounded-3xl border border-[#EAE6DF] shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
                 <span className="px-2.5 py-0.5 text-[10px] font-bold bg-blue-50 text-blue-700 rounded-full border border-blue-200">
-                  10~11주차 프로젝트 산출물
+                  11주차 프로젝트 산출물
                 </span>
                 <h2 className="text-lg font-bold text-[#1D1D1F] mt-1 flex items-center gap-2">
                   <FileText className="w-5 h-5 text-blue-600" />
@@ -2114,8 +2100,15 @@ export default function SodaAiSkillScreen({
               </button>
 
               <button
-                onClick={() => {
-                  triggerToast('💾 10~11주차 프로젝트 보고서가 안전하게 저장되었습니다!');
+                onClick={async () => {
+                  try {
+                    await persist({activeSkillId,skills,testLogs,versionSnapshots,report});
+                    setSyncStatus('서버 저장 완료');
+                    triggerToast('보고서를 내 계정에 저장했습니다.');
+                  } catch {
+                    setSyncStatus('서버 저장 실패 — 이 기기에만 보관 중');
+                    triggerToast('서버에 저장하지 못했습니다. 연결을 확인해주세요.');
+                  }
                 }}
                 className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold text-xs flex items-center gap-2 shadow-xs cursor-pointer"
               >
