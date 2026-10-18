@@ -1,3 +1,6 @@
+import { preventImeSubmit } from '../utils/chatInput';
+import { worksheetDefaults } from '../utils/worksheetReport';
+import SodabotWorksheetReport from './SodabotWorksheetReport';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Sparkles,
@@ -47,6 +50,8 @@ import {
 } from '../types';
 import {
   DEFAULT_AI_SKILL_TEMPLATES,
+  normalizeSkillSlots,
+  customSlotLabel,
   compileAiSkillPrompt,
   generateInitialReport,
   sanitizeLegacySkillReport
@@ -59,7 +64,7 @@ interface SodaAiSkillScreenProps {
   isSodabotConnected?: boolean;
 }
 
-type StepType = 'select' | 'configure' | 'test' | 'logs' | 'improve' | 'report';
+type StepType = 'select' | 'configure' | 'test' | 'report';
 
 export default function SodaAiSkillScreen({
   currentUser,
@@ -71,18 +76,20 @@ export default function SodaAiSkillScreen({
 
   // 현재 스텝
   const [currentStep, setCurrentStep] = useState<StepType>('select');
+  const [editingRules, setEditingRules] = useState(false);
 
   // 스킬 목록 & 활성 스킬
   const [skills, setSkills] = useState<AiSkillConfig[]>(() => {
     try {
       const saved = localStorage.getItem(getScopedKey('ai_skills'));
-      if (saved) return JSON.parse(saved);
+      if (saved) return normalizeSkillSlots(JSON.parse(saved));
     } catch {}
-    return DEFAULT_AI_SKILL_TEMPLATES;
+    return normalizeSkillSlots();
   });
 
   const [activeSkillId, setActiveSkillId] = useState<string>(() => {
-    return localStorage.getItem(getScopedKey('active_skill_id')) || 'skill-english-buddy';
+    const savedId = localStorage.getItem(getScopedKey('active_skill_id'));
+    return skills.some(s => s.id === savedId) ? savedId! : 'skill-english-buddy';
   });
 
   // 현재 편집/조회 중인 스킬
@@ -171,7 +178,7 @@ export default function SodaAiSkillScreen({
 
   useEffect(() => {
     setTestMessages([]);setLogForm({situation:'',userQuestion:'',aiResponse:'',goodPoints:'',badPoints:'',modifications:''});
-  }, [selectedSkillId, currentSkill.version]);
+  }, [selectedSkillId, JSON.stringify(currentSkill)]);
 
   const selectedContext = useRef({id:currentSkill.id,version:currentSkill.version});
   selectedContext.current = {id:currentSkill.id,version:currentSkill.version};
@@ -181,12 +188,14 @@ export default function SodaAiSkillScreen({
   // 로컬 스토리지 & 서버 동기화
   useEffect(() => {
     if (!loaded) return;
+    try {
     localStorage.setItem(getScopedKey('ai_skills'), JSON.stringify(skills));
     localStorage.setItem(getScopedKey('active_skill_id'), activeSkillId);
     localStorage.setItem(getScopedKey('ai_skill_logs'), JSON.stringify(testLogs));
     localStorage.setItem(getScopedKey('ai_skill_snapshots'), JSON.stringify(versionSnapshots));
     localStorage.setItem(getScopedKey('ai_skill_report'), JSON.stringify(report));
 
+    } catch { console.warn("보고서 로컬 보관 용량 초과: 서버 저장을 계속합니다."); }
     const timer = setTimeout(() => {
       setSyncStatus('저장 중…');
       persist({activeSkillId,skills,testLogs,versionSnapshots,report})
@@ -209,7 +218,7 @@ export default function SodaAiSkillScreen({
         .then(data => {
           if (data.success && data.aiSkillState) {
             const state = data.aiSkillState;
-            if (state.skills && state.skills.length > 0) setSkills(state.skills);
+            if (Array.isArray(state.skills)) setSkills(normalizeSkillSlots(state.skills));
             if (state.activeSkillId) setActiveSkillId(state.activeSkillId);
             if (state.testLogs) setTestLogs(state.testLogs);
             if (state.versionSnapshots) setVersionSnapshots(state.versionSnapshots);
@@ -255,7 +264,7 @@ export default function SodaAiSkillScreen({
     if (!loaded) { triggerToast('설정을 먼저 불러와야 합니다.'); return; }
     const nextSkills = skills.map(s => ({...s,isActive:s.id === skillId}));
     try {
-      await persist({activeSkillId:skillId,skills:nextSkills,testLogs,versionSnapshots,report});
+      await persist({applySkillId:skillId,activeSkillId:skillId,skills:nextSkills,testLogs,versionSnapshots,report});
       setActiveSkillId(skillId);setSkills(nextSkills);
       triggerToast('서버에 적용했습니다. 다음 웹·로봇 대화부터 이 규칙을 사용합니다.');
     } catch { triggerToast('적용하지 못했습니다. 연결을 확인해주세요.'); }
@@ -354,45 +363,40 @@ export default function SodaAiSkillScreen({
     }));
   };
 
-  // 새 버전으로 개선 (Version 1 -> Version 2 등)
   const handleCreateNewVersion = () => {
-    const currentVer = currentSkill.version || 1;
-    const newVer = currentVer + 1;
-
-    // 1. 현재 버전을 스냅샷으로 백업
-    const snapshot: AiSkillVersionSnapshot = {
-      id: `snap-${Date.now()}`,
-      skillId: currentSkill.id,
-      version: currentVer,
-      config: JSON.parse(JSON.stringify(currentSkill)),
-      notes: `V${currentVer} 설정 백업`,
-      sampleQuestion: testMessages.filter(m => m.sender === 'user').slice(-1)[0]?.text,
-      sampleResponse: testMessages.filter(m => m.sender === 'assistant').slice(-1)[0]?.text,
-      createdAt: new Date().toISOString()
-    };
-
-    setVersionSnapshots(prev => [snapshot, ...prev]);
-
-    // 2. 현재 스킬의 버전을 올림
-    updateCurrentSkill(s => ({
-      ...s,
-      version: newVer
-    }));
-
-    triggerToast(`🎉 스킬이 VERSION ${newVer}(으)로 업그레이드되었습니다! 설정을 다듬고 다시 테스트해보세요.`);
-    setCurrentStep('configure');
+    if (isGenerating) return;
+    if (editingRules) {setEditingRules(false);return;}
+    const last = [...testMessages].reverse().find(m => m.sender === 'assistant' && m.id !== 'init-msg');
+    const index = last ? testMessages.findIndex(m => m.id === last.id) : -1;
+    const question = index > 0 ? testMessages[index-1]?.text : '';
+    const baseline = testLogs.find(l => l.skillId === currentSkill.id && l.version === currentSkill.version);
+    if (last && question) {
+      const log: AiSkillTestLog = {id:`log-${last.id}`,skillId:currentSkill.id,skillName:currentSkill.name,version:currentSkill.version,situation:'수정 전 답변',userQuestion:question,aiResponse:last.text,timestamp:new Date().toISOString(),goodPoints:'',badPoints:'',modifications:'',source:'web'};
+      if (!testLogs.some(l => l.skillId===log.skillId && l.version===log.version && l.userQuestion===question && l.aiResponse===last.text)) {
+        setTestLogs(prev => [log,...prev]);
+        setReport(prev => ({...prev,actualLogs:[log,...prev.actualLogs]}));
+      }
+    }
+    if (last || baseline) {
+      const snapshot: AiSkillVersionSnapshot = {id:`snap-${Date.now()}`,skillId:currentSkill.id,version:currentSkill.version,config:JSON.parse(JSON.stringify(currentSkill)),notes:'규칙 수정 전',sampleQuestion:question || baseline?.userQuestion,sampleResponse:last?.text || baseline?.aiResponse,createdAt:new Date().toISOString()};
+      setVersionSnapshots(prev=>[snapshot,...prev]);
+      updateCurrentSkill(skill=>({...skill,version:skill.version+1}));
+      setInputQuery(question || baseline?.userQuestion || '');
+    }
+    setEditingRules(true);
   };
 
   // 보고서 자동 완성 생성
   const handleAutoGenerateReport = () => {
-    if (!confirm("현재 보고서를 선택한 스킬의 기록으로 다시 작성할까요? 직접 수정한 내용은 바뀝니다.")) return;
+    if (!confirm("선택한 스킬의 기록에서 질문과 답변 요약을 불러올까요? 직접 작성한 비교 요약은 바뀌며, 사진·학습 체크·소감은 유지됩니다.")) return;
     const generated = generateInitialReport(
       currentUser?.displayName || '소다학생',
       currentUser?.friendSettings?.persona?.robotName || '소다봇',
       currentSkill,
       testLogs
     );
-    setReport(generated);
+    const defaults = worksheetDefaults({...generated,actualLogs:testLogs},currentSkill,currentUser?.displayName || '',currentUser?.friendSettings?.persona?.robotName || '소다봇');
+    setReport({...generated,worksheet:report.worksheet ? {...report.worksheet,question:defaults.question,before:defaults.before,after:defaults.after,change:defaults.change} : defaults});
     triggerToast('📊 실제 기록으로 보고서 초안을 만들었습니다. 평가와 결론은 직접 작성해주세요.');
   };
 
@@ -409,211 +413,7 @@ export default function SodaAiSkillScreen({
     }
   };
 
-  if (!loaded) return <div className="p-8 space-y-4"><h1 className="text-xl font-bold">11주차 AI 스킬 프로젝트</h1><p role="status">{syncStatus}</p><button className="text-blue-600 underline" onClick={() => window.location.reload()}>다시 불러오기</button></div>;
-
-  return (
-    <div className="flex-1 flex flex-col h-full bg-[#F5F5F7] overflow-y-auto text-[#1D1D1F]">
-      {/* 1. 상단 헤더 & 배너 */}
-      <div className="bg-white border-b border-[#EAE6DF] px-6 py-4 sticky top-0 z-20 shadow-xs">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="px-2 py-0.5 text-[10px] font-bold bg-blue-50 text-blue-700 rounded-full border border-blue-200">
-                11주차 프로젝트
-              </span>
-              <span className="text-xs text-neutral-500 font-medium flex items-center gap-1">
-                <Cpu className="w-3.5 h-3.5 text-indigo-500" />
-                펌웨어 변경 없는 서버 AI 즉시 적용
-              </span>
-            </div>
-            <h1 className="text-xl font-extrabold text-[#1D1D1F] flex items-center gap-2">
-              <Sparkles className="w-6 h-6 text-blue-600" />
-              SODABOT AI 스킬 스튜디오
-            </h1>
-          </div>
-
-          {/* 현재 장착된 AI 스킬 안내 뱃지 */}
-          <div className="flex items-center gap-3">
-            <div className="bg-blue-50/80 border border-blue-200/80 px-3.5 py-2 rounded-2xl flex items-center gap-2.5">
-              <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-              <div className="text-xs">
-                <div className="text-[10px] text-neutral-500">현재 소다봇 활성 스킬</div>
-                <div className="font-bold text-blue-900">
-                  {skills.find(s => s.id === activeSkillId)?.name || '스킬 선택 안 됨'}
-                </div>
-              </div>
-            </div>
-
-            <button
-              onClick={() => onNavigateToChat && onNavigateToChat()}
-              className="px-3 py-2 bg-neutral-100 hover:bg-neutral-200 text-[#1D1D1F] text-xs font-semibold rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
-            >
-              <span>대화방 가기</span>
-              <ChevronRight className="w-3.5 h-3.5 text-neutral-500" />
-            </button>
-          </div>
-        </div>
-
-        <div className="mt-4 p-4 rounded-2xl bg-blue-50 text-sm text-slate-700 space-y-2">
-          <p><strong>이번 미션: 같은 질문에 답하는 방식을 바꿔보세요.</strong></p>
-          <p>예: 코딩친구에게 “LED 켜는 코드를 알려줘” → V1 답변 기록 → 새 버전에서 ‘힌트만 제공’으로 변경 → 같은 질문 다시 하기 → 차이와 아쉬운 점 기록</p>
-          <p>스킬은 AI 모델을 새로 학습시키는 기능이 아니라 답변 규칙을 정하는 기능입니다. 보고서는 실제 테스트를 모은 초안이며, 개선 여부는 직접 확인합니다.</p>
-          <p role="status" className="text-xs font-semibold">{syncStatus}</p>
-        </div>
-
-        {/* 2. 단계별 탭 네비게이터 (AI 스킬 -> 설정 -> 테스트 -> 결과 기록 -> 개선 -> 보고서) */}
-        <div className="flex items-center gap-1 mt-4 overflow-x-auto pb-1 scrollbar-none">
-          {[
-            { id: 'select', label: '1. 스킬 선택', icon: Sparkles },
-            { id: 'configure', label: '2. 스킬 설정', icon: Sliders },
-            { id: 'test', label: '3. 대화 테스트', icon: Play },
-            { id: 'logs', label: '4. 결과 기록', icon: BookOpen },
-            { id: 'improve', label: '5. 개선 비교', icon: GitCompare },
-            { id: 'report', label: '6. 프로젝트 보고서', icon: FileText }
-          ].map(tab => {
-            const Icon = tab.icon;
-            const isActive = currentStep === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setCurrentStep(tab.id as StepType)}
-                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-                  isActive
-                    ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/20'
-                    : 'bg-neutral-100/80 text-neutral-600 hover:bg-neutral-200/70 hover:text-neutral-900'
-                }`}
-              >
-                <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-white' : 'text-neutral-500'}`} />
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* 알림 토스트 */}
-      {saveToast && (
-        <div className="fixed bottom-6 right-6 z-50 bg-[#1D1D1F] text-white px-4 py-3 rounded-2xl shadow-xl flex items-center gap-2 text-xs font-medium animate-fade-in border border-neutral-700">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-          <span>{saveToast}</span>
-        </div>
-      )}
-
-      {/* 메인 컨텐츠 영역 */}
-      <div className="flex-1 p-6 max-w-6xl w-full mx-auto space-y-6">
-
-        {/* ========================================================
-            STEP 1. AI 스킬 템플릿 선택 화면
-            ======================================================== */}
-        {currentStep === 'select' && (
-          <div className="space-y-6">
-            <div className="bg-white p-6 rounded-3xl border border-[#EAE6DF] shadow-xs">
-              <div className="max-w-2xl">
-                <h2 className="text-lg font-bold text-[#1D1D1F] mb-1">
-                  11주차: 소다봇에 부여할 AI 스킬을 선택하세요
-                </h2>
-                <p className="text-xs text-neutral-500 leading-relaxed">
-                  소다봇의 하드웨어 펌웨어를 수정하지 않고, 서버의 AI 규칙과 설정을 바꾸어 원하는 전문 역할을 즉시 장착할 수 있습니다.
-                </p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {skills.map(skill => {
-                const isSelected = selectedSkillId === skill.id;
-                const isActive = activeSkillId === skill.id;
-
-                return (
-                  <div
-                    key={skill.id}
-                    onClick={() => {
-                      setSelectedSkillId(skill.id);
-                    }}
-                    className={`bg-white rounded-3xl p-5 border transition-all cursor-pointer relative flex flex-col justify-between hover:shadow-md ${
-                      isSelected
-                        ? 'border-blue-500 ring-2 ring-blue-500/20 shadow-sm'
-                        : 'border-[#EAE6DF] hover:border-neutral-300'
-                    }`}
-                  >
-                    <div>
-                      <div className="flex items-center justify-between mb-3">
-                        <div className={`p-3 rounded-2xl ${
-                          isSelected ? 'bg-blue-50 text-blue-600' : 'bg-neutral-100 text-neutral-700'
-                        }`}>
-                          {renderSkillIcon(skill.icon, 'w-6 h-6')}
-                        </div>
-
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-600 font-semibold">
-                            v{skill.version}
-                          </span>
-                          {isActive && (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
-                              <Check className="w-3 h-3" /> 장착중
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      <h3 className="text-base font-bold text-[#1D1D1F] mb-1">
-                        {skill.name}
-                      </h3>
-                      <p className="text-xs text-neutral-500 leading-relaxed mb-4">
-                        {skill.description}
-                      </p>
-                    </div>
-
-                    <div className="pt-3 border-t border-neutral-100 flex items-center justify-between gap-2">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedSkillId(skill.id);
-                          setCurrentStep('configure');
-                        }}
-                        className="px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs font-semibold rounded-xl transition-colors cursor-pointer flex items-center gap-1"
-                      >
-                        <Sliders className="w-3 h-3 text-neutral-500" />
-                        <span>설정하기</span>
-                      </button>
-
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedSkillId(skill.id);
-                          handleActivateSkill(skill.id);
-                        }}
-                        className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center gap-1 ${
-                          isActive
-                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                            : 'bg-blue-600 hover:bg-blue-700 text-white shadow-xs'
-                        }`}
-                      >
-                        <Zap className="w-3 h-3" />
-                        <span>{isActive ? '장착됨' : '소다봇에 적용'}</span>
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* 하단 진행 안내 버튼 */}
-            <div className="flex justify-end">
-              <button
-                onClick={() => setCurrentStep('configure')}
-                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold text-xs flex items-center gap-2 shadow-sm transition-all cursor-pointer"
-              >
-                <span>선택한 스킬 옵션 설정하러 가기</span>
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* ========================================================
-            STEP 2. AI 스킬 세부 설정 화면 (템플릿별 옵션 / 직접 만들기)
-            ======================================================== */}
-        {currentStep === 'configure' && (
+  const renderConfiguration = () => (
           <div className="space-y-6">
             {/* 상단 스킬 요약 카드 */}
             <div className="bg-white p-6 rounded-3xl border border-[#EAE6DF] shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -1452,28 +1252,226 @@ export default function SodaAiSkillScreen({
             {/* 하단 버튼 바 */}
             <div className="flex items-center justify-between">
               <button
-                onClick={() => setCurrentStep('select')}
+                onClick={() => currentStep === 'test' ? setEditingRules(false) : setCurrentStep('select')}
                 className="px-4 py-2.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-2xl font-bold text-xs flex items-center gap-1.5 cursor-pointer"
               >
                 <ChevronLeft className="w-4 h-4" />
-                <span>스킬 다시 선택</span>
+                <span>{currentStep === 'test' ? '편집 닫기' : '스킬 다시 선택'}</span>
               </button>
 
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => {
-                    handleActivateSkill(currentSkill.id);
+                    setEditingRules(false);
                     setCurrentStep('test');
                   }}
                   className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold text-xs flex items-center gap-2 shadow-sm transition-all cursor-pointer"
                 >
                   <Play className="w-4 h-4" />
-                  <span>설정 완료하고 테스트하기</span>
+                  <span>이 규칙으로 테스트하기</span>
                 </button>
               </div>
             </div>
           </div>
+  );
+
+  if (!loaded) return <div className="p-8 space-y-4"><h1 className="text-xl font-bold">11주차 AI 스킬 프로젝트</h1><p role="status">{syncStatus}</p><button className="text-blue-600 underline" onClick={() => window.location.reload()}>다시 불러오기</button></div>;
+
+  return (
+    <div className="flex-1 flex flex-col h-full bg-[#F5F5F7] overflow-y-auto text-[#1D1D1F]">
+      {/* 1. 상단 헤더 & 배너 */}
+      <div className="bg-white border-b border-[#EAE6DF] px-6 py-4 sticky top-0 z-20 shadow-xs">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="px-2 py-0.5 text-[10px] font-bold bg-blue-50 text-blue-700 rounded-full border border-blue-200">
+                11주차 프로젝트
+              </span>
+              <span className="text-xs text-neutral-500 font-medium flex items-center gap-1">
+                <Cpu className="w-3.5 h-3.5 text-indigo-500" />
+                펌웨어 변경 없는 서버 AI 즉시 적용
+              </span>
+            </div>
+            <h1 className="text-xl font-extrabold text-[#1D1D1F] flex items-center gap-2">
+              <Sparkles className="w-6 h-6 text-blue-600" />
+              SODABOT AI 스킬 스튜디오
+            </h1>
+          </div>
+
+          {/* 현재 장착된 AI 스킬 안내 뱃지 */}
+          <div className="flex items-center gap-3">
+            <div className="bg-blue-50/80 border border-blue-200/80 px-3.5 py-2 rounded-2xl flex items-center gap-2.5">
+              <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+              <div className="text-xs">
+                <div className="text-[10px] text-neutral-500">현재 소다봇 활성 스킬</div>
+                <div className="font-bold text-blue-900">
+                  {skills.find(s => s.id === activeSkillId)?.name || '스킬 선택 안 됨'}
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={() => onNavigateToChat && onNavigateToChat()}
+              className="px-3 py-2 bg-neutral-100 hover:bg-neutral-200 text-[#1D1D1F] text-xs font-semibold rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
+            >
+              <span>대화방 가기</span>
+              <ChevronRight className="w-3.5 h-3.5 text-neutral-500" />
+            </button>
+          </div>
+        </div>
+
+
+        {/* 2. 단계별 탭 네비게이터 (AI 스킬 -> 설정 -> 테스트 -> 결과 기록 -> 개선 -> 보고서) */}
+        <div className="flex items-center gap-1 mt-4 overflow-x-auto pb-1 scrollbar-none">
+          {[
+            { id: 'select', label: '1. 스킬 만들기', icon: Sparkles },
+            { id: 'test', label: '2. 테스트하고 수정하기', icon: Play },
+            { id: 'report', label: '3. 보고서', icon: FileText }
+          ].map(tab => {
+            const Icon = tab.icon;
+            const isActive = currentStep === tab.id || (tab.id === "select" && currentStep === "configure");
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setCurrentStep(tab.id as StepType)}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                  isActive
+                    ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/20'
+                    : 'bg-neutral-100/80 text-neutral-600 hover:bg-neutral-200/70 hover:text-neutral-900'
+                }`}
+              >
+                <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-white' : 'text-neutral-500'}`} />
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 알림 토스트 */}
+      {saveToast && (
+        <div className="fixed bottom-6 right-6 z-50 bg-[#1D1D1F] text-white px-4 py-3 rounded-2xl shadow-xl flex items-center gap-2 text-xs font-medium animate-fade-in border border-neutral-700">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+          <span>{saveToast}</span>
+        </div>
+      )}
+
+      {/* 메인 컨텐츠 영역 */}
+      <div className="flex-1 p-6 max-w-6xl w-full mx-auto space-y-6">
+
+        {/* ========================================================
+            STEP 1. AI 스킬 템플릿 선택 화면
+            ======================================================== */}
+        {currentStep === 'select' && (
+          <div className="space-y-6">
+            <div className="bg-white p-6 rounded-3xl border border-[#EAE6DF] shadow-xs">
+              <div className="max-w-2xl">
+                <h2 className="text-lg font-bold text-[#1D1D1F] mb-1">
+                  11주차: 소다봇에 부여할 AI 스킬을 선택하세요
+                </h2>
+                <p className="text-xs text-neutral-500 leading-relaxed">
+                  소다봇의 하드웨어 펌웨어를 수정하지 않고, 서버의 AI 규칙과 설정을 바꾸어 원하는 전문 역할을 즉시 장착할 수 있습니다.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {skills.map(skill => {
+                const isSelected = selectedSkillId === skill.id;
+                const isActive = activeSkillId === skill.id;
+
+                return (
+                  <div
+                    key={skill.id}
+                    onClick={() => {
+                      setSelectedSkillId(skill.id);
+                    }}
+                    className={`bg-white rounded-3xl p-5 border transition-all cursor-pointer relative flex flex-col justify-between hover:shadow-md ${
+                      isSelected
+                        ? 'border-blue-500 ring-2 ring-blue-500/20 shadow-sm'
+                        : 'border-[#EAE6DF] hover:border-neutral-300'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <div className={`p-3 rounded-2xl ${
+                          isSelected ? 'bg-blue-50 text-blue-600' : 'bg-neutral-100 text-neutral-700'
+                        }`}>
+                          {renderSkillIcon(skill.icon, 'w-6 h-6')}
+                          {skill.type === 'custom' && <span className="block text-[10px] mt-1 font-bold">{customSlotLabel(skill.id)}</span>}
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-600 font-semibold">
+                            v{skill.version}
+                          </span>
+                          {isActive && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
+                              <Check className="w-3 h-3" /> 장착중
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <h3 className="text-base font-bold text-[#1D1D1F] mb-1">
+                        {skill.name}
+                      </h3>
+                      <p className="text-xs text-neutral-500 leading-relaxed mb-4">
+                        {skill.description}
+                      </p>
+                    </div>
+
+                    <div className="pt-3 border-t border-neutral-100 flex items-center justify-between gap-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedSkillId(skill.id);
+                          setCurrentStep('configure');
+                        }}
+                        className="px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs font-semibold rounded-xl transition-colors cursor-pointer flex items-center gap-1"
+                      >
+                        <Sliders className="w-3 h-3 text-neutral-500" />
+                        <span>설정하기</span>
+                      </button>
+
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedSkillId(skill.id);
+                          handleActivateSkill(skill.id);
+                        }}
+                        className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center gap-1 ${
+                          isActive
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : 'bg-blue-600 hover:bg-blue-700 text-white shadow-xs'
+                        }`}
+                      >
+                        <Zap className="w-3 h-3" />
+                        <span>{isActive ? '장착됨' : '소다봇에 적용'}</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* 하단 진행 안내 버튼 */}
+            <div className="flex justify-end">
+              <button
+                onClick={() => setCurrentStep('configure')}
+                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold text-xs flex items-center gap-2 shadow-sm transition-all cursor-pointer"
+              >
+                <span>선택한 스킬 옵션 설정하러 가기</span>
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
         )}
+
+        {/* ========================================================
+            STEP 2. AI 스킬 세부 설정 화면 (템플릿별 옵션 / 직접 만들기)
+            ======================================================== */}
+        {currentStep === 'configure' && renderConfiguration()}
 
         {/* ========================================================
             STEP 3. 대화 테스트 화면 (웹 + 실물 소다봇 동일 적용)
@@ -1492,7 +1490,7 @@ export default function SodaAiSkillScreen({
                       {currentSkill.name} (V{currentSkill.version}) 실시간 테스트
                     </span>
                     <span className="text-[10px] text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full font-bold border border-emerald-200">
-                      친구설정+기억 융합 적용
+                      선택한 규칙으로 테스트
                     </span>
                   </div>
                   <div className="text-[11px] text-neutral-500">
@@ -1520,14 +1518,17 @@ export default function SodaAiSkillScreen({
                 </button>
 
                 <button
-                  onClick={() => setCurrentStep('configure')}
+                  onClick={handleCreateNewVersion}
+                  disabled={isGenerating}
                   className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-xl transition-colors flex items-center gap-1 cursor-pointer"
                 >
                   <Sliders className="w-3 h-3" />
-                  <span>옵션 재수정</span>
+                  <span>{editingRules ? '편집 닫기' : '규칙 수정'}</span>
                 </button>
               </div>
             </div>
+
+            {editingRules && <div className="rounded-3xl border-2 border-blue-200 bg-blue-50/30 p-4">{renderConfiguration()}</div>}
 
             {/* 대화 박스 & 입력창 */}
             <div className="bg-white rounded-3xl border border-[#EAE6DF] shadow-sm overflow-hidden flex flex-col h-[480px]">
@@ -1581,7 +1582,7 @@ export default function SodaAiSkillScreen({
                               className="text-[10px] text-blue-600 hover:text-blue-800 font-bold bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded-md flex items-center gap-1 transition-colors cursor-pointer"
                             >
                               <BookOpen className="w-3 h-3" />
-                              <span>이 답변을 프로젝트 기록에 저장</span>
+                              <span>기록에 저장</span>
                             </button>
                           </div>
                         )}
@@ -1607,6 +1608,7 @@ export default function SodaAiSkillScreen({
                   value={inputQuery}
                   onChange={e => setInputQuery(e.target.value)}
                   onKeyDown={e => {
+                    if (preventImeSubmit(e)) return;
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault();
                       handleSendTestMessage();
@@ -1617,6 +1619,7 @@ export default function SodaAiSkillScreen({
                 />
                 <button
                   onClick={handleSendTestMessage}
+                  aria-label="질문 보내기"
                   disabled={!inputQuery.trim() || isGenerating}
                   className="p-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white rounded-2xl transition-all cursor-pointer shadow-xs"
                 >
@@ -1624,6 +1627,16 @@ export default function SodaAiSkillScreen({
                 </button>
               </div>
             </div>
+
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <span className="text-xs text-neutral-500">{syncStatus}</span>
+              <button onClick={() => handleActivateSkill(currentSkill.id)} disabled={isGenerating} className="px-5 py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-bold">내 소다봇에 적용</button>
+            </div>
+            <details className="bg-white border border-neutral-200 rounded-2xl p-4">
+              <summary className="cursor-pointer text-sm font-bold">저장한 답변 ({testLogs.filter(l=>l.skillId===currentSkill.id).length}건)</summary>
+              <div className="space-y-3 mt-3">{testLogs.filter(l=>l.skillId===currentSkill.id).map(log=><div key={log.id} className="p-3 bg-neutral-50 rounded-xl text-xs space-y-2"><strong>V{log.version} · {log.userQuestion}</strong><p className="whitespace-pre-wrap">{log.aiResponse}</p>{log.goodPoints && <p>잘된 점: {log.goodPoints}</p>}{log.badPoints && <p>아쉬운 점: {log.badPoints}</p>}</div>)}{!testLogs.some(l=>l.skillId===currentSkill.id)&&<p className="text-xs text-neutral-500">답변 아래 ‘기록에 저장’을 눌러 남겨보세요.</p>}</div>
+            </details>
+            {currentSkill.version>1 && <details className="bg-white border border-neutral-200 rounded-2xl p-4"><summary className="cursor-pointer text-sm font-bold">수정 전후 답변 비교</summary><div className="grid md:grid-cols-2 gap-3 mt-3 text-xs"><div className="bg-neutral-50 rounded-xl p-3"><strong>처음 답변</strong><p className="whitespace-pre-wrap mt-2">{comparison.v1Response}</p></div><div className="bg-blue-50 rounded-xl p-3"><strong>같은 질문의 수정 후 답변</strong><p className="whitespace-pre-wrap mt-2">{comparison.v2Response}</p></div></div></details>}
 
             {/* 하단 스텝 전환 바 */}
             <div className="flex items-center justify-between">
@@ -1637,255 +1650,13 @@ export default function SodaAiSkillScreen({
 
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setCurrentStep('logs')}
+                  onClick={() => setCurrentStep('report')}
                   className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer"
                 >
                   <BookOpen className="w-4 h-4" />
-                  <span>활용 기록 보러가기 ({testLogs.length}건)</span>
+                  <span>보고서 만들기</span>
                 </button>
               </div>
-            </div>
-          </div>
-        )}
-
-        {/* ========================================================
-            STEP 4. 활용 기록 화면 (학생 입력 최소화 & 자동 저장)
-            ======================================================== */}
-        {currentStep === 'logs' && (
-          <div className="space-y-6">
-            <div className="bg-white p-6 rounded-3xl border border-[#EAE6DF] shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <h2 className="text-lg font-bold text-[#1D1D1F] flex items-center gap-2">
-                  <BookOpen className="w-5 h-5 text-blue-600" />
-                  프로젝트 활용 및 테스트 기록 ({testLogs.length}개)
-                </h2>
-                <p className="text-xs text-neutral-500 mt-1">
-                  소다봇과 나눈 테스트 대화에서 잘된 점과 아쉬운 점을 기록하여 보고서와 개선에 활용합니다.
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => {
-                    setLogForm({
-                      situation: '',
-                      userQuestion: '',
-                      aiResponse: '',
-                      goodPoints: '',
-                      badPoints: '',
-                      modifications: ''
-                    });
-                    setShowLogModal(true);
-                  }}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>직접 기록 추가</span>
-                </button>
-              </div>
-            </div>
-
-            {testLogs.length === 0 ? (
-              <div className="bg-white p-12 rounded-3xl border border-[#EAE6DF] text-center space-y-3">
-                <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-600 mx-auto flex items-center justify-center">
-                  <BookOpen className="w-6 h-6" />
-                </div>
-                <h3 className="text-sm font-bold text-neutral-800">아직 저장된 테스트 기록이 없습니다</h3>
-                <p className="text-xs text-neutral-400 max-w-sm mx-auto">
-                  [3. 대화 테스트] 화면에서 소다봇에게 질문한 뒤 '기록에 저장' 버튼을 누르면 자동으로 등록됩니다.
-                </p>
-                <button
-                  onClick={() => setCurrentStep('test')}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer mt-2"
-                >
-                  <Play className="w-3.5 h-3.5" />
-                  <span>테스트하러 가기</span>
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {testLogs.map(log => (
-                  <div
-                    key={log.id}
-                    className="bg-white p-5 rounded-3xl border border-[#EAE6DF] shadow-2xs space-y-4 hover:border-neutral-300 transition-all"
-                  >
-                    <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
-                      <div className="flex items-center gap-2">
-                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                          {log.skillName} (V{log.version})
-                        </span>
-                        <span className="text-xs font-bold text-[#1D1D1F]">
-                          {log.situation || '대화 테스트'}
-                        </span>
-                      </div>
-                      <span className="text-[10px] text-neutral-400 font-mono">
-                        {new Date(log.timestamp).toLocaleString('ko-KR')}
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                      <div className="space-y-1.5 bg-neutral-50 p-3.5 rounded-2xl">
-                        <div className="text-[10px] font-bold text-neutral-500">🙋 내 질문</div>
-                        <div className="font-medium text-neutral-800">{log.userQuestion}</div>
-                      </div>
-
-                      <div className="space-y-1.5 bg-blue-50/50 p-3.5 rounded-2xl border border-blue-100/60">
-                        <div className="text-[10px] font-bold text-blue-700">🤖 AI 소다봇 답변</div>
-                        <div className="font-medium text-neutral-800 whitespace-pre-wrap">{log.aiResponse}</div>
-                      </div>
-                    </div>
-
-                    {(log.goodPoints || log.badPoints || log.modifications) && (
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 text-xs">
-                        {log.goodPoints && (
-                          <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-200/60">
-                            <div className="font-bold text-emerald-800 text-[11px] mb-0.5 flex items-center gap-1">
-                              <ThumbsUp className="w-3 h-3" /> 잘된 점
-                            </div>
-                            <div className="text-neutral-700">{log.goodPoints}</div>
-                          </div>
-                        )}
-                        {log.badPoints && (
-                          <div className="p-3 bg-rose-50/60 rounded-xl border border-rose-200/60">
-                            <div className="font-bold text-rose-800 text-[11px] mb-0.5 flex items-center gap-1">
-                              <ThumbsDown className="w-3 h-3" /> 아쉬운 점
-                            </div>
-                            <div className="text-neutral-700">{log.badPoints}</div>
-                          </div>
-                        )}
-                        {log.modifications && (
-                          <div className="p-3 bg-amber-50/60 rounded-xl border border-amber-200/60">
-                            <div className="font-bold text-amber-800 text-[11px] mb-0.5 flex items-center gap-1">
-                              <Sliders className="w-3 h-3" /> 수정한 내용
-                            </div>
-                            <div className="text-neutral-700">{log.modifications}</div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* 하단 네비게이션 */}
-            <div className="flex items-center justify-between">
-              <button
-                onClick={() => setCurrentStep('test')}
-                className="px-4 py-2.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-2xl font-bold text-xs flex items-center gap-1.5 cursor-pointer"
-              >
-                <ChevronLeft className="w-4 h-4" />
-                <span>테스트로 돌아가기</span>
-              </button>
-
-              <button
-                onClick={() => setCurrentStep('improve')}
-                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold text-xs flex items-center gap-2 shadow-xs cursor-pointer"
-              >
-                <span>버전 개선 및 비교하러 가기 (V1 vs V2)</span>
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* ========================================================
-            STEP 5. 개선 및 비교 화면 (VERSION 1 vs VERSION 2)
-            ======================================================== */}
-        {currentStep === 'improve' && (
-          <div className="space-y-6">
-            <div className="bg-white p-6 rounded-3xl border border-[#EAE6DF] shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div>
-                <h2 className="text-lg font-bold text-[#1D1D1F] flex items-center gap-2">
-                  <GitCompare className="w-5 h-5 text-blue-600" />
-                  스킬 개선 및 버전 비교 (VERSION 1 vs VERSION 2)
-                </h2>
-                <p className="text-xs text-neutral-500 mt-1">
-                  설정을 수정하고 같은 상황을 다시 테스트하여, 개선 전과 후의 AI 답변 변화를 비교합니다.
-                </p>
-              </div>
-
-              <button
-                onClick={handleCreateNewVersion}
-                className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-2xl transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
-              >
-                <Sparkles className="w-4 h-4" />
-                <span>새 버전(V{currentSkill.version + 1})으로 개선하기</span>
-              </button>
-            </div>
-
-            {/* 나란히 비교 (Side-by-Side Comparison) */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* VERSION 1 (개선 전) */}
-              <div className="bg-white p-5 rounded-3xl border border-neutral-200/80 shadow-xs space-y-4">
-                <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
-                  <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-neutral-100 text-neutral-700">
-                    VERSION 1 (초기 설정)
-                  </span>
-                  <span className="text-[10px] text-neutral-400">기준 버전</span>
-                </div>
-
-                <div className="space-y-3 text-xs">
-                  <div className="p-3 bg-neutral-50 rounded-2xl">
-                    <div className="font-bold text-neutral-500 text-[10px] mb-1">초기 문제점 / 아쉬웠던 점</div>
-                    <p className="text-neutral-700 leading-relaxed">
-                      {report.painPoints || 'V1 답변을 보고 아쉬운 점을 직접 기록해주세요.'}
-                    </p>
-                  </div>
-
-                  <div className="p-3 bg-neutral-50 rounded-2xl">
-                    <div className="font-bold text-neutral-500 text-[10px] mb-1">V1 AI 답변 예시</div>
-                    <p className="text-neutral-700 leading-relaxed font-mono">
-                      {comparison.v1Response}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* VERSION 2 (개선 후) */}
-              <div className="bg-white p-5 rounded-3xl border border-blue-300 shadow-sm space-y-4 ring-1 ring-blue-500/20">
-                <div className="flex items-center justify-between border-b border-blue-50 pb-3">
-                  <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-blue-600 text-white">
-                    VERSION {currentSkill.version > 1 ? currentSkill.version : 2} (개선된 설정)
-                  </span>
-                  <span className="text-[10px] text-blue-600 font-bold">현재 적용중</span>
-                </div>
-
-                <div className="space-y-3 text-xs">
-                  <div className="p-3 bg-blue-50/50 rounded-2xl border border-blue-100">
-                    <div className="font-bold text-blue-700 text-[10px] mb-1">수정한 규칙 및 개선점</div>
-                    <p className="text-neutral-800 leading-relaxed">
-                      {report.modifications || '실제로 수정한 옵션을 기록해주세요.'}
-                    </p>
-                  </div>
-
-                  <div className="p-3 bg-blue-50/50 rounded-2xl border border-blue-100">
-                    <div className="font-bold text-blue-700 text-[10px] mb-1">V2 개선된 AI 답변 예시</div>
-                    <p className="text-neutral-800 leading-relaxed font-mono">
-                      {comparison.v2Response}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* 하단 네비게이션 */}
-            <div className="flex items-center justify-between">
-              <button
-                onClick={() => setCurrentStep('logs')}
-                className="px-4 py-2.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-2xl font-bold text-xs flex items-center gap-1.5 cursor-pointer"
-              >
-                <ChevronLeft className="w-4 h-4" />
-                <span>기록으로 돌아가기</span>
-              </button>
-
-              <button
-                onClick={() => setCurrentStep('report')}
-                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold text-xs flex items-center gap-2 shadow-xs cursor-pointer"
-              >
-                <FileText className="w-4 h-4" />
-                <span>최종 프로젝트 보고서 확인하기</span>
-              </button>
             </div>
           </div>
         )}
@@ -1894,229 +1665,12 @@ export default function SodaAiSkillScreen({
             STEP 6. 11주차 최종 프로젝트 보고서 화면
             ======================================================== */}
         {currentStep === 'report' && (
-          <div className="space-y-6">
-            <div className="bg-white p-6 rounded-3xl border border-[#EAE6DF] shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div>
-                <span className="px-2.5 py-0.5 text-[10px] font-bold bg-blue-50 text-blue-700 rounded-full border border-blue-200">
-                  11주차 프로젝트 산출물
-                </span>
-                <h2 className="text-lg font-bold text-[#1D1D1F] mt-1 flex items-center gap-2">
-                  <FileText className="w-5 h-5 text-blue-600" />
-                  SODABOT AI 스킬 프로젝트 최종 보고서
-                </h2>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleAutoGenerateReport}
-                  className="px-3 py-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 text-xs font-semibold rounded-xl transition-colors flex items-center gap-1.5 cursor-pointer"
-                >
-                  <RefreshCw className="w-3.5 h-3.5 text-neutral-500" />
-                  <span>기록 기반 자동 채우기</span>
-                </button>
-
-                <button
-                  onClick={() => window.print()}
-                  className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
-                >
-                  <Printer className="w-3.5 h-3.5" />
-                  <span>보고서 인쇄 / PDF</span>
-                </button>
-              </div>
-            </div>
-
-            {/* 보고서 10대 항목 문서 카드 */}
-            <div className="bg-white p-8 rounded-3xl border border-[#EAE6DF] shadow-sm space-y-6 select-text print:p-0 print:border-none">
-              <div className="border-b border-neutral-200 pb-4">
-                <h1 className="text-xl font-extrabold text-[#1D1D1F] mb-1">
-                  {report.title}
-                </h1>
-                <div className="flex items-center gap-3 text-xs text-neutral-500">
-                  <span>작성자: {currentUser?.displayName || '소다봇 개발자'}</span>
-                  <span>|</span>
-                  <span>작성일: {new Date(report.createdAt).toLocaleDateString('ko-KR')}</span>
-                </div>
-              </div>
-
-              {/* 10대 항목 목록 */}
-              <div className="grid grid-cols-1 gap-5 text-xs">
-                {/* 1. 내 소다봇 소개 */}
-                <div className="space-y-1.5 p-4 rounded-2xl bg-neutral-50 border border-neutral-200/60">
-                  <label className="font-bold text-neutral-800 text-xs flex items-center gap-1.5">
-                    <span className="w-5 h-5 rounded-full bg-blue-600 text-white inline-flex items-center justify-center text-[10px]">1</span>
-                    내 소다봇 소개
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={report.sodabotIntro}
-                    onChange={e => setReport(prev => ({ ...prev, sodabotIntro: e.target.value }))}
-                    className="w-full bg-white p-2.5 rounded-xl border border-neutral-200 text-xs resize-none"
-                  />
-                </div>
-
-                {/* 2. 해결하고 싶은 문제 */}
-                <div className="space-y-1.5 p-4 rounded-2xl bg-neutral-50 border border-neutral-200/60">
-                  <label className="font-bold text-neutral-800 text-xs flex items-center gap-1.5">
-                    <span className="w-5 h-5 rounded-full bg-blue-600 text-white inline-flex items-center justify-center text-[10px]">2</span>
-                    해결하고 싶은 문제
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={report.targetProblem}
-                    onChange={e => setReport(prev => ({ ...prev, targetProblem: e.target.value }))}
-                    className="w-full bg-white p-2.5 rounded-xl border border-neutral-200 text-xs resize-none"
-                  />
-                </div>
-
-                {/* 3. 선택한 AI 스킬 */}
-                <div className="space-y-1.5 p-4 rounded-2xl bg-neutral-50 border border-neutral-200/60">
-                  <label className="font-bold text-neutral-800 text-xs flex items-center gap-1.5">
-                    <span className="w-5 h-5 rounded-full bg-blue-600 text-white inline-flex items-center justify-center text-[10px]">3</span>
-                    선택한 AI 스킬
-                  </label>
-                  <input
-                    type="text"
-                    value={report.selectedSkill}
-                    onChange={e => setReport(prev => ({ ...prev, selectedSkill: e.target.value }))}
-                    className="w-full bg-white p-2.5 rounded-xl border border-neutral-200 text-xs"
-                  />
-                </div>
-
-                {/* 4. 사용 시나리오 */}
-                <div className="space-y-1.5 p-4 rounded-2xl bg-neutral-50 border border-neutral-200/60">
-                  <label className="font-bold text-neutral-800 text-xs flex items-center gap-1.5">
-                    <span className="w-5 h-5 rounded-full bg-blue-600 text-white inline-flex items-center justify-center text-[10px]">4</span>
-                    사용 시나리오
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={report.usageScenario}
-                    onChange={e => setReport(prev => ({ ...prev, usageScenario: e.target.value }))}
-                    className="w-full bg-white p-2.5 rounded-xl border border-neutral-200 text-xs resize-none"
-                  />
-                </div>
-
-                {/* 5. 실제 사용 기록 */}
-                <div className="space-y-1.5 p-4 rounded-2xl bg-neutral-50 border border-neutral-200/60">
-                  <label className="font-bold text-neutral-800 text-xs flex items-center gap-1.5 mb-2">
-                    <span className="w-5 h-5 rounded-full bg-blue-600 text-white inline-flex items-center justify-center text-[10px]">5</span>
-                    실제 사용 및 대화 기록
-                  </label>
-                  <div className="space-y-2">
-                    {(report.actualLogs || []).map((log, idx) => (
-                      <div key={idx} className="p-3 bg-white rounded-xl border border-neutral-200 text-xs space-y-1">
-                        <div className="font-bold text-blue-700">Q: {log.userQuestion}</div>
-                        <div className="text-neutral-700">A: {log.aiResponse}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* 6. 잘된 점 & 7. 문제점 */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-1.5 p-4 rounded-2xl bg-emerald-50/50 border border-emerald-200/60">
-                    <label className="font-bold text-emerald-900 text-xs flex items-center gap-1.5">
-                      <span className="w-5 h-5 rounded-full bg-emerald-600 text-white inline-flex items-center justify-center text-[10px]">6</span>
-                      잘된 점
-                    </label>
-                    <textarea
-                      rows={3}
-                      value={report.goodPoints}
-                      onChange={e => setReport(prev => ({ ...prev, goodPoints: e.target.value }))}
-                      className="w-full bg-white p-2.5 rounded-xl border border-emerald-200 text-xs resize-none"
-                    />
-                  </div>
-
-                  <div className="space-y-1.5 p-4 rounded-2xl bg-rose-50/50 border border-rose-200/60">
-                    <label className="font-bold text-rose-900 text-xs flex items-center gap-1.5">
-                      <span className="w-5 h-5 rounded-full bg-rose-600 text-white inline-flex items-center justify-center text-[10px]">7</span>
-                      문제점 / 아쉬웠던 점
-                    </label>
-                    <textarea
-                      rows={3}
-                      value={report.painPoints}
-                      onChange={e => setReport(prev => ({ ...prev, painPoints: e.target.value }))}
-                      className="w-full bg-white p-2.5 rounded-xl border border-rose-200 text-xs resize-none"
-                    />
-                  </div>
-                </div>
-
-                {/* 8. 수정한 내용 */}
-                <div className="space-y-1.5 p-4 rounded-2xl bg-neutral-50 border border-neutral-200/60">
-                  <label className="font-bold text-neutral-800 text-xs flex items-center gap-1.5">
-                    <span className="w-5 h-5 rounded-full bg-blue-600 text-white inline-flex items-center justify-center text-[10px]">8</span>
-                    수정한 내용 (프롬프트/옵션 변경점)
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={report.modifications}
-                    onChange={e => setReport(prev => ({ ...prev, modifications: e.target.value }))}
-                    className="w-full bg-white p-2.5 rounded-xl border border-neutral-200 text-xs resize-none"
-                  />
-                </div>
-
-                {/* 9. 개선 전 / 개선 후 */}
-                <div className="space-y-1.5 p-4 rounded-2xl bg-neutral-50 border border-neutral-200/60">
-                  <label className="font-bold text-neutral-800 text-xs flex items-center gap-1.5 mb-2">
-                    <span className="w-5 h-5 rounded-full bg-blue-600 text-white inline-flex items-center justify-center text-[10px]">9</span>
-                    개선 전 (V1) vs 개선 후 (V2) 비교
-                  </label>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="p-3 bg-white rounded-xl border border-neutral-200 space-y-1">
-                      <div className="font-bold text-neutral-500">개선 전 (V1)</div>
-                      <div className="text-neutral-700 text-[11px]">{report.comparisonV1V2?.v1Response}</div>
-                    </div>
-                    <div className="p-3 bg-white rounded-xl border border-blue-200 space-y-1">
-                      <div className="font-bold text-blue-700">개선 후 (V2)</div>
-                      <div className="text-neutral-700 text-[11px]">{report.comparisonV1V2?.v2Response}</div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 10. 앞으로 추가하고 싶은 기능 */}
-                <div className="space-y-1.5 p-4 rounded-2xl bg-neutral-50 border border-neutral-200/60">
-                  <label className="font-bold text-neutral-800 text-xs flex items-center gap-1.5">
-                    <span className="w-5 h-5 rounded-full bg-blue-600 text-white inline-flex items-center justify-center text-[10px]">10</span>
-                    앞으로 추가하고 싶은 기능 및 소감
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={report.futureFeatures}
-                    onChange={e => setReport(prev => ({ ...prev, futureFeatures: e.target.value }))}
-                    className="w-full bg-white p-2.5 rounded-xl border border-neutral-200 text-xs resize-none"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* 하단 저장 안내 바 */}
-            <div className="flex items-center justify-between">
-              <button
-                onClick={() => setCurrentStep('improve')}
-                className="px-4 py-2.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-700 rounded-2xl font-bold text-xs flex items-center gap-1.5 cursor-pointer"
-              >
-                <ChevronLeft className="w-4 h-4" />
-                <span>개선 비교로 돌아가기</span>
-              </button>
-
-              <button
-                onClick={async () => {
-                  try {
-                    await persist({activeSkillId,skills,testLogs,versionSnapshots,report});
-                    setSyncStatus('서버 저장 완료');
-                    triggerToast('보고서를 내 계정에 저장했습니다.');
-                  } catch {
-                    setSyncStatus('서버 저장 실패 — 이 기기에만 보관 중');
-                    triggerToast('서버에 저장하지 못했습니다. 연결을 확인해주세요.');
-                  }
-                }}
-                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold text-xs flex items-center gap-2 shadow-xs cursor-pointer"
-              >
-                <Save className="w-4 h-4" />
-                <span>보고서 최종 저장</span>
-              </button>
-            </div>
-          </div>
+          <SodabotWorksheetReport report={report} skill={currentSkill} studentName={currentUser?.displayName || ''} robotName={currentUser?.friendSettings?.persona?.robotName || '소다봇'} onChange={setReport} status={syncStatus}
+            onFill={handleAutoGenerateReport}
+            onSave={async () => {
+              try { await persist({activeSkillId,skills,testLogs,versionSnapshots,report});setSyncStatus('서버 저장 완료');triggerToast('보고서를 내 계정에 저장했습니다.'); }
+              catch {setSyncStatus('서버 저장 실패 — 이 기기에만 보관 중');triggerToast('서버에 저장하지 못했습니다. 연결을 확인해주세요.');}
+            }}/>
         )}
 
       </div>

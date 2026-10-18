@@ -263,7 +263,14 @@ export interface AiSkillVersionSnapshot {
   createdAt: string;
 }
 
+export interface SodabotWorksheet {
+  studentName: string; robotName: string; date: string; learned: boolean[];
+  reflection: string; photo: string; intro: string; audience: string; purpose: string;
+  rules: string[]; question: string; before: string; change: string; after: string;
+  good: string; difficult: string; next: string;
+}
 export interface AiSkillProjectReport {
+  worksheet?: SodabotWorksheet;
   id: string;
   userId: string;
   title: string;

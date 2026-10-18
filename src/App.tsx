@@ -1,3 +1,4 @@
+import { preventImeSubmit } from './utils/chatInput';
 import { normalizeFriendSettings, friendToneInstruction } from './utils/friendSettings';
 import { sodabotTransport } from './utils/sodabotTransport';
 import { renderTextToBitmapPayload } from './utils/textBitmapRenderer';
@@ -1557,7 +1558,7 @@ export default function App() {
 
               {/* Chat Input Footer */}
               <footer className="p-3 bg-white border-t border-slate-200/80 pb-20">
-                <form onSubmit={handleSendMessage} className="relative flex items-center">
+                <form onSubmit={handleSendMessage} onKeyDown={preventImeSubmit} className="relative flex items-center">
                   <input
                     type="text"
                     required
@@ -2074,7 +2075,7 @@ export default function App() {
           </div>
 
           <div className="p-3 bg-white border-t border-[#EAE6DF]">
-            <form onSubmit={handleSendMessage} className="relative flex items-center">
+            <form onSubmit={handleSendMessage} onKeyDown={preventImeSubmit} className="relative flex items-center">
               <input
                 type="text"
                 disabled={sending}
@@ -3309,7 +3310,7 @@ export default function App() {
               <div className="p-4 border-t border-[#EAE6DF] bg-white z-10">
                 <div className="max-w-3xl mx-auto space-y-2">
 
-                  <form onSubmit={handleSendMessage} className="relative flex items-center">
+                  <form onSubmit={handleSendMessage} onKeyDown={preventImeSubmit} className="relative flex items-center">
                     <input
                       id="main-chat-input"
                       type="text"

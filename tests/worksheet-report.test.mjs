@@ -1,0 +1,8 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {readFileSync} from 'node:fs';import {transform} from 'esbuild';
+const {code}=await transform(readFileSync('src/utils/worksheetReport.ts','utf8'),{loader:'ts',format:'esm'});
+const {worksheetDefaults,summary}=await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);
+const skill={id:'custom',type:'custom',customInputs:{forWhom:'친구',targetProblem:'어려운 코드',mustDo:'힌트',mustNotDo:'정답',responseStyle:'존댓말'}};
+const report={actualLogs:[{skillId:'custom',version:1,userQuestion:'Q',aiResponse:'first'},{skillId:'other',version:2,userQuestion:'Q',aiResponse:'foreign'},{skillId:'custom',version:2,userQuestion:'other',aiResponse:'wrong'},{skillId:'custom',version:2,userQuestion:'Q',aiResponse:'second'}],modifications:'힌트로 변경',goodPoints:'아직 작성하지 않았습니다.',painPoints:'설명이 길어요',futureFeatures:''};
+test('worksheet uses only the same skill and question for its comparison',()=>{const w=worksheetDefaults(report,skill,'김소다','루미');assert.equal(w.before,'first');assert.equal(w.after,'second');assert.equal(w.studentName,'김소다');assert.equal(w.rules[0],'힌트');assert.equal(w.good,'');assert.equal(w.difficult,'설명이 길어요');assert.ok(w.learned.every(v=>v===false));});
+test('long source replies keep original data and get a bounded print summary',()=>{const text='가'.repeat(500);assert.equal(summary(text).length,240);assert.ok(summary(text).endsWith('…'));assert.equal(text.length,500)});
+test('unmatched comparison stays blank and photo is initially absent',()=>{const w=worksheetDefaults({...report,actualLogs:[]},skill,'','');assert.equal(w.before,'');assert.equal(w.after,'');assert.equal(w.photo,'')});

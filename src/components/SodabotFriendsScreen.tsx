@@ -1,3 +1,4 @@
+import { preventImeSubmit } from '../utils/chatInput';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Users,
@@ -905,7 +906,7 @@ export const SodabotFriendsScreen: React.FC<SodabotFriendsScreenProps> = ({
 
           {/* Bottom Input Area */}
           <footer className="p-4 bg-white border-t border-[#EAE6DF]">
-            <form onSubmit={handleSendMessage} className="max-w-2xl mx-auto flex items-center gap-2">
+            <form onSubmit={handleSendMessage} onKeyDown={preventImeSubmit} className="max-w-2xl mx-auto flex items-center gap-2">
               <input
                 type="text"
                 value={inputMessage}
@@ -1089,7 +1090,7 @@ export const SodabotFriendsScreen: React.FC<SodabotFriendsScreenProps> = ({
 
           {/* Bottom Group Input Area */}
           <footer className="p-4 bg-white border-t border-[#EAE6DF]">
-            <form onSubmit={handleSendGroupMessage} className="max-w-2xl mx-auto flex items-center gap-2">
+            <form onSubmit={handleSendGroupMessage} onKeyDown={preventImeSubmit} className="max-w-2xl mx-auto flex items-center gap-2">
               <input
                 type="text"
                 value={inputMessage}

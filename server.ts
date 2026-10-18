@@ -1,4 +1,4 @@
-import { compileAiSkillPrompt } from './src/utils/aiSkillUtils';
+import { compileAiSkillPrompt, normalizeSkillSlots } from './src/utils/aiSkillUtils';
 import { reserveGptRoute, withProviderFallback } from './src/utils/aiRouting';
 import { createRequestCapacity } from './src/utils/requestCapacity';
 import { fetchHardwareSpeech } from './src/utils/hardwareTts';
@@ -88,6 +88,7 @@ interface User {
     memories?: any[];
   };
   aiSkillState?: {
+    appliedSkill?: any;
     activeSkillId?: string;
     skills?: any[];
     testLogs?: any[];
@@ -747,6 +748,12 @@ function readDB(): DBStructure {
   }
   if (db.users && Array.isArray(db.users)) {
     db.users.forEach(u => {
+      if (u.aiSkillState) {
+        const slots = normalizeSkillSlots(u.aiSkillState.skills || []);
+        if (JSON.stringify(slots) !== JSON.stringify(u.aiSkillState.skills)) { u.aiSkillState.skills = slots; changed = true; }
+        if (!slots.some(s => s.id === u.aiSkillState!.activeSkillId)) { u.aiSkillState.activeSkillId = 'skill-english-buddy'; changed = true; }
+      }
+
       if (!u.personalApiKey) {
         u.personalApiKey = "sk-soda-" + crypto.randomBytes(16).toString("hex");
         changed = true;
@@ -827,6 +834,14 @@ function buildSharedSystemPrompt(user: User, isHardwareVoice: boolean = false): 
   const {persona, profile, memories} = normalizeFriendSettings(user.friendSettings, user.displayName);
   const botName = persona.name;
   const studentName = profile.userName || '친구';
+  const activeConfig = user.aiSkillState?.appliedSkill || user.aiSkillState?.skills?.find(s => s.id === user.aiSkillState?.activeSkillId);
+  const customSkill = activeConfig?.type === 'custom' ? activeConfig : undefined;
+  if (customSkill) {
+    let customPrompt = compileSkillPromptForServer(customSkill);
+    if (memories.length) customPrompt += `\n[사용자가 확인한 기억: 해당 대상과 관련된 경우에만 활용]\n${memories.map(m => m.text).join('\n')}`;
+    if (isHardwareVoice) customPrompt += '\n음성으로 자연스럽게 읽을 수 있는 짧은 문장으로 답하세요. 특수문자와 이모지는 쓰지 마세요.';
+    return customPrompt;
+  }
   let prompt = `당신은 사용자 '${studentName}'의 AI 로봇 '${botName}'입니다.
 [사용자 정보]
 - 이름과 부르는 이름: ${studentName}
@@ -849,7 +864,7 @@ function buildSharedSystemPrompt(user: User, isHardwareVoice: boolean = false): 
   // 10~11주차 AI 스킬 주입
   const aiSkillState = user.aiSkillState;
   if (aiSkillState && aiSkillState.activeSkillId && aiSkillState.skills) {
-    const activeSkill = aiSkillState.skills.find((s: any) => s.id === aiSkillState.activeSkillId);
+    const activeSkill = aiSkillState.appliedSkill || aiSkillState.skills.find((s: any) => s.id === aiSkillState.activeSkillId);
     if (activeSkill) {
       const skillPrompt = compileSkillPromptForServer(activeSkill);
       if (skillPrompt) {
@@ -1055,7 +1070,7 @@ app.get('/api/user/ai-skills', (req, res) => {
   });
 });
 
-app.post('/api/user/ai-skills', express.json(), (req, res) => {
+app.post('/api/user/ai-skills', express.json({limit:'4mb'}), (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
 
@@ -1068,14 +1083,20 @@ app.post('/api/user/ai-skills', express.json(), (req, res) => {
   const { activeSkillId, skills, testLogs, versionSnapshots, report } = req.body;
   if ((skills !== undefined && (!Array.isArray(skills) || skills.length > 50 || skills.some(s => !s || typeof s.id !== "string" || typeof s.name !== "string" || !["english","coding","study","daily","presentation","custom"].includes(s.type)))) || (testLogs !== undefined && !Array.isArray(testLogs)) || (versionSnapshots !== undefined && !Array.isArray(versionSnapshots))) return res.status(400).json({error:"스킬 저장 형식이 올바르지 않습니다."});
   if (activeSkillId && !(skills || user.aiSkillState?.skills || []).some(s => s.id === activeSkillId)) return res.status(400).json({error:"활성 스킬이 목록에 없습니다."});
+  const previousApplied = user.aiSkillState?.appliedSkill || user.aiSkillState?.skills?.find(s => s.id === user.aiSkillState?.activeSkillId);
+  if (req.body.applySkillId && !(skills || user.aiSkillState?.skills || []).some(s => s.id === req.body.applySkillId)) return res.status(400).json({error:"적용할 스킬이 없습니다."});
   user.aiSkillState = {
-    activeSkillId: activeSkillId || user.aiSkillState?.activeSkillId || 'skill-english-buddy',
+    appliedSkill: previousApplied ? JSON.parse(JSON.stringify(previousApplied)) : undefined,
+    activeSkillId: req.body.applySkillId || user.aiSkillState?.activeSkillId || activeSkillId || 'skill-english-buddy',
     skills: skills || user.aiSkillState?.skills || [],
     testLogs: testLogs || user.aiSkillState?.testLogs || [],
     versionSnapshots: versionSnapshots || user.aiSkillState?.versionSnapshots || [],
     report: report !== undefined ? report : (user.aiSkillState?.report || null)
   };
 
+  user.aiSkillState.skills = normalizeSkillSlots(user.aiSkillState.skills);
+  if (!user.aiSkillState.skills.some(s => s.id === user.aiSkillState!.activeSkillId)) user.aiSkillState.activeSkillId = 'skill-english-buddy';
+  if (req.body.applySkillId || !user.aiSkillState.appliedSkill) user.aiSkillState.appliedSkill = JSON.parse(JSON.stringify(user.aiSkillState.skills.find(s => s.id === user.aiSkillState!.activeSkillId)));
   writeDB(db);
   res.json({ success: true, aiSkillState: user.aiSkillState });
 });
@@ -1096,6 +1117,7 @@ app.post('/api/user/ai-skills/activate', express.json(), (req, res) => {
     user.aiSkillState = { activeSkillId: skillId, skills: [], testLogs: [], versionSnapshots: [] };
   } else {
     user.aiSkillState.activeSkillId = skillId;
+    user.aiSkillState.appliedSkill = JSON.parse(JSON.stringify(user.aiSkillState.skills.find(s => s.id === skillId)));
   }
 
   writeDB(db);
@@ -1208,13 +1230,8 @@ app.post('/api/ai-skills/test-chat', aiCapacity, express.json(), async (req, res
   if (!user) return res.status(401).json({error:'로그인 또는 유효한 SODA API 키가 필요합니다.'});
 
   // 통합 시스템 프롬프트 구성 (사용자 프로필 + 친구설정 + 기억 + 현재 선택된 AI 스킬 규칙)
-  let systemPrompt = buildSharedSystemPrompt({...user,aiSkillState:undefined}, false);
-  if (skill) {
-    const customSkillPrompt = compileSkillPromptForServer(skill);
-    if (customSkillPrompt) {
-      systemPrompt += `\n\n[현재 테스트 중인 AI 스킬 최우선 규칙]:\n${customSkillPrompt}`;
-    }
-  }
+  const testState = skill ? {activeSkillId:skill.id,skills:[skill],testLogs:[],versionSnapshots:[]} : undefined;
+  const systemPrompt = buildSharedSystemPrompt({...user,aiSkillState:testState}, false);
 
   const conversationHistory = Array.isArray(history)
     ? history.slice(-6).map((m: any) => ({
@@ -1229,7 +1246,7 @@ app.post('/api/ai-skills/test-chat', aiCapacity, express.json(), async (req, res
   }catch(error){res.status(502).json({error:"AI 테스트 연결에 실패했습니다. 이 응답은 테스트 기록에 저장되지 않습니다."});}
 });
 
-app.post('/api/user/ai-skills/report', express.json(), (req, res) => {
+app.post('/api/user/ai-skills/report', express.json({limit:'4mb'}), (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
 

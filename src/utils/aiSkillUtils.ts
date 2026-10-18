@@ -60,47 +60,9 @@ export const DEFAULT_AI_SKILL_TEMPLATES: AiSkillConfig[] = [
     }
   },
   {
-    id: 'skill-daily-friend',
-    type: 'daily',
-    name: '생활친구 (Daily Companion)',
-    description: '오늘의 안부와 일정을 챙겨주고 따뜻하게 공감해주는 안전한 일상 반려 로봇',
-    icon: 'HeartHandshake',
-    version: 1,
-    isActive: false,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    dailyOptions: {
-      checkGreeting: true,
-      checkSchedule: true,
-      memoryAssist: true,
-      familyMessageMode: false,
-      shortReply: true,
-      easyExpression: true,
-      safetyStrict: true
-    }
-  },
-  {
-    id: 'skill-presentation-coach',
-    type: 'presentation',
-    name: '발표연습 (Presentation Coach)',
-    description: '발표 원고와 질의응답을 함께 연습하고 자신감을 북돋아주는 스피치 코치',
-    icon: 'Mic',
-    version: 1,
-    isActive: false,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    presentationOptions: {
-      topic: '내가 만든 소다봇 프로젝트 소개',
-      targetAudience: '반 친구들과 선생님',
-      focusAreas: ['자신감 있는 어조', '구조적 설명', '예상 질문 답변'],
-      mockQa: true,
-      timeManagementTips: true
-    }
-  },
-  {
     id: 'skill-custom-builder',
     type: 'custom',
-    name: '직접 만들기 (Custom AI Skill)',
+    name: '직접 만들기 1',
     description: '학생이 설정한 목적과 규칙에 따라 세상에 하나뿐인 나만의 AI 스킬 생성',
     icon: 'Sparkles',
     version: 1,
@@ -118,6 +80,25 @@ export const DEFAULT_AI_SKILL_TEMPLATES: AiSkillConfig[] = [
     }
   }
 ];
+
+for (const slot of [2,3]) {
+  const template = JSON.parse(JSON.stringify(DEFAULT_AI_SKILL_TEMPLATES.find(s => s.id === 'skill-custom-builder')!));
+  template.id = `skill-custom-builder-${slot}`;
+  template.name = `직접 만들기 ${slot}`;
+  template.customInputs.skillName = `나만의 AI 스킬 ${slot}`;
+  DEFAULT_AI_SKILL_TEMPLATES.push(template);
+}
+
+// Stable slot IDs preserve the old custom skill and its linked test records.
+export function normalizeSkillSlots(saved: AiSkillConfig[] = []): AiSkillConfig[] {
+  return DEFAULT_AI_SKILL_TEMPLATES.map(template => {
+    const existing = saved.find(s => s.id === template.id);
+    return JSON.parse(JSON.stringify(existing || template));
+  });
+}
+export function customSlotLabel(id: string): string {
+  return id === 'skill-custom-builder' ? '직접 만들기 1' : id === 'skill-custom-builder-2' ? '직접 만들기 2' : id === 'skill-custom-builder-3' ? '직접 만들기 3' : '';
+}
 
 export function compileAiSkillPrompt(skill: AiSkillConfig): string {
   let instructions: string[] = [];
@@ -306,6 +287,12 @@ export function compileAiSkillPrompt(skill: AiSkillConfig): string {
       };
 
       instructions.push(`[AI 스킬 활성화: ${inputs.skillName || '나만의 맞춤 AI 스킬'}]`);
+      instructions.push('당신의 현재 역할과 이름은 이 스킬에 지정된 것입니다. 기존 친구의 역할·이름·말투보다 아래 스킬 대상과 규칙을 우선하세요.');
+      instructions.push('계정 소유자와 서비스 대상을 동일인으로 단정하지 마세요. 사용자가 말하지 않은 나이·학교·직업·가족 이름을 추측하지 마세요. 현재 질문에 구체적으로 답하고 비슷한 안부 질문만 반복하지 마세요.');
+      if (/노인|어르신|고령|시니어/.test(inputs.forWhom || '')) {
+        instructions.push('대화 상대는 어르신을 위한 서비스의 사용자입니다. 이름을 확인하기 전에는 어르신이라고 정중하게 부르세요. 손자 같은 말투는 따뜻한 존댓말이며 반말이나 학생 취급을 뜻하지 않습니다. 공부·학교·숙제를 임의로 가정하지 마세요.');
+      }
+      instructions.push('건강·복약 기능을 요청받더라도 실제 알림 예약이나 자동 감시가 연결돼 있지 않으면 가능하다고 약속하지 마세요. 처방·진단·복용량 변경을 정하지 말고 사용자나 의료진이 확인한 일정만 참고하세요. 가족 정보는 알려준 사실만 사용하세요.');
       instructions.push(`1. 스킬 대상: ${inputs.forWhom || '사용자'}`);
       instructions.push(`2. 해결할 문제 및 목표: ${inputs.targetProblem || '유익하고 재미있는 대화 제공'}`);
       if (inputs.mustDo) {
@@ -343,7 +330,7 @@ export function generateInitialReport(
   return {
     id: `report-${Date.now()}`,
     userId: '',
-    title: `11주차 SODABOT AI 스킬 프로젝트 보고서 - ${activeSkill.name}`,
+    title: `SODABOT AI 스킬 프로젝트 보고서 - ${activeSkill.name}`,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     sodabotIntro: `나의 소다봇 '${botName}'(은)는 학생 ${userDisplayName}의 반려 로봇으로, 11주차 프로젝트를 통해 '${activeSkill.name}' 답변 규칙을 설정하는 프로젝트를 진행합니다.`,
@@ -452,7 +439,7 @@ export function generateSkillSimulatedReply(
 
 // Remove conclusions inserted by the old template, while preserving student writing.
 export function sanitizeLegacySkillReport(report: AiSkillProjectReport): AiSkillProjectReport {
-  const next = {...report, comparisonV1V2:{...report.comparisonV1V2}};
+  const next = {...report, title:report.title.replace(/^\s*(?:10\s*[~～〜–-]\s*11|11)주차\s*/, ""), comparisonV1V2:{...report.comparisonV1V2}};
   const defaults = ['질문의 의도를 잘 파악하고 친근한 어조로 즉시 답변을 제공하여 만족스러웠습니다.','초기 버전(V1)에서는 설명이 다소 길거나 원하는 방식(힌트 위주 등)과 조금 차이가 있었습니다.','AI 스킬 옵션 조정을 통해 답변 길이와 규칙을 세분화하고, 핵심 피드백을 추가하도록 설정을 개선했습니다.','규칙을 세밀하게 조정한 후 답변의 정확도와 친밀도가 대폭 향상되었습니다.'];
   for (const key of ['goodPoints','painPoints','modifications'] as const) if(defaults.includes(next[key])) next[key]='아직 작성하지 않았습니다. 실제 테스트를 보고 직접 작성해주세요.';
   if(defaults.includes(next.comparisonV1V2.improvements))next.comparisonV1V2.improvements='실제 수정 전후 답변을 보고 직접 평가해주세요.';
