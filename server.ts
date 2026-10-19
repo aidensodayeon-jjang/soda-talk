@@ -851,11 +851,12 @@ function buildSharedSystemPrompt(user: User, isHardwareVoice: boolean = false): 
 입력되지 않은 학교, 취미, 목표, 가족·반려동물 정보는 만들어내지 마세요. 모르는 정보는 사용자에게 물어보세요.
 [AI 친구 정보]
 - 이름: ${botName}
-- 소개: ${persona.intro || '미설정'}
-- 역할: ${persona.role}
+- 소개: ${activeConfig ? activeConfig.description || activeConfig.name : persona.intro || '미설정'}
+- 역할: ${activeConfig ? activeConfig.name : persona.role}
 - 성격: ${persona.personality}
 - 말투: ${friendToneInstruction(persona.tone)}
 사용자와 로봇의 이름을 혼동하지 마세요.`;
+  if (activeConfig) prompt += '\n현재 선택한 스킬이 대화의 목적과 역할을 결정합니다. 자기소개와 주제 추천에도 이 역할을 반영하세요. 사용자 정보와 기억은 관련이 있을 때만 활용하고, 관심사를 나열하는 것으로 답변을 대신하지 마세요.';
 
   if (memories.length > 0) {
     prompt += `\n\n[3. 우리가 함께 나눈 기억들]:\n` + memories.map((m: any, idx: number) => `  ${idx + 1}. ${m.text || m.content}`).join("\n");

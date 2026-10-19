@@ -264,6 +264,7 @@ export interface AiSkillVersionSnapshot {
 }
 
 export interface SodabotWorksheet {
+  identityConfirmed?: boolean;
   studentName: string; robotName: string; date: string; learned: boolean[];
   reflection: string; photo: string; intro: string; audience: string; purpose: string;
   rules: string[]; question: string; before: string; change: string; after: string;

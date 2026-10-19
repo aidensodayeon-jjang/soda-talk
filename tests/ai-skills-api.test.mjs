@@ -18,6 +18,32 @@ try{
  assert.equal((await api('a','/api/user/ai-skills',{skills:'invalid'})).status,400);
  let response=await api('a','/api/ai-skills/test-chat',{text:'LED 켜는 코드',skill,history:[]});assert.equal(response.status,200);assert.equal((await response.json()).simulated,false);assert.match(captured.messages[0].content,/힌트/);assert.equal(captured.messages.filter(m=>m.role==='user').length,1);
  response=await api('a','/api/lmstudio/stream',{chatId:'room-a',messages:[{role:'system',content:'outdated client prompt'},{role:'user',content:'LED 켜는 코드'}]});assert.match(await response.text(),/\[DONE\]/);assert.match(captured.messages[0].content,/힌트/);assert.doesNotMatch(captured.messages[0].content,/outdated client prompt/);
+ const checkCodingPrompt=()=>{
+  const prompt=captured.messages[0].content;
+  assert.match(prompt,/- 역할: 테스트 코딩친구/);
+  assert.match(prompt,/작은 코딩 활동/);
+  assert.match(prompt,/무지개는 왜 생겨/);
+  assert.match(prompt,/코딩 연결을 원하지 않으면 강요하지/);
+  assert.match(prompt,/근거 없이 특정 핀이나 코드를 원인으로 단정하지/);
+ };
+ response=await api('a','/api/ai-skills/test-chat',{text:'무지개는 왜생겨',skill,history:[]});assert.equal(response.status,200);await response.json();checkCodingPrompt();assert.equal(captured.messages.at(-1).content,'무지개는 왜생겨');
+ response=await api('a','/api/lmstudio/stream',{chatId:'room-a',messages:[{role:'user',content:'무지개는 왜생겨'}]});await response.text();checkCodingPrompt();
+
+ const study={id:'skill-study-helper',type:'study',name:'공부도우미',version:1,studyOptions:{subject:'science',method:'socratic',quizMode:true,provideSummaryNotes:true,cheerLevel:'high'}};
+ const studyPrompts={};
+ for(const method of ['socratic','analogy','summary']) {
+  response=await api('a','/api/ai-skills/test-chat',{text:'무지개는 왜 생겨?',skill:{...study,studyOptions:{...study.studyOptions,method}},history:[]});assert.equal(response.status,200);await response.json();
+  studyPrompts[method]=captured.messages[0].content;
+ }
+ assert.match(studyPrompts.socratic,/구체적인 질문 하나만 한 뒤 응답을 기다리/);
+ assert.match(studyPrompts.socratic,/별도 질문이나 정답을 덧붙이지/);
+ assert.match(studyPrompts.socratic,/정답을 드러내는 핵심 요약을 붙이지/);
+ assert.doesNotMatch(studyPrompts.socratic,/설명을 마친 뒤 방금 배운/);
+ assert.match(studyPrompts.analogy,/비유 하나로 설명을 시작/);
+ assert.match(studyPrompts.analogy,/실제 개념의 무엇에 해당하는지/);
+ assert.doesNotMatch(studyPrompts.analogy,/처음부터 완성된 정답이나 전체 원리를 설명하지/);
+ assert.match(studyPrompts.summary,/1-2-3 목록/);
+ assert.notEqual(studyPrompts.socratic,studyPrompts.analogy);
 
  const state=(await (await api('a','/api/user/ai-skills')).json()).aiSkillState;
  assert.equal(state.skills.filter(s=>s.type==='custom').length,3);
@@ -42,6 +68,23 @@ try{
  const elder={id:'skill-custom-builder',type:'custom',name:'독거노인봇',version:1,customInputs:{skillName:'독거노인봇',forWhom:'혼자 사시는 노인',responseStyle:'손자 같은 말투',mustDo:'밝게 안부 묻기'}};
  response=await api('a','/api/ai-skills/test-chat',{text:'피곤해',skill:elder,history:[]});assert.equal(response.status,200);await response.json();
  assert.match(captured.messages[0].content,/따뜻한 존댓말/);assert.match(captured.messages[0].content,/독거노인봇/);assert.doesNotMatch(captured.messages[0].content,/AI 친구 정보|이름과 부르는 이름|공부친구/);
+
+ // A selected English skill must override the ordinary friend persona in both paths.
+ const english={id:'skill-english-buddy',type:'english',name:'영어친구 (English Buddy)',version:1,englishOptions:{level:'beginner',ratio:50,koreanHint:true,grammarCorrection:true,length:'short'}};
+ const checkEnglishPrompt=()=>{
+  const prompt=captured.messages[0].content;
+  assert.match(prompt,/- 역할: 영어친구/);
+  assert.match(prompt,/첫 질문을 바로/);
+  assert.match(prompt,/실제 영어 표현을 포함/);
+  assert.match(prompt,/What did you eat today/);
+  assert.match(prompt,/마침표 생략을 영어 문법 오류로 취급하지/);
+ };
+ response=await api('a','/api/ai-skills/test-chat',{text:'무슨 이야기를 할까?',skill:english,history:[]});assert.equal(response.status,200);await response.json();checkEnglishPrompt();
+ response=await api('a','/api/ai-skills/test-chat',{text:'넌 어떤 친구야?',skill:english,history:[{sender:'user',text:'무슨 이야기를 할까?'},{sender:'assistant',text:'What did you eat today?'}]});await response.json();checkEnglishPrompt();assert.equal(captured.messages[2].content,'What did you eat today?');
+ const englishState=(await (await api('a','/api/user/ai-skills')).json()).aiSkillState;
+ englishState.skills=englishState.skills.map(s=>s.id===english.id?english:s);
+ assert.equal((await api('a','/api/user/ai-skills',{...englishState,applySkillId:english.id})).status,200);
+ response=await api('a','/api/lmstudio/stream',{chatId:'room-a',messages:[{role:'user',content:'넌 어떤 친구야?'}]});await response.text();checkEnglishPrompt();
 
  const worksheet={studentName:'김소다',robotName:'루미',date:'2026-10-18',learned:[true,false,true,false],reflection:'LCD 실습',photo:'data:image/jpeg;base64,'+'A'.repeat(180000),intro:'내 친구',audience:'친구',purpose:'공부',rules:['하나','둘','셋'],question:'Q',before:'A',change:'규칙 변경',after:'B',good:'좋아요',difficult:'어려워요',next:'다음 목표'};
  const saved=(await (await api('a','/api/user/ai-skills')).json()).aiSkillState;
