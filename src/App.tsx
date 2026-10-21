@@ -84,7 +84,7 @@ const SHOW_SODABOT_VOICE_PLAYBACK = false;
 
 export default function App() {
   const [token, setToken] = useState<string | null>(localStorage.getItem("authSessionId"));
-  const [user, setUser] = useState<{ id: string; username: string; displayName: string; role?: string; canAccessChat?: boolean; personalApiKey?: string; friendSettings?: any } | null>(null);
+  const [user, setUser] = useState<{ id: string; username: string; displayName: string; role?: string; canAccessChat?: boolean; personalApiKey?: string; friendSettings?: any; memberType?: "student" | "external"; campus?: string } | null>(null);
   const [settingsVersion, setSettingsVersion] = useState<number>(0);
 
   // Helper for natural Korean postposition particles
@@ -2150,6 +2150,11 @@ export default function App() {
                                 {isUserAdmin && (
                                   <span className="text-[9px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">관리자</span>
                                 )}
+                                {!isUserAdmin && (u.memberType === "external" ? (
+                                  <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">외부인{u.campus ? ` · ${u.campus}` : ""}</span>
+                                ) : (
+                                  <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">재원생</span>
+                                ))}
                               </div>
                               <div className="font-mono text-[11px] text-[#86868B]">@{u.username}</div>
                               <div className="font-mono text-[10px] text-[#5C5B57] mt-1 pt-1 border-t border-[#EAE6DF] w-fit">Key: {u.personalApiKey || "발급 안됨"}</div>

@@ -17,6 +17,7 @@ import wavefilePkg from "wavefile";
 const { WaveFile } = wavefilePkg;
 import { pipeline, env } from "@xenova/transformers";
 import mysql from "mysql2/promise";
+import nodemailer from "nodemailer";
 
 env.allowLocalModels = false;
 
@@ -79,6 +80,9 @@ interface User {
   role?: "admin" | "student" | "user";
   canAccessChat?: boolean;
   personalApiKey?: string;
+  memberType?: "student" | "external"; // 기존 로그인 = 재원생, 이메일 회원가입 = 외부인
+  email?: string;
+  campus?: string;
   lastGptDate?: string;
   gptUsageCount?: number;
   persona?: string;
@@ -1421,6 +1425,8 @@ interface SessionUser {
   canAccessChat: boolean;
   personalApiKey?: string;
   friendSettings?: any;
+  memberType?: "student" | "external";
+  campus?: string;
   lastActivity: number;
 }
 
@@ -1456,6 +1462,7 @@ setInterval(() => {
 function createSession(userData: Omit<SessionUser, "lastActivity">): { sessionId: string; sessionUser: SessionUser } {
   const sessionId = Math.random().toString(36).substring(2, 15);
   const sessionUser: SessionUser = {
+    memberType: "student", // 기존 로그인 경로는 모두 재원생
     ...userData,
     lastActivity: Date.now()
   };
@@ -1470,6 +1477,100 @@ function ensureUserApiKey(user: User, db: DBStructure): string {
   }
   return user.personalApiKey;
 }
+
+// ----------------------------------------------------
+// 외부인 이메일 회원가입 (인증코드로 수신 가능한 이메일 확인)
+// ----------------------------------------------------
+const CAMPUSES = ["송도", "대구", "동탄", "잠실", "울산", "기타"];
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const signupCodes = new Map<string, { code: string; expiresAt: number; sentAt: number; tries: number }>();
+
+function hashPassword(password: string): string {
+  const salt = crypto.randomBytes(16).toString("hex");
+  return `scrypt:${salt}:${crypto.scryptSync(password, salt, 64).toString("hex")}`;
+}
+
+function verifyPassword(password: string, stored: string): boolean {
+  const [, salt, hash] = stored.split(":");
+  if (!salt || !hash) return false;
+  return crypto.timingSafeEqual(Buffer.from(hash, "hex"), crypto.scryptSync(password, salt, 64));
+}
+
+const mailer = process.env.SMTP_HOST ? nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: parseInt(process.env.SMTP_PORT || "587", 10),
+  secure: process.env.SMTP_PORT === "465",
+  auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
+}) : null;
+
+app.post("/api/auth/signup/send-code", async (req, res) => {
+  const email = String(req.body.email || "").trim().toLowerCase();
+  if (!EMAIL_RE.test(email)) return res.status(400).json({ error: "올바른 이메일 주소를 입력해 주세요." });
+  if (readDB().users.some(u => u.email === email)) return res.status(409).json({ error: "이미 가입된 이메일입니다." });
+
+  const prev = signupCodes.get(email);
+  if (prev && Date.now() - prev.sentAt < 60 * 1000) return res.status(429).json({ error: "잠시 후 다시 요청해 주세요. (1분)" });
+
+  const code = String(crypto.randomInt(100000, 1000000));
+  signupCodes.set(email, { code, expiresAt: Date.now() + 10 * 60 * 1000, sentAt: Date.now(), tries: 0 });
+
+  if (!mailer) {
+    // ponytail: SMTP 미설정 시 콘솔 출력 (개발용). 운영은 .env에 SMTP_HOST/PORT/USER/PASS 설정
+    console.log(`[signup] ${email} 인증코드: ${code}`);
+    return res.json({ success: true });
+  }
+  try {
+    await mailer.sendMail({
+      from: process.env.SMTP_FROM || process.env.SMTP_USER,
+      to: email,
+      subject: "[SODABOT STUDIO] 회원가입 인증코드",
+      text: `인증코드: ${code}\n10분 안에 입력해 주세요.`
+    });
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Signup mail error:", err);
+    signupCodes.delete(email);
+    res.status(500).json({ error: "인증 메일을 보내지 못했습니다. 이메일 주소를 확인해 주세요." });
+  }
+});
+
+app.post("/api/auth/signup", (req, res) => {
+  const email = String(req.body.email || "").trim().toLowerCase();
+  const code = String(req.body.code || "").trim();
+  const password = String(req.body.password || "");
+  const displayName = String(req.body.displayName || "").trim();
+  const campus = String(req.body.campus || "");
+
+  if (!displayName) return res.status(400).json({ error: "이름을 입력해 주세요." });
+  if (!CAMPUSES.includes(campus)) return res.status(400).json({ error: "디랩 캠퍼스를 선택해 주세요." });
+  if (password.length < 6) return res.status(400).json({ error: "비밀번호는 6자 이상이어야 합니다." });
+
+  const entry = signupCodes.get(email);
+  if (!entry || entry.expiresAt < Date.now()) return res.status(400).json({ error: "인증코드가 만료되었습니다. 다시 받아 주세요." });
+  if (++entry.tries > 5) {
+    signupCodes.delete(email);
+    return res.status(429).json({ error: "시도 횟수를 초과했습니다. 인증코드를 다시 받아 주세요." });
+  }
+  if (entry.code !== code) return res.status(400).json({ error: "인증코드가 일치하지 않습니다." });
+
+  const db = readDB();
+  if (db.users.some(u => u.email === email || u.username === email)) return res.status(409).json({ error: "이미 가입된 이메일입니다." });
+  signupCodes.delete(email);
+
+  db.users.push({
+    id: "ext-" + crypto.randomUUID(),
+    username: email,
+    displayName,
+    passwordHash: hashPassword(password),
+    role: "user",
+    canAccessChat: false,
+    memberType: "external",
+    email,
+    campus
+  });
+  writeDB(db);
+  res.json({ success: true });
+});
 
 app.post("/api/auth/login", async (req, res) => {
   const { loginType, name, phone, username, password } = req.body;
@@ -1506,6 +1607,25 @@ app.post("/api/auth/login", async (req, res) => {
       role: "admin",
       canAccessChat: true,
       personalApiKey: apiKey
+    });
+    return res.json({ success: true, sessionId, user: sessionUser });
+  }
+
+  // 1-1. 외부인(이메일 가입) 계정
+  const externalUser = db.users.find(u => u.memberType === "external" && u.email === identifier.toLowerCase());
+  if (externalUser) {
+    if (!verifyPassword(secret, externalUser.passwordHash)) {
+      return res.status(401).json({ error: "이메일 또는 비밀번호가 올바르지 않습니다." });
+    }
+    const { sessionId, sessionUser } = createSession({
+      id: externalUser.id,
+      username: externalUser.username,
+      displayName: externalUser.displayName,
+      role: externalUser.role || "user",
+      canAccessChat: externalUser.canAccessChat ?? false,
+      personalApiKey: ensureUserApiKey(externalUser, db),
+      memberType: "external",
+      campus: externalUser.campus
     });
     return res.json({ success: true, sessionId, user: sessionUser });
   }
@@ -1663,43 +1783,6 @@ app.post("/api/auth/login", async (req, res) => {
 
     return res.status(500).json({ error: "학생 인증 데이터베이스에 접속할 수 없습니다. 관리자에게 문의하세요." });
   }
-});
-
-app.post("/api/auth/signup", (req, res) => {
-  const { username, displayName, password } = req.body;
-  if (!username || !displayName || !password) {
-    return res.status(400).json({ error: "모든 항목을 입력해 주세요." });
-  }
-
-  const db = readDB();
-  const exists = db.users.some(u => u.username === username);
-  if (exists) {
-    return res.status(400).json({ error: "이미 존재하는 아이디입니다." });
-  }
-
-  const newUser: User = {
-    id: "user-" + Date.now(),
-    username,
-    displayName,
-    passwordHash: password,
-    role: "student",
-    canAccessChat: false // 기본적으로 대화 권한 비활성화 (개발 탭만 오픈)
-  };
-
-  const apiKey = ensureUserApiKey(newUser, db);
-  db.users.push(newUser);
-  writeDB(db);
-
-  const { sessionId, sessionUser } = createSession({
-    id: newUser.id,
-    username: newUser.username,
-    displayName: newUser.displayName,
-    role: "student",
-    canAccessChat: false,
-    personalApiKey: apiKey
-  });
-
-  res.json({ success: true, sessionId, user: sessionUser });
 });
 
 app.post("/api/auth/logout", (req, res) => {
