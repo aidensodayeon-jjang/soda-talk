@@ -73,13 +73,14 @@ constexpr uint32_t MAX_RECORD_SECONDS = 8;
 constexpr uint32_t MIN_RECORD_MS = 350;
 constexpr size_t MAX_RECORD_SAMPLES = MIC_SAMPLE_RATE * MAX_RECORD_SECONDS;
 
-// soda-talk 서버가 실행되는 컴퓨터의 현재 Wi-Fi 주소.
-// 컴퓨터 IP가 바뀌면 이 값만 고치면 된다.
-const char* SODA_SERVER_HOST = "192.168.0.171";
-const uint16_t SODA_SERVER_PORT = 7989;
+// soda-talk 서버의 도메인 또는 로컬 컴퓨터의 Wi-Fi 주소.
+// HTTPS 서버는 443 포트, 로컬 HTTP 서버는 해당 서버 포트를 사용한다.
+const char* SODA_SERVER_HOST = "sodabot.sodayeon.co.kr";
+const uint16_t SODA_SERVER_PORT = 443;
+const bool SODA_SERVER_HTTPS = true; // 로컬 HTTP 서버 사용 시 false로 변경
 const char* SODA_AUDIO_CHAT_PATH = "/api/hw/audio-chat";
 const char* SODA_TTS_PATH = "/api/hw/tts";
-const char* DEFAULT_SODA_API_KEY = "sk-soda-eac7b97f357ff96464d1acf8589ebc78";
+const char* DEFAULT_SODA_API_KEY = ""; // 웹 맞춤 다운로드 또는 SET_API_KEY 명령으로 설정
 String sodaApiKey;
 
 bool micReady = false;
@@ -304,7 +305,7 @@ void startMicrophoneMonitor() {
 #define TFT_CLK  12
 SPIClass hspi(HSPI);
 Adafruit_ST7789 tft = Adafruit_ST7789(&hspi, TFT_CS, TFT_DC, TFT_RST);
-// 2.0" ST7789 240x320 LCD, setRotation(3) 기준 320x240 화면 (기존 방향에서 180도 회전)
+// 2.0" ST7789 240x320 LCD, setRotation(1) 기준 320x240 화면
 #define LEX    100
 #define REX    220
 #define EYE_Y  120
@@ -2319,7 +2320,12 @@ bool playReplySpeech(const String& text) {
   String requestBody;
   serializeJson(requestDoc, requestBody);
 
-  WiFiClient client;
+  WiFiClient plainClient;
+  WiFiClientSecure secureClient;
+  const bool useHttps = SODA_SERVER_HTTPS || SODA_SERVER_PORT == 443;
+  // 기존 HTTPS 요청과 동일하게 TLS 암호화를 사용하되 인증서 검증은 생략한다.
+  if (useHttps) secureClient.setInsecure();
+  WiFiClient& client = useHttps ? static_cast<WiFiClient&>(secureClient) : plainClient;
   client.setTimeout(90000);
   Serial.println("[음성 생성] 서버에 답변 목소리를 요청합니다.");
   if (!client.connect(SODA_SERVER_HOST, SODA_SERVER_PORT)) {
@@ -2442,7 +2448,8 @@ void printHardwareStatus() {
 }
 
 void printServerStatus() {
-  Serial.printf("[서버 설정] http://%s:%u%s\n", SODA_SERVER_HOST,
+  Serial.printf("[서버 설정] %s://%s:%u%s\n",
+                (SODA_SERVER_HTTPS || SODA_SERVER_PORT == 443) ? "https" : "http", SODA_SERVER_HOST,
                 SODA_SERVER_PORT, SODA_AUDIO_CHAT_PATH);
   Serial.printf("[Wi-Fi] %s", WiFi.status() == WL_CONNECTED ? "연결됨" : "연결 안 됨");
   if (WiFi.status() == WL_CONNECTED) Serial.printf(" / 보드 IP: %s", WiFi.localIP().toString().c_str());
@@ -2487,10 +2494,15 @@ void uploadRecordedConversation() {
   uint8_t wavHeader[44];
   makeWavHeader(wavHeader, pcmBytes);
 
-  WiFiClient client;
+  WiFiClient plainClient;
+  WiFiClientSecure secureClient;
+  const bool useHttps = SODA_SERVER_HTTPS || SODA_SERVER_PORT == 443;
+  // 기존 HTTPS 요청과 동일하게 TLS 암호화를 사용하되 인증서 검증은 생략한다.
+  if (useHttps) secureClient.setInsecure();
+  WiFiClient& client = useHttps ? static_cast<WiFiClient&>(secureClient) : plainClient;
   client.setTimeout(90000);
-  Serial.printf("[서버 전송] %u바이트 음성을 %s:%u로 전송합니다.\n",
-                (unsigned)pcmBytes, SODA_SERVER_HOST, SODA_SERVER_PORT);
+  Serial.printf("[서버 전송] %u바이트 음성을 %s://%s:%u로 전송합니다.\n",
+                (unsigned)pcmBytes, useHttps ? "https" : "http", SODA_SERVER_HOST, SODA_SERVER_PORT);
   if (!client.connect(SODA_SERVER_HOST, SODA_SERVER_PORT)) {
     Serial.println("[서버 연결 실패] soda-talk 서버가 실행 중인지, 컴퓨터와 보드가 같은 Wi-Fi인지 확인하세요.");
     voiceUploadBusy.store(false);
@@ -2593,7 +2605,7 @@ void setup() {
 
   // 2. LCD 디스플레이 초기화
   hspi.begin(TFT_CLK, -1, TFT_MOSI, TFT_CS);
-  tft.init(240, 320); tft.setSPISpeed(40000000); tft.setRotation(3); tft.invertDisplay(true);
+  tft.init(240, 320); tft.setSPISpeed(40000000); tft.setRotation(1); tft.invertDisplay(true);
 
   // 3. 스피커 초기화
   setupSpeaker();
