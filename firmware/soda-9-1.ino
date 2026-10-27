@@ -305,7 +305,7 @@ void startMicrophoneMonitor() {
 #define TFT_CLK  12
 SPIClass hspi(HSPI);
 Adafruit_ST7789 tft = Adafruit_ST7789(&hspi, TFT_CS, TFT_DC, TFT_RST);
-// 2.0" ST7789 240x320 LCD, setRotation(1) 기준 320x240 화면
+// 2.0" ST7789 240x320 LCD, setRotation(3) 기준 320x240 화면 (기존 방향에서 180도 회전)
 #define LEX    100
 #define REX    220
 #define EYE_Y  120
@@ -2605,7 +2605,7 @@ void setup() {
 
   // 2. LCD 디스플레이 초기화
   hspi.begin(TFT_CLK, -1, TFT_MOSI, TFT_CS);
-  tft.init(240, 320); tft.setSPISpeed(40000000); tft.setRotation(1); tft.invertDisplay(true);
+  tft.init(240, 320); tft.setSPISpeed(40000000); tft.setRotation(3); tft.invertDisplay(true);
 
   // 3. 스피커 초기화
   setupSpeaker();
