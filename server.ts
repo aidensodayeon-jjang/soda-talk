@@ -707,6 +707,21 @@ function readDB(): DBStructure {
       }
     }
   }
+  // Remove legacy copies of the three exercises once their replacements exist.
+  const legacyCourseIds = [
+    "content-week-1-circuit-diagram",
+    "content-week-1-sound",
+    "content-week-1-btn-led-sound",
+  ];
+  const courseIds = new Set(db.courseContents.map(item => item.id));
+  const currentCourses = db.courseContents.filter(item =>
+    !legacyCourseIds.includes(item.id) || !courseIds.has(item.id.replace("week-1", "week-2"))
+  );
+  if (currentCourses.length !== db.courseContents.length) {
+    db.courseContents = currentCourses;
+    changed = true;
+  }
+
   for (const item of db.courseContents || []) {
     const movedToWeek3 = ["content-week-2-circuit-diagram", "content-week-2-amplifier-lab", "content-week-2-sound", "content-week-2-btn-led-sound"];
     const week3Numbers: Record<string, string> = {
