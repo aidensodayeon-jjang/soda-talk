@@ -1,9 +1,11 @@
+import { createPortal } from "react-dom";
 import { preventImeSubmit } from './utils/chatInput';
 import { normalizeFriendSettings, friendToneInstruction } from './utils/friendSettings';
 import { sodabotTransport } from './utils/sodabotTransport';
 import { renderTextToBitmapPayload } from './utils/textBitmapRenderer';
 import React, { useState, useEffect, useRef } from "react";
 import AuthScreen from "./components/AuthScreen";
+import StudentChatHistory from "./components/StudentChatHistory";
 import SodabotConnectScreen from "./components/SodabotConnectScreen";
 import SodabotSettingsScreen from "./components/SodabotSettingsScreen";
 import SodabotFriendSettingsScreen from "./components/SodabotFriendSettingsScreen";
@@ -82,9 +84,16 @@ import { ChatRoom, Message, LMStudioConfig, CourseContent } from "./types";
 // Temporarily hide manual playback of chat answers on the robot.
 const SHOW_SODABOT_VOICE_PLAYBACK = false;
 
+function keyTimeRemaining(expiresAt: number) {
+  const remaining = expiresAt - Date.now();
+  if (remaining <= 0) return "만료";
+  if (remaining < 86_400_000) return "1일 미만 남음";
+  return `${Math.ceil(remaining / 86_400_000)}일 남음`;
+}
+
 export default function App() {
   const [token, setToken] = useState<string | null>(localStorage.getItem("authSessionId"));
-  const [user, setUser] = useState<{ id: string; username: string; displayName: string; role?: string; canAccessChat?: boolean; personalApiKey?: string; friendSettings?: any } | null>(null);
+  const [user, setUser] = useState<{ id: string; username: string; displayName: string; role?: string; canAccessChat?: boolean; personalApiKey?: string; friendSettings?: any; keyExpiresAt?: number; keyRenewalRequestedAt?: number } | null>(null);
   const [settingsVersion, setSettingsVersion] = useState<number>(0);
 
   // Helper for natural Korean postposition particles
@@ -370,8 +379,22 @@ export default function App() {
   const [systemStatus, setSystemStatus] = useState<{ memoryUsage?: { total: number, free: number }, openaiUsage?: { used: number, limit: number } }>({});
 
   // Admin Panel State
-  const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const [adminPage, setAdminPage] = useState<"users" | "monitoring">("users");
+  const [adminCampus, setAdminCampus] = useState("all");
+  const [adminSearch, setAdminSearch] = useState("");
+  const [showAdminPanel, setShowAdminPanel] = useState(window.location.hash === "#admin");
+  const canManageUsers = user?.role === "admin" || user?.role === "tutor";
+  const onManagementPage = canManageUsers && showAdminPanel;
+
+  useEffect(() => {
+    const syncPage = () => setShowAdminPanel(window.location.hash === "#admin");
+    window.addEventListener("hashchange", syncPage);
+    return () => window.removeEventListener("hashchange", syncPage);
+  }, []);
   const [adminUsers, setAdminUsers] = useState<any[]>([]);
+  const [adminDetailsUserId, setAdminDetailsUserId] = useState<string | null>(null);
+  const adminDetailsDialogRef = useRef<HTMLDialogElement>(null);
+  const [savingAdminPersona, setSavingAdminPersona] = useState(false);
   const [adminChats, setAdminChats] = useState<any[]>([]);
   const [monitoringChatId, setMonitoringChatId] = useState<string | null>(null);
   const [monitoringTab, setMonitoringTab] = useState<"rooms" | "messages">("rooms");
@@ -384,6 +407,178 @@ export default function App() {
   const [newDisplayName, setNewDisplayName] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [adminError, setAdminError] = useState("");
+
+  const [signupRequests, setSignupRequests] = useState<{ username: string; name: string; campus: string | null }[]>([]);
+  const [signupRequestError, setSignupRequestError] = useState("");
+  const [approvingEmail, setApprovingEmail] = useState("");
+
+  const fetchSignupRequests = async () => {
+    try {
+      const res = await fetch("/api/admin/signup-requests", { headers: { Authorization: `Bearer ${token}` } });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setSignupRequests(data.requests);
+      setSignupRequestError("");
+    } catch {
+      setSignupRequests([]);
+      setSignupRequestError("가입 신청 목록을 불러올 수 없습니다.");
+    }
+  };
+
+  const approveSignup = async (email: string) => {
+    setApprovingEmail(email);
+    setSignupRequestError("");
+    try {
+      const res = await fetch(`/api/admin/signup-requests/${encodeURIComponent(email)}/approve`, {
+        method: "POST", headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      await fetchSignupRequests();
+    } catch (error) {
+      setSignupRequestError(error instanceof Error ? error.message : "가입 승인에 실패했습니다.");
+    } finally {
+      setApprovingEmail("");
+    }
+  };
+
+  const [showAccount, setShowAccount] = useState(false);
+  const [profileName, setProfileName] = useState("");
+  const [accountBusy, setAccountBusy] = useState(false);
+  const [accountNotice, setAccountNotice] = useState("");
+  const [accountError, setAccountError] = useState("");
+
+  const updateAccount = async (action: "profile" | "key-renewal-request") => {
+    setAccountBusy(true);
+    setAccountError("");
+    setAccountNotice("");
+    try {
+      const response = await fetch(`/api/auth/${action}`, {
+        method: action === "profile" ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: action === "profile" ? JSON.stringify({ displayName: profileName }) : undefined
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+      setUser(previous => previous ? action === "profile"
+        ? { ...previous, displayName: data.displayName }
+        : { ...previous, keyRenewalRequestedAt: data.keyRenewalRequestedAt } : previous);
+      setAccountNotice(action === "profile" ? "이름을 저장했습니다." : "키 연장을 요청했습니다.");
+    } catch (error) {
+      setAccountError(error instanceof Error ? error.message : "요청을 처리할 수 없습니다.");
+    } finally {
+      setAccountBusy(false);
+    }
+  };
+
+  const [registeringKeyFor, setRegisteringKeyFor] = useState("");
+  const [keyRegistrationError, setKeyRegistrationError] = useState("");
+
+  const registerKey = async (id: string) => {
+    setRegisteringKeyFor(id);
+    setKeyRegistrationError("");
+    try {
+      const res = await fetch(`/api/admin/users/${encodeURIComponent(id)}/key-registrations`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      await fetchAdminUsers();
+    } catch (error) {
+      setKeyRegistrationError(error instanceof Error ? error.message : "키 등록에 실패했습니다.");
+    } finally {
+      setRegisteringKeyFor("");
+    }
+  };
+
+  const renderKeyRegistrations = (account: {
+    id: string;
+    role?: string;
+    keyRenewalRequestedAt?: number;
+    keyRegistrations?: { registeredAt: number; expiresAt: number; registeredBy: string | null }[];
+  }) => {
+    const records = account.keyRegistrations ?? [];
+    const latest = records.at(-1);
+    const validityDays = account.role === "tutor" ? 120 : 60;
+    const formatDate = (value: number) => new Date(value).toLocaleString("ko-KR", {
+      timeZone: "Asia/Seoul", dateStyle: "medium", timeStyle: "short"
+    });
+    return (
+      <div className="mt-2 space-y-1 text-[11px]">
+        <div className={latest && latest.expiresAt <= Date.now() ? "text-rose-600" : "text-[#5C5B57]"}>
+          {latest ? `${keyTimeRemaining(latest.expiresAt)} · 만료일 ${formatDate(latest.expiresAt)}` : "키 등록 이력 없음"}
+        </div>
+        {account.keyRenewalRequestedAt && (
+          <div className="font-semibold text-amber-700">연장 요청 · {formatDate(account.keyRenewalRequestedAt)}</div>
+        )}
+        {latest && (
+          <details>
+            <summary className="cursor-pointer text-indigo-700">키 등록 이력 {records.length}건</summary>
+            <ol className="mt-1 space-y-1">
+              {records.slice().reverse().map(record => (
+                <li key={record.expiresAt}>
+                  {formatDate(record.registeredAt)} 등록 · {formatDate(record.expiresAt)}까지
+                  {record.registeredBy ? ` · @${record.registeredBy}` : " · 최초 로그인"}
+                </li>
+              ))}
+            </ol>
+          </details>
+        )}
+        <button type="button" disabled={Boolean(registeringKeyFor)} onClick={() => registerKey(account.id)}
+          className="rounded bg-indigo-50 px-2 py-1 font-semibold text-indigo-700 disabled:opacity-50">
+          {registeringKeyFor === account.id ? "등록 중..." : account.keyRenewalRequestedAt ? `연장 승인 (+${validityDays}일)` : latest ? `추가 등록 (+${validityDays}일)` : `키 등록 (${validityDays}일)`}
+        </button>
+      </div>
+    );
+  };
+
+  const [roleError, setRoleError] = useState("");
+
+  const saveUserRole = async (event: React.FormEvent<HTMLFormElement>, id: string) => {
+    event.preventDefault();
+    const fields = new FormData(event.currentTarget);
+    setRoleError("");
+    try {
+      const res = await fetch(`/api/admin/users/${encodeURIComponent(id)}/role`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ role: fields.get("role"), campus: fields.get("campus") || null })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      await fetchAdminUsers();
+    } catch (error) {
+      setRoleError(error instanceof Error ? error.message : "역할 저장에 실패했습니다.");
+    }
+  };
+
+  const matchesAdminFilters = (name: string, username: string, campus?: string | null) => {
+    const query = adminSearch.trim().toLowerCase();
+    return (adminCampus === "all" || (campus ?? "") === adminCampus) &&
+      (name.toLowerCase().includes(query) || username.toLowerCase().includes(query));
+  };
+  const filteredAdminUsers = adminUsers.filter(u => matchesAdminFilters(u.displayName, u.username, u.campus));
+
+  const renderSignupRequests = (columns: number, filtered = false) => (
+    <>
+      {signupRequestError && <tr><td colSpan={columns} role="alert" className="p-3 text-xs text-rose-600">{signupRequestError}</td></tr>}
+      {signupRequests.filter(request => !filtered || matchesAdminFilters(request.name, request.username, request.campus)).map(request => (
+        <tr key={request.username}>
+          <td colSpan={columns - 1} className="p-3">
+            <span className="mr-2 font-medium">{request.name}</span>
+            <span className="text-xs text-[#86868B]">{request.username} · {request.campus ?? "캠퍼스 미선택"} · 가입 승인 대기</span>
+          </td>
+          <td className="p-3 text-right">
+            <button type="button" disabled={Boolean(approvingEmail)} onClick={() => approveSignup(request.username)}
+              className="rounded-lg bg-[#168571] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">
+              {approvingEmail === request.username ? "승인 중..." : "가입 승인"}
+            </button>
+          </td>
+        </tr>
+      ))}
+    </>
+  );
 
   const handleToggleChatPermission = async (userId: string, currentStatus: boolean) => {
     try {
@@ -416,6 +611,7 @@ export default function App() {
   };
 
   const fetchAdminUsers = async () => {
+    void fetchSignupRequests();
     try {
       const res = await fetch("/api/admin/users", {
         headers: { Authorization: `Bearer ${token}` }
@@ -471,16 +667,15 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (showAdminPanel) {
+    if (onManagementPage && (user?.role === "tutor" || adminPage === "users")) {
       fetchAdminUsers();
-      fetchAdminChats();
     }
-  }, [showAdminPanel]);
+  }, [onManagementPage, adminPage, user?.role, token]);
 
   // 5초마다 실시간 대화 피드 갱신
   useEffect(() => {
     let interval: any;
-    if (user?.username === "admin") {
+    if (onManagementPage && user?.role === "admin") {
       fetchAdminChats(); // 최초 1회 실행
       fetchGlobalStats(); // 대시보드 통계 최초 1회 실행
       interval = setInterval(() => {
@@ -489,7 +684,7 @@ export default function App() {
       }, 5000);
     }
     return () => clearInterval(interval);
-  }, [user]);
+  }, [user, onManagementPage]);
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -515,7 +710,7 @@ export default function App() {
   };
 
   const handleDeleteUser = async (userId: string) => {
-    if (!window.confirm("정말 이 유저를 삭제하시겠습니까?")) return;
+    if (!window.confirm("이 회원을 공통 소다 계정에서 삭제하시겠습니까?")) return;
     try {
       await fetch(`/api/admin/users/${userId}`, {
         method: "DELETE",
@@ -528,8 +723,9 @@ export default function App() {
   };
 
   const handleUpdatePersona = async (userId: string, newPersona: string) => {
+    setSavingAdminPersona(true);
     try {
-      await fetch(`/api/admin/users/${userId}/persona`, {
+      const response = await fetch(`/api/admin/users/${encodeURIComponent(userId)}/persona`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -537,11 +733,14 @@ export default function App() {
         },
         body: JSON.stringify({ persona: newPersona })
       });
-      fetchAdminUsers();
+      if (!response.ok) throw new Error("Failed to save persona");
+      await fetchAdminUsers();
       alert("페르소나가 업데이트 되었습니다!");
     } catch (err) {
       console.error(err);
       alert("페르소나 업데이트 실패");
+    } finally {
+      setSavingAdminPersona(false);
     }
   };
 
@@ -620,9 +819,7 @@ export default function App() {
   // 2. Fetch data once logged in
   useEffect(() => {
     if (user) {
-      if (user.username === "admin") {
-        setMainNavTab("chat");
-      } else if (!user.canAccessChat) {
+      if (!user.canAccessChat) {
         setMainNavTab("dev");
       }
       fetchChats();
@@ -1191,6 +1388,13 @@ export default function App() {
     lastActivityRef.current = Date.now();
     setToken(sessionId);
     setUser(loggedInUser);
+    setAdminPage("users");
+    setShowAdminPanel(false);
+    setMainNavTab("dev");
+    setMobileTab("home");
+    if (window.location.hash === "#admin") {
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    }
     setCurrentView('welcome');
     
     // Check if new user has a saved robot IP
@@ -1230,6 +1434,12 @@ export default function App() {
     localStorage.removeItem("sodabot_wifi_password");
     setToken(null);
     setUser(null);
+    setShowAdminPanel(false);
+    setShowAccount(false);
+    setAdminUsers([]);
+    setSignupRequests([]);
+    setAdminCampus("all");
+    setAdminSearch("");
     setChats([]);
     setActiveChatId(null);
     setSodabotIp(null);
@@ -1240,6 +1450,74 @@ export default function App() {
   if (!user) {
     return <AuthScreen onLoginSuccess={handleLoginSuccess} />;
   }
+
+  const accountLink = (className: string) => {
+    const destination = onManagementPage ? "소다봇 메인으로" : user.role === "tutor" ? "캠퍼스 학생 관리" : "관리자 페이지";
+    const remaining = user.role === "admin" ? "만료 없음"
+      : user.keyExpiresAt ? keyTimeRemaining(user.keyExpiresAt) : "유효기간 확인 중";
+    return (
+      <div className={`${className} flex items-center justify-between gap-2 rounded-lg border border-[#EAE6DF] bg-[#FAF9F6] p-2`}>
+        <button type="button" aria-haspopup="dialog" aria-label={`@${user.username} 내 계정`}
+          className="min-w-0 text-left hover:text-indigo-700"
+          onClick={() => {
+            setProfileName(user.displayName);
+            setAccountNotice("");
+            setAccountError("");
+            setShowAccount(true);
+          }}>
+          <span className="block truncate text-xs font-semibold">{user.displayName}</span>
+          <span className="block truncate font-mono text-[10px] text-[#86868B]">@{user.username}</span>
+        </button>
+        {canManageUsers && (
+          <a href={onManagementPage ? "#main" : "#admin"} className="shrink-0 text-[10px] font-semibold text-indigo-700 hover:underline">
+            {destination}
+          </a>
+        )}
+        {showAccount && createPortal(
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4">
+            <section role="dialog" aria-modal="true" aria-labelledby="account-title"
+              className="max-h-[85vh] w-full max-w-md space-y-4 overflow-auto rounded-2xl bg-white p-5"
+              onKeyDown={event => { if (event.key === "Escape") setShowAccount(false); }}>
+              <header className="flex items-center justify-between">
+                <h2 id="account-title" className="font-bold">내 계정 · @{user.username}</h2>
+                <button type="button" autoFocus onClick={() => setShowAccount(false)} className="text-sm text-gray-600">닫기</button>
+              </header>
+              <div className="space-y-2 rounded-xl bg-[#FAF9F6] p-3 text-sm">
+                <div className="flex justify-between gap-2"><strong>키 정보</strong><span>{remaining}</span></div>
+                {user.keyExpiresAt && (
+                  <p className="text-xs text-gray-600">만료일 · {new Date(user.keyExpiresAt).toLocaleString("ko-KR", {
+                    timeZone: "Asia/Seoul", dateStyle: "medium", timeStyle: "short"
+                  })}</p>
+                )}
+                {user.personalApiKey && <details>
+                  <summary className="cursor-pointer text-xs text-indigo-700">API 키 보기</summary>
+                  <code className="break-all select-all text-xs">{user.personalApiKey}</code>
+                </details>}
+                {user.role !== "admin" && (
+                  <button type="button" disabled={accountBusy || Boolean(user.keyRenewalRequestedAt)}
+                    onClick={() => updateAccount("key-renewal-request")}
+                    className="rounded bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700 disabled:opacity-60">
+                    {user.keyRenewalRequestedAt ? "연장 승인 대기 중" : "키 연장 요청"}
+                  </button>
+                )}
+              </div>
+              <form className="flex items-end gap-2" onSubmit={event => { event.preventDefault(); void updateAccount("profile"); }}>
+                <label className="min-w-0 flex-1 text-xs font-semibold">
+                  표시 이름
+                  <input value={profileName} onChange={event => setProfileName(event.target.value)}
+                    required maxLength={20} className="mt-1 block w-full rounded-lg border px-3 py-2 text-sm" />
+                </label>
+                <button type="submit" disabled={accountBusy || profileName.trim() === user.displayName}
+                  className="rounded-lg bg-indigo-600 px-3 py-2 text-sm text-white disabled:opacity-50">저장</button>
+              </form>
+              {accountNotice && <p role="status" className="text-xs text-emerald-700">{accountNotice}</p>}
+              {accountError && <p role="alert" className="text-xs text-rose-700">{accountError}</p>}
+            </section>
+          </div>, document.body
+        )}
+      </div>
+    );
+  };
 
   const activeChat = chats.find(c => c.id === activeChatId) || (chats.length > 0 ? chats[0] : undefined);
 
@@ -1353,7 +1631,7 @@ export default function App() {
   const openaiPercent = Math.min(100, Math.max(0, (openaiUsed / openaiLimit) * 100));
 
   // ===== RESPONSIVE MOBILE APP LAYOUT (<768px) =====
-  if (isMobile) {
+  if (isMobile && !onManagementPage) {
     const latestSettings = getLatestFriendSettings();
     const botName = latestSettings.persona.name || "루미";
     const studentName = latestSettings.profile.userName || user.displayName;
@@ -1610,6 +1888,8 @@ export default function App() {
           )}
         </div>
 
+        {accountLink("mx-3 mb-16 self-start")}
+
         {/* Fixed Mobile Bottom Tab Bar */}
         <MobileBottomTabBar
           currentTab={mobileTab}
@@ -1625,12 +1905,81 @@ export default function App() {
     );
   }
 
+  if (onManagementPage && user.role === "tutor") {
+    return (
+      <main className="min-h-screen bg-[#FAF9F6] px-4 py-6 sm:py-10">
+        <section aria-label="캠퍼스 학생 관리" className="mx-auto w-full max-w-4xl">
+          <header className="mb-5 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-[#EAE6DF] bg-white p-4 sm:p-6">
+            <div>
+              <p className="text-xs font-semibold text-indigo-700">선생님 관리</p>
+              <h1 className="mt-1 text-xl font-bold sm:text-2xl">캠퍼스 학생 관리</h1>
+            </div>
+            {accountLink("w-full sm:w-fit")}
+          </header>
+          {adminSelectedUserId ? (
+            <StudentChatHistory studentId={adminSelectedUserId}
+              name={adminUsers.find(student => student.id === adminSelectedUserId)?.displayName ?? "학생"}
+              token={token} onClose={() => setAdminSelectedUserId(null)} />
+          ) : (
+            <section aria-labelledby="campus-students-title" className="overflow-hidden rounded-2xl border border-[#EAE6DF] bg-white">
+              <div className="flex items-center gap-2 px-4 py-4 sm:px-6">
+                <h2 id="campus-students-title" className="font-bold">학생 목록</h2>
+                <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700">{adminUsers.length}명</span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full whitespace-nowrap border-t border-[#EAE6DF] text-left text-sm">
+                  <thead className="border-b border-[#EAE6DF] bg-[#FAF9F6] text-xs text-gray-600">
+                    <tr><th scope="col" className="px-4 py-3">학생</th><th scope="col" className="px-4 py-3">계정</th><th scope="col" className="px-4 py-3">키 유효기간</th><th scope="col" className="px-4 py-3 text-right">관리</th></tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#EAE6DF]">
+                    {keyRegistrationError && <tr><td colSpan={4} role="alert" className="p-3 text-rose-600">{keyRegistrationError}</td></tr>}
+                    {renderSignupRequests(4)}
+                    {adminUsers.map(student => {
+                      const expiry = student.keyRegistrations?.at(-1)?.expiresAt;
+                      return (
+                        <tr key={student.id}>
+                          <th scope="row" className="px-4 py-3 font-semibold">{student.displayName}</th>
+                          <td className="px-4 py-3 text-xs text-gray-600">{student.username} · {student.campus}</td>
+                          <td className="px-4 py-3 text-xs text-gray-600">
+                            {expiry ? `${keyTimeRemaining(expiry)} · 만료일 ${new Date(expiry).toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul" })}` : "미등록"}
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex justify-end gap-2 text-xs font-semibold text-indigo-700">
+                              <button type="button" className="rounded bg-indigo-50 px-2 py-1"
+                                disabled={Boolean(registeringKeyFor)} onClick={() => registerKey(student.id)}>
+                                {registeringKeyFor === student.id ? "등록 중…" : student.keyRenewalRequestedAt ? "연장 승인 (+60일)" : expiry ? "키 연장 (+60일)" : "키 등록 (60일)"}
+                              </button>
+                              <button type="button" className="rounded bg-indigo-50 px-2 py-1"
+                                aria-label={`${student.displayName} 대화 목록`} onClick={() => setAdminSelectedUserId(student.id)}>
+                                대화 목록
+                              </button>
+                              <button type="button" className="rounded bg-indigo-50 px-2 py-1"
+                                onClick={() => handleToggleChatPermission(student.id, student.canAccessChat)}>
+                                {student.canAccessChat ? "대화 권한 끄기" : "대화 권한 켜기"}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {!adminUsers.length && !signupRequests.length && <tr><td colSpan={4} className="p-3 text-gray-500">표시할 학생이나 가입 신청이 없습니다.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          )}
+        </section>
+      </main>
+    );
+  }
+
   // ===== ADMIN CUSTOM LAYOUT =====
-  if (user?.username === "admin") {
+  if (onManagementPage && user.role === "admin") {
+    const detailsUser = adminUsers.find(u => u.id === adminDetailsUserId);
     return (
       <div className="flex h-screen bg-[#FAF9F6] text-[#1D1D1F] font-sans antialiased overflow-hidden">
         {/* 1. Admin Left Sidebar */}
-        <aside className="w-64 border-r border-[#EAE6DF] bg-[#FAF9F6] flex flex-col shrink-0 select-none">
+        <aside className="w-36 md:w-64 border-r border-[#EAE6DF] bg-[#FAF9F6] flex flex-col shrink-0 select-none">
           <div className="p-5 pb-2">
             <h1 className="text-xl font-bold tracking-tight text-[#1D1D1F] flex items-center gap-2">
               <span className="w-6 h-6 rounded-lg bg-indigo-600 text-white flex items-center justify-center text-xs">S</span>
@@ -1641,10 +1990,10 @@ export default function App() {
           <div className="flex-1 overflow-y-auto px-3 py-4 space-y-4">
             <div className="space-y-1">
               <div className="text-[10px] font-bold text-[#86868B] px-2 mb-2 uppercase tracking-wider">시스템 관리</div>
-              <button onClick={() => { setMainNavTab("chat"); fetchGlobalStats(); setShowGlobalDashboard(true); }} className="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 flex items-center gap-2 transition-colors cursor-pointer">
+              <button onClick={() => { setAdminPage("monitoring"); fetchGlobalStats(); }} className="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 flex items-center gap-2 transition-colors cursor-pointer">
                 <Activity className="w-4 h-4" /> 통합 모니터링
               </button>
-              <button onClick={() => setShowAdminPanel(true)} className="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-indigo-700 hover:bg-indigo-50 border border-transparent hover:border-indigo-200 flex items-center gap-2 transition-colors cursor-pointer">
+              <button onClick={() => setAdminPage("users")} aria-current={adminPage === "users" ? "page" : undefined} className="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-indigo-700 hover:bg-indigo-50 border border-transparent hover:border-indigo-200 flex items-center gap-2 transition-colors cursor-pointer">
                 <Users className="w-4 h-4" /> 유저 및 권한 관리
               </button>
               <button onClick={() => setShowCourseManager(true)} className="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-blue-700 hover:bg-blue-50 border border-transparent hover:border-blue-200 flex items-center gap-2 transition-colors cursor-pointer">
@@ -1652,22 +2001,6 @@ export default function App() {
               </button>
               <button onClick={() => setShowSettings(true)} className="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-[#5C5B57] hover:bg-white border border-transparent hover:border-[#EAE6DF] flex items-center gap-2 transition-colors cursor-pointer">
                 <Settings className="w-4 h-4" /> 서버 설정
-              </button>
-            </div>
-
-            <div className="space-y-1 pt-4 border-t border-[#EAE6DF]">
-              <div className="text-[10px] font-bold text-[#86868B] px-2 mb-2 uppercase tracking-wider">개발 & 하드웨어 도구</div>
-              <button
-                onClick={() => { setMainNavTab("ide"); }}
-                className="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-indigo-700 hover:bg-indigo-50 border border-transparent hover:border-indigo-200 flex items-center gap-2 transition-colors cursor-pointer"
-              >
-                <Zap className="w-4 h-4 text-amber-500" /> Web Arduino IDE
-              </button>
-              <button
-                onClick={() => { setMainNavTab("dev"); }}
-                className="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-[#5C5B57] hover:bg-white border border-transparent hover:border-[#EAE6DF] flex items-center gap-2 transition-colors cursor-pointer"
-              >
-                <Library className="w-4 h-4 text-indigo-500" /> 수업 자료실 뷰
               </button>
             </div>
 
@@ -1720,27 +2053,203 @@ export default function App() {
           </div>
 
           <div className="p-3 border-t border-[#EAE6DF] bg-white">
-            <div className="flex items-center gap-2 p-1.5 rounded-lg bg-[#FAF9F6] border border-[#EAE6DF] mb-2">
-              <div className="w-7 h-7 rounded-full bg-[#FAF9F6] border border-[#EAE6DF] flex items-center justify-center text-[#5C5B57] font-mono text-[11px] font-bold">A</div>
-              <div className="truncate flex-1 min-w-0">
-                <p className="text-xs font-semibold text-[#1D1D1F] truncate">최고 운영자</p>
-                <p className="text-[10px] text-[#86868B] font-mono truncate">@admin</p>
-              </div>
-            </div>
+            {accountLink("mb-2")}
             <button onClick={handleLogout} className="w-full py-1.5 px-2 bg-[#FAF9F6] hover:bg-rose-50 border border-[#EAE6DF] hover:border-rose-200 rounded-lg text-[10px] font-medium text-[#5C5B57] hover:text-rose-700 flex items-center justify-center gap-1 transition-colors">
               <LogOut className="w-3 h-3" /> 로그아웃
             </button>
           </div>
         </aside>
 
-        {/* 2. Admin Center Main (Global Dashboard or Dev Hub) */}
-        {mainNavTab === "dev" ? (
-          <div className="flex-1 flex flex-col h-screen overflow-hidden">
-            <DevCodeHubScreen
-              selectedCodeId={selectedDevCodeId}
-              onSelectCode={setSelectedDevCodeId}
-            />
-          </div>
+        {adminPage === "users" ? (
+          <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-white p-6">
+              {/* Header */}
+              <div className="flex items-center justify-between pb-4 border-b border-[#FAF9F6] shrink-0">
+                <div className="space-y-1">
+                  <h3 className="text-base font-bold text-[#1D1D1F] flex items-center gap-2">
+                    <Users className="w-5 h-5 text-indigo-600" />
+                    사용자 관리
+                  </h3>
+                  <p className="text-xs text-[#86868B]">수업 진행 시 학생들의 대화 탭 잠금을 해제하거나 개별 권한을 부여할 수 있습니다.</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleBatchToggleChatPermission(true)}
+                    className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    전체 대화 오픈 (ON)
+                  </button>
+                  <button
+                    onClick={() => handleBatchToggleChatPermission(false)}
+                    className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                  >
+                    <ShieldAlert className="w-3.5 h-3.5" />
+                    전체 대화 잠금 (OFF)
+                  </button>
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto py-4 space-y-6">
+                <div className="flex flex-wrap items-end gap-3">
+                  <label className="text-xs font-semibold">
+                    캠퍼스
+                    <select value={adminCampus} onChange={event => setAdminCampus(event.target.value)} className="mt-1 block rounded-lg border border-[#EAE6DF] px-3 py-2">
+                      <option value="all">전체 캠퍼스</option>
+                      <option value="목동">목동</option>
+                      <option value="송도">송도</option>
+                      <option value="기타">기타</option>
+                      <option value="">미지정</option>
+                    </select>
+                  </label>
+                  <label className="text-xs font-semibold">
+                    사용자 검색
+                    <input type="search" value={adminSearch} onChange={event => setAdminSearch(event.target.value)}
+                      placeholder="이름, 이메일 또는 아이디" className="mt-1 block w-64 rounded-lg border border-[#EAE6DF] px-3 py-2" />
+                  </label>
+                </div>
+                <div className="overflow-x-auto rounded-2xl border border-[#EAE6DF] shadow-sm">
+                  <table className="w-full whitespace-nowrap text-left text-xs">
+                    <thead className="bg-[#FAF9F6] text-[#86868B] border-b border-[#EAE6DF]">
+                      <tr>
+                        <th scope="col" className="px-3 py-2 font-semibold">사용자</th>
+                        <th scope="col" className="px-3 py-2 font-semibold">역할 · 캠퍼스</th>
+                        <th scope="col" className="px-3 py-2 text-center font-semibold">대화 권한</th>
+                        <th scope="col" className="px-3 py-2 font-semibold">키 유효기간</th>
+                        <th scope="col" className="px-3 py-2 text-right font-semibold">관리</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#EAE6DF]">
+                      {roleError && <tr><td colSpan={5} role="alert" className="p-3 whitespace-normal text-rose-600">{roleError}</td></tr>}
+                      {renderSignupRequests(5, true)}
+                      {!filteredAdminUsers.length && !signupRequests.some(request => matchesAdminFilters(request.name, request.username, request.campus)) && (
+                        <tr><td colSpan={5} className="p-5 text-center text-[#86868B]">조건에 맞는 사용자가 없습니다.</td></tr>
+                      )}
+                      {filteredAdminUsers.map(u => {
+                        const isUserAdmin = u.username === "admin" || u.role === "admin";
+                        const hasChatAccess = Boolean(u.canAccessChat);
+                        const expiry = u.keyRegistrations?.at(-1)?.expiresAt;
+                        return (
+                          <tr key={u.id} className="transition-colors hover:bg-indigo-50/30">
+                            <th scope="row" className="px-3 py-2 font-normal">
+                              <div className="flex items-center gap-2">
+                                <span className="max-w-32 truncate font-medium text-[#1D1D1F]" title={u.displayName}>{u.displayName}</span>
+                                <span className="max-w-48 truncate font-mono text-[11px] text-[#86868B]" title={u.username}>@{u.username}</span>
+                              </div>
+                            </th>
+                            <td className="px-3 py-2">
+                              {isUserAdmin ? (
+                                <span className="rounded bg-indigo-50 px-2 py-1 text-[11px] font-semibold text-indigo-700">관리자</span>
+                              ) : (
+                                <form key={`${u.role}:${u.campus}`} onSubmit={event => saveUserRole(event, u.id)} className="flex items-center gap-1">
+                                  <select name="role" aria-label={`${u.displayName} 권한`} defaultValue={u.role} className="rounded border px-1">
+                                    <option value="student">학생</option>
+                                    <option value="tutor">선생님 (튜터)</option>
+                                  </select>
+                                  <select name="campus" aria-label={`${u.displayName} 캠퍼스`} defaultValue={u.campus ?? ""} className="rounded border px-1">
+                                    <option value="">미지정</option>
+                                    <option value="목동">목동</option>
+                                    <option value="송도">송도</option>
+                                    <option value="기타">기타</option>
+                                  </select>
+                                  <button type="submit" className="rounded bg-indigo-50 px-2 py-1 text-indigo-700">권한 저장</button>
+                                </form>
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-center">
+                              {isUserAdmin ? (
+                                <span className="text-[11px] font-semibold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-lg">
+                                  항상 허용됨
+                                </span>
+                              ) : (
+                                <button
+                                  onClick={() => handleToggleChatPermission(u.id, Boolean(u.canAccessChat))}
+                                  className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold transition-colors cursor-pointer ${
+                                    hasChatAccess
+                                      ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs"
+                                      : "bg-gray-100 hover:bg-gray-200 text-[#5C5B57] border border-[#EAE6DF]"
+                                  }`}
+                                >
+                                  {hasChatAccess ? (
+                                    <>
+                                      <Unlock className="w-3 h-3" />
+                                      허용 (ON)
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Lock className="w-3 h-3 text-gray-500" />
+                                      잠김 (OFF)
+                                    </>
+                                  )}
+                                </button>
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-[11px]">
+                              <span className={expiry && expiry <= Date.now() ? "text-rose-600" : "text-[#5C5B57]"}>
+                                {isUserAdmin ? "만료 없음" : expiry ? keyTimeRemaining(expiry) : "미등록"}
+                              </span>
+                              {u.keyRenewalRequestedAt && <span className="ml-2 font-semibold text-amber-700">연장 요청</span>}
+                            </td>
+                            <td className="space-x-1.5 px-3 py-2 text-right">
+                              <button type="button" aria-haspopup="dialog" aria-label={`${u.displayName} 상세 설정`}
+                                onClick={() => {
+                                  setKeyRegistrationError("");
+                                  setAdminDetailsUserId(u.id);
+                                  adminDetailsDialogRef.current?.showModal();
+                                }}
+                                className="rounded-lg bg-indigo-50 px-2 py-1 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-100">
+                                상세 설정
+                              </button>
+                              <button onClick={() => handleGenerateApiKey(u.id)} className="px-2 py-1 bg-white border border-[#EAE6DF] hover:border-indigo-300 rounded-lg text-[10px] cursor-pointer">Key 재발급</button>
+                              {u.id !== "user-1" && (
+                                <button onClick={() => handleDeleteUser(u.id)} className="px-2 py-1 bg-white border border-[#EAE6DF] text-rose-500 rounded-lg text-[10px] cursor-pointer">삭제</button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <dialog ref={adminDetailsDialogRef} aria-labelledby="admin-details-title"
+                  onClose={() => setAdminDetailsUserId(null)}
+                  className="m-auto max-h-[85vh] w-[calc(100%-2rem)] max-w-lg overflow-y-auto rounded-2xl border border-[#EAE6DF] bg-white p-5 text-[#1D1D1F] shadow-xl backdrop:bg-black/40">
+                  <header className="mb-4 flex items-start justify-between gap-4">
+                    <h2 id="admin-details-title" className="min-w-0 wrap-break-word text-sm font-bold">
+                      {detailsUser ? `${detailsUser.displayName} (@${detailsUser.username})` : "사용자 상세 설정"}
+                    </h2>
+                    <button type="button" autoFocus onClick={() => adminDetailsDialogRef.current?.close()}
+                      className="shrink-0 rounded-lg border border-[#EAE6DF] px-2 py-1 text-xs">닫기</button>
+                  </header>
+                  {detailsUser && (
+                    <div key={detailsUser.id} className="space-y-4">
+                      <section className="rounded-xl border border-[#EAE6DF] bg-[#FAF9F6] p-3">
+                        <h3 className="mb-1 text-xs font-semibold">API 키</h3>
+                        <code className="select-all break-all text-xs text-[#5C5B57]">{detailsUser.personalApiKey || "발급 안됨"}</code>
+                        {detailsUser.username !== "admin" && detailsUser.role !== "admin" && renderKeyRegistrations(detailsUser)}
+                        {keyRegistrationError && <p role="alert" className="mt-2 text-xs text-rose-600">{keyRegistrationError}</p>}
+                      </section>
+                      <form onSubmit={event => {
+                        event.preventDefault();
+                        const persona = new FormData(event.currentTarget).get("persona");
+                        if (!savingAdminPersona && typeof persona === "string" && persona !== (detailsUser.persona ?? "")) {
+                          void handleUpdatePersona(detailsUser.id, persona);
+                        }
+                      }} className="space-y-2">
+                        <label className="block text-xs font-semibold">
+                          맞춤형 페르소나 설정 (System Prompt)
+                          <textarea name="persona" rows={4} defaultValue={detailsUser.persona ?? ""}
+                            placeholder="예: 이 사용자에게는 초등학생도 이해할 수 있게 설명하세요."
+                            className="mt-1 block w-full resize-y rounded-lg border border-[#EAE6DF] p-2 font-normal focus:border-indigo-400 focus:outline-none" />
+                        </label>
+                        <button type="submit" disabled={savingAdminPersona}
+                          className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">
+                          {savingAdminPersona ? "저장 중…" : "페르소나 저장"}
+                        </button>
+                      </form>
+                    </div>
+                  )}
+                </dialog>
+              </div>
+          </main>
         ) : (
           <main className="flex-1 flex flex-col h-screen overflow-y-auto bg-white border-r border-[#EAE6DF] p-6 relative">
             <div className="max-w-4xl mx-auto w-full space-y-6">
@@ -2036,6 +2545,7 @@ export default function App() {
         )}
 
         {/* 3. Admin Right Sidebar (Mini Chat) */}
+        {adminPage === "monitoring" && (
         <aside className="w-[340px] bg-[#FAF9F6] flex flex-col shrink-0 select-none">
           <header className="h-12 border-b border-[#EAE6DF] bg-white flex items-center justify-between px-4 shrink-0">
             <span className="text-xs font-bold text-[#1D1D1F]">미니 대화 테스트</span>
@@ -2094,124 +2604,6 @@ export default function App() {
             </form>
           </div>
         </aside>
-
-        {/* Modals for Admin */}
-        {showAdminPanel && (
-          <div className="fixed inset-0 bg-[#1D1D1F]/40 backdrop-blur-sm flex justify-center items-center z-50 animate-fade-in p-4">
-            <div className="bg-white border border-[#EAE6DF] rounded-3xl w-full max-w-4xl shadow-2xl p-6 relative overflow-hidden flex flex-col max-h-[90vh]">
-              {/* Header */}
-              <div className="flex items-center justify-between pb-4 border-b border-[#FAF9F6] shrink-0">
-                <div className="space-y-1">
-                  <h3 className="text-base font-bold text-[#1D1D1F] flex items-center gap-2">
-                    <Users className="w-5 h-5 text-indigo-600" />
-                    운영자 유저 및 실시간 대화 권한 관리
-                  </h3>
-                  <p className="text-xs text-[#86868B]">수업 진행 시 학생들의 대화 탭 잠금을 해제하거나 개별 권한을 부여할 수 있습니다.</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => handleBatchToggleChatPermission(true)}
-                    className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
-                  >
-                    <ShieldCheck className="w-3.5 h-3.5" />
-                    전체 대화 오픈 (ON)
-                  </button>
-                  <button
-                    onClick={() => handleBatchToggleChatPermission(false)}
-                    className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
-                  >
-                    <ShieldAlert className="w-3.5 h-3.5" />
-                    전체 대화 잠금 (OFF)
-                  </button>
-                  <button onClick={() => setShowAdminPanel(false)} className="text-xs text-[#86868B] hover:text-[#1D1D1F] bg-[#FAF9F6] px-3 py-1.5 rounded-full cursor-pointer">닫기 ✕</button>
-                </div>
-              </div>
-              <div className="flex-1 overflow-y-auto py-4 space-y-6">
-                {/* User Table */}
-                <div className="border border-[#EAE6DF] rounded-2xl overflow-hidden shadow-sm">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-[#FAF9F6] text-[#86868B] border-b border-[#EAE6DF]">
-                      <tr>
-                        <th className="p-3 font-semibold">사용자 정보</th>
-                        <th className="p-3 font-semibold text-center">대화 권한 (수업 제어)</th>
-                        <th className="p-3 font-semibold">맞춤형 페르소나 설정 (System Prompt)</th>
-                        <th className="p-3 font-semibold text-right">관리</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-[#EAE6DF]">
-                      {adminUsers.map(u => {
-                        const isUserAdmin = u.username === "admin" || u.role === "admin";
-                        const hasChatAccess = isUserAdmin || Boolean(u.canAccessChat);
-                        return (
-                          <tr key={u.id} className="hover:bg-indigo-50/30 transition-colors align-top">
-                            <td className="p-3">
-                              <div className="flex items-center gap-1.5">
-                                <span className="font-medium text-[#1D1D1F]">{u.displayName}</span>
-                                {isUserAdmin && (
-                                  <span className="text-[9px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">관리자</span>
-                                )}
-                              </div>
-                              <div className="font-mono text-[11px] text-[#86868B]">@{u.username}</div>
-                              <div className="font-mono text-[10px] text-[#5C5B57] mt-1 pt-1 border-t border-[#EAE6DF] w-fit">Key: {u.personalApiKey || "발급 안됨"}</div>
-                            </td>
-                            <td className="p-3 text-center">
-                              {isUserAdmin ? (
-                                <span className="text-[11px] font-semibold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-lg">
-                                  항상 허용됨
-                                </span>
-                              ) : (
-                                <button
-                                  onClick={() => handleToggleChatPermission(u.id, Boolean(u.canAccessChat))}
-                                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 mx-auto ${
-                                    hasChatAccess
-                                      ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs"
-                                      : "bg-gray-100 hover:bg-gray-200 text-[#5C5B57] border border-[#EAE6DF]"
-                                  }`}
-                                >
-                                  {hasChatAccess ? (
-                                    <>
-                                      <Unlock className="w-3 h-3" />
-                                      대화 허용됨 (ON)
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Lock className="w-3 h-3 text-gray-500" />
-                                      잠김 (OFF)
-                                    </>
-                                  )}
-                                </button>
-                              )}
-                            </td>
-                            <td className="p-3">
-                              <div className="flex flex-col gap-2">
-                                <textarea
-                                  defaultValue={u.persona || ""}
-                                  onBlur={(e) => {
-                                    if (e.target.value !== u.persona) {
-                                      handleUpdatePersona(u.id, e.target.value);
-                                    }
-                                  }}
-                                  placeholder="예: 이 유저에게는 초등학생 말투로 설명하세요."
-                                  className="w-full h-20 p-2 bg-white border border-[#EAE6DF] rounded-xl text-[11px] focus:outline-none focus:border-indigo-400 resize-none"
-                                />
-                                <div className="text-[9px] text-[#86868B]">입력 후 포커스를 해제하면 자동 저장됩니다.</div>
-                              </div>
-                            </td>
-                            <td className="p-3 text-right space-x-2 whitespace-nowrap">
-                              <button onClick={() => handleGenerateApiKey(u.id)} className="px-2 py-1 bg-white border border-[#EAE6DF] hover:border-indigo-300 rounded-lg text-[10px] cursor-pointer">Key 재발급</button>
-                              {u.id !== "user-1" && (
-                                <button onClick={() => handleDeleteUser(u.id)} className="px-2 py-1 bg-white border border-[#EAE6DF] text-rose-500 rounded-lg text-[10px] cursor-pointer">삭제</button>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </div>
         )}
 
         {showSettings && (
@@ -2953,46 +3345,9 @@ export default function App() {
           </>
         )}
 
-        {/* Fixed Bottom Guide Card for Dev Tab */}
-        {mainNavTab === "dev" && (
-          <div className="px-1.5 pb-2 shrink-0">
-            <div className="p-2.5 bg-white border border-[#EAE6DF] rounded-2xl space-y-2 shadow-xs">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5 text-[9px] font-bold text-[#374151]">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#168571] shrink-0" />
-                  <span>펌웨어 업로드 가이드</span>
-                </div>
-                <span className="text-[8px] text-[#A2A3A5] font-mono shrink-0">아두이노 IDE</span>
-              </div>
-              <div className="space-y-1.5">
-                <div className="flex items-center gap-1.5 px-1.5 py-1 rounded-xl bg-[#FAF9F6] border border-[#EAE6DF] min-h-7">
-                  <span className="w-4 h-4 rounded-md bg-[#168571] text-white flex items-center justify-center text-[10px] font-bold shrink-0">1</span>
-                  <span className="text-[9px] font-semibold text-[#374151] truncate">💾 [파일 저장] 또는 [코드 복사]</span>
-                </div>
-                <div className="flex items-center gap-1.5 px-1.5 py-1 rounded-xl bg-[#FAF9F6] border border-[#EAE6DF] min-h-7">
-                  <span className="w-4 h-4 rounded-md bg-[#4B5563] text-white flex items-center justify-center text-[10px] font-bold shrink-0">2</span>
-                  <span className="text-[9px] font-semibold text-[#374151] truncate">💻 아두이노 IDE에 붙여넣기</span>
-                </div>
-                <div className="flex items-center gap-1.5 px-1.5 py-1 rounded-xl bg-[#E8F4EF] border border-[#D3EAE2] min-h-7">
-                  <span className="w-4 h-4 rounded-md bg-[#168571] text-white flex items-center justify-center text-[10px] font-bold shrink-0">3</span>
-                  <span className="text-[9px] font-bold text-[#168571] truncate">⚡ [ ➔ ] 업로드 버튼 누르기!</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* User Info & Quick Control Footer */}
         <div className="p-3 border-t border-[#EAE6DF] bg-white space-y-2">
-          <div className="flex items-center gap-2 p-1.5 rounded-lg bg-[#FAF9F6] border border-[#EAE6DF]">
-            <div className="w-7 h-7 rounded-full bg-[#FAF9F6] border border-[#EAE6DF] flex items-center justify-center text-[#5C5B57] font-mono text-[11px] font-bold">
-              {user.displayName.substring(0, 1)}
-            </div>
-            <div className="truncate flex-1 min-w-0">
-              <p className="text-xs font-semibold text-[#1D1D1F] truncate">{user.displayName}</p>
-              <p className="text-[10px] text-[#86868B] font-mono truncate">@{user.username}</p>
-            </div>
-          </div>
+          {accountLink("")}
           <div className="grid grid-cols-1 gap-1.5 pt-0.5">
             <button
               id="sidebar-logout-btn"
@@ -3723,8 +4078,7 @@ export default function App() {
 
 
 
-      {/* 4. Admin User Management Drawer/Modal */}
-      {showAdminPanel && (
+      {showAdminPanel && user.role === "admin" && (
         <div className="fixed inset-0 bg-[#1D1D1F]/40 backdrop-blur-sm flex justify-center items-center z-50 animate-fade-in p-4">
           <div className="bg-white border border-[#EAE6DF] rounded-3xl w-full max-w-4xl shadow-2xl p-6 relative overflow-hidden flex flex-col max-h-[90vh]">
 
@@ -3790,42 +4144,9 @@ export default function App() {
                   </div>
                 </div>
               ) : adminSelectedUserId ? (
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <button onClick={() => setAdminSelectedUserId(null)} className="text-xs text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md font-semibold hover:bg-indigo-100 transition-colors">
-                      ← 뒤로 가기
-                    </button>
-                    <h4 className="text-sm font-bold text-[#1D1D1F]">
-                      {adminUsers.find(u => u.id === adminSelectedUserId)?.displayName} 님의 대화 기록
-                    </h4>
-                  </div>
-                  {adminChats.filter(c => c.userId === adminSelectedUserId).length === 0 ? (
-                    <div className="text-center py-8 text-[#86868B] text-xs">대화 기록이 없습니다.</div>
-                  ) : (
-                    <div className="space-y-4">
-                      {adminChats.filter(c => c.userId === adminSelectedUserId).map(chat => (
-                        <div key={chat.id} className="border border-[#EAE6DF] rounded-xl overflow-hidden bg-white">
-                          <div className="bg-[#FAF9F6] px-3 py-2 border-b border-[#EAE6DF] flex justify-between items-center">
-                            <span className="text-xs font-bold text-[#1D1D1F]">{chat.title}</span>
-                            <span className="text-[10px] text-[#86868B]">{new Date(chat.createdAt).toLocaleString()}</span>
-                          </div>
-                          <div className="p-3 space-y-3 max-h-60 overflow-y-auto scrollbar-thin">
-                            {chat.messages.map((m: any) => (
-                              <div key={m.id} className={`flex ${m.sender === 'user' || m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                                <div className={`max-w-[80%] rounded-lg px-3 py-2 text-xs ${m.sender === 'user' || m.role === 'user' ? 'bg-indigo-50 text-indigo-900' : 'bg-[#F5F5F7] text-[#1D1D1F]'}`}>
-                                  <div className="font-semibold text-[10px] mb-1 opacity-60">
-                                    {m.sender === 'user' || m.role === 'user' ? 'User' : 'Assistant'}
-                                  </div>
-                                  <div className="whitespace-pre-wrap">{m.text || m.content}</div>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <StudentChatHistory studentId={adminSelectedUserId}
+                  name={adminUsers.find(u => u.id === adminSelectedUserId)?.displayName ?? "사용자"}
+                  token={token} onClose={() => setAdminSelectedUserId(null)} />
               ) : (
                 <>
                   {/* User List Table */}
@@ -3863,6 +4184,7 @@ export default function App() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-[#EAE6DF] text-[#1D1D1F]">
+                          {renderSignupRequests(5)}
                           {adminUsers.map(u => {
                             const isUserAdmin = u.username === "admin" || u.role === "admin";
                             const hasChatAccess = isUserAdmin || Boolean(u.canAccessChat);

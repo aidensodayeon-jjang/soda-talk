@@ -23,6 +23,40 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const [signingUp, setSigningUp] = useState(window.location.hash === "#signup");
+  const [notice, setNotice] = useState("");
+
+  const changeMode = (signup: boolean) => {
+    setError("");
+    setNotice("");
+    setSigningUp(signup);
+    window.history.replaceState(null, "", signup ? "#signup" : window.location.pathname + window.location.search);
+  };
+
+  const handleSignup = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const fields = Object.fromEntries(new FormData(event.currentTarget));
+    setError("");
+    setLoading(true);
+    try {
+      const response = await fetch("/api/auth/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(fields)
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "가입 신청에 실패했습니다.");
+      changeMode(false);
+      setIdentifier(String(fields.email).trim().toLowerCase());
+      setSecret("");
+      setNotice("가입 신청이 접수되었습니다. 관리자 승인 후 로그인할 수 있습니다.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "가입 신청에 실패했습니다.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -53,7 +87,11 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
       }
 
       localStorage.setItem("savedIdentifier", trimmedIdentifier);
-      localStorage.setItem("savedSecret", trimmedSecret);
+      if (trimmedIdentifier.includes("@")) {
+        localStorage.removeItem("savedSecret");
+      } else {
+        localStorage.setItem("savedSecret", trimmedSecret);
+      }
 
       onLoginSuccess(data.sessionId, data.user);
     } catch (err: any) {
@@ -92,11 +130,39 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
           </div>
         )}
 
-        {/* Unified Login Form (구분 없이 단일 폼) */}
+        {notice && <p role="status" className="mb-5 text-sm text-[#168571]">{notice}</p>}
+        {signingUp ? (
+          <form onSubmit={handleSignup} className="space-y-4">
+            <h2 className="text-lg font-bold">회원가입</h2>
+            {[
+              { name: "email", label: "이메일", type: "email", autoComplete: "email", maxLength: 80 },
+              { name: "name", label: "이름", type: "text", autoComplete: "name", maxLength: 20 },
+              { name: "password", label: "비밀번호", type: "password", autoComplete: "new-password", minLength: 8, maxLength: 100 },
+              { name: "signupCode", label: "가입 코드 (안내받은 경우)", type: "password", autoComplete: "off", maxLength: 128, required: false },
+            ].map(({ label, ...field }) => (
+              <label key={field.name} className="block text-xs font-semibold text-[#555B60]">
+                {label}
+                <input {...field} required={field.required ?? true} className="mt-1.5 w-full h-12 px-4 rounded-xl border border-[#E9E7E2] bg-[#FAF9F6] text-sm focus:outline-[#168571]" />
+              </label>
+            ))}
+            <label className="block text-xs font-semibold text-[#555B60]">
+              캠퍼스
+              <select name="campus" defaultValue="" required className="mt-1.5 w-full h-12 px-4 rounded-xl border border-[#E9E7E2] bg-[#FAF9F6] text-sm focus:outline-[#168571]">
+                <option value="" disabled>캠퍼스 선택</option>
+                <option value="목동">목동</option>
+                <option value="송도">송도</option>
+                <option value="기타">기타</option>
+              </select>
+            </label>
+            <button type="submit" disabled={loading} className="w-full h-12 rounded-xl bg-[#168571] text-white text-sm font-semibold disabled:opacity-50">
+              {loading ? "신청 중..." : "가입 신청"}
+            </button>
+          </form>
+        ) : (
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-[#555B60] mb-1.5">
-              아이디 또는 이름
+              이메일, 아이디 또는 이름
             </label>
             <div className="relative">
               <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-[#A0A5A3]">
@@ -106,7 +172,7 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
                 id="identifier-input"
                 type="text"
                 required
-                placeholder="아이디 또는 학생 이름 입력"
+                placeholder="이메일, 아이디 또는 학생 이름"
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}
                 className="w-full h-[48px] pl-10 pr-4 bg-[#FAF9F6] border border-[#E9E7E2] rounded-[12px] text-sm text-[#20262B] placeholder:text-[#A0A5A3] transition-all duration-150 focus:outline-none focus:border-[#168571] focus:ring-2 focus:ring-[#168571]/15"
@@ -133,7 +199,7 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
               />
             </div>
             <p className="text-[11px] text-[#858B8D] mt-1.5 leading-relaxed">
-              학생은 이름과 전화번호 뒷 4자리를, 관리자는 아이디와 비밀번호를 입력하세요.
+              가입 회원은 이메일과 비밀번호, 수강생은 이름과 전화번호 뒤 4자리로 로그인하세요.
             </p>
           </div>
 
@@ -154,6 +220,16 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
             )}
           </button>
         </form>
+
+        )}
+        <div className="mt-4 text-center">
+          <a href={signingUp ? window.location.pathname : "#signup"} onClick={event => {
+            event.preventDefault();
+            if (!loading) changeMode(!signingUp);
+          }} className="text-sm font-semibold text-[#168571] hover:underline">
+            {signingUp ? "로그인으로 돌아가기" : "회원가입"}
+          </a>
+        </div>
 
         {/* Footer info note */}
         <div className="mt-8 text-center pt-2">

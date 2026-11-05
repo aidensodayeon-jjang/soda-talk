@@ -1,10 +1,13 @@
+import { studioAccounts, studioPassword, equalSecret } from "./src/utils/studioAccounts";
 import { compileAiSkillPrompt, normalizeSkillSlots } from './src/utils/aiSkillUtils';
 import { reserveGptRoute, withProviderFallback } from './src/utils/aiRouting';
 import { createRequestCapacity } from './src/utils/requestCapacity';
 import { fetchHardwareSpeech } from './src/utils/hardwareTts';
 import { quizTurn, parseQuizQuestion, hasUntrackedQuiz, type QuizState } from './src/utils/quiz';
 import { normalizeFriendSettings, validateFriendSettings, friendToneInstruction, resolveFriendUser } from './src/utils/friendSettings';
+import type { CourseContent } from "./src/types";
 import express from "express";
+import http from "http";
 import path from "path";
 import fs from "fs";
 import os from "os";
@@ -49,8 +52,7 @@ function getMysqlPool() {
   return mysqlPool;
 }
 
-const DATA_DIR = path.join(process.cwd(), "data");
-const DB_FILE = path.join(DATA_DIR, "db.json");
+const LEGACY_DB_FILE = path.join(process.cwd(), "data", "db.json");
 
 interface Message {
   id: string;
@@ -71,12 +73,28 @@ interface ChatRoom {
   messages: Message[];
 }
 
+type Campus = "목동" | "송도" | "기타";
+const isCampus = (value: unknown): value is Campus => value === "목동" || value === "송도" || value === "기타";
+
+interface KeyRegistration {
+  registeredAt: number;
+  expiresAt: number;
+  registeredBy: string | null;
+  validityDays?: number;
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const STUDENT_KEY_VALIDITY_DAYS = 60;
+const expiredKeyMessage = "키 등록 유효기간이 만료되었습니다. 관리자 또는 담당 선생님에게 추가 등록을 요청해 주세요.";
+
 interface User {
   id: string;
   username: string;
   displayName: string;
-  passwordHash: string;
-  role?: "admin" | "student" | "user";
+  campus?: Campus | null;
+  keyRegistrations?: KeyRegistration[];
+  keyRenewalRequestedAt?: number;
+  role?: "admin" | "tutor" | "student" | "user";
   canAccessChat?: boolean;
   personalApiKey?: string;
   lastGptDate?: string;
@@ -95,21 +113,6 @@ interface User {
     versionSnapshots?: any[];
     report?: any;
   };
-}
-
-interface CourseContent {
-  id: string;
-  week: number;
-  title: string;
-  description: string;
-  filename: string;
-  language: "arduino" | "python" | "cpp" | "json";
-  tags: string[];
-  pinMap?: string;
-  code: string;
-  contentType?: "code" | "circuit" | "doc" | "editor" | "interactive";
-  imageUrl?: string;
-  updatedAt?: string;
 }
 
 const FIRMWARE_DIR = path.join(process.cwd(), 'firmware');
@@ -622,61 +625,82 @@ interface DBStructure {
   userPresences?: Record<string, string>; // userId -> ISO timestamp (lastSeenAt)
 }
 
-function initDB() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
-
-  if (!fs.existsSync(DB_FILE)) {
-    const defaultDB: DBStructure = {
-      users: [
-        { id: "user-1", username: "admin", displayName: "운영자", passwordHash: "admin123", role: "admin", canAccessChat: true },
-        { id: "user-2", username: "muji", displayName: "무인양품", passwordHash: "muji123", role: "student", canAccessChat: false }
-      ],
-      settings: {
-        lmStudioUrl: "https://granular-kindly-morally.ngrok-free.dev",
-        modelName: "llama-3-korean-bllossom-8b",
-        fallbackMode: true,
-        hybridModeEnabled: false,
-        dailyGptQuota: 30
-      },
-      chats: [
-        {
-          id: "chat-default",
-          userId: "user-1",
-          title: "소다봇 제작 & 코딩 세션 🤖",
-          createdAt: new Date().toISOString(),
-          messages: [
-            {
-              id: "msg-1",
-              sender: "assistant",
-              text: "안녕! 나는 디랩(D-Lab)의 인공지능 코딩 로봇 '소다봇'이야! 🤖 소다봇 하드웨어 제작, 회로 핀 연결, ESP32/아두이노 펌웨어 코딩 중 궁금한 점이 있으면 언제든 물어봐. 직접 코드를 작성하고 제어할 수 있도록 도와줄게!",
-              timestamp: new Date().toISOString()
-            }
-          ]
-        }
-      ],
-      curriculumWeekShiftVersion: 1,
-      courseContents: DEFAULT_COURSE_CONTENTS,
-      friendProfiles: [],
-      friendships: [],
-      directMessages: [],
-      userPresences: {}
-    };
-    fs.writeFileSync(DB_FILE, JSON.stringify(defaultDB, null, 2), "utf8");
-  }
+function createDefaultDB(): DBStructure {
+  return {
+    users: [],
+    settings: {
+      lmStudioUrl: "https://granular-kindly-morally.ngrok-free.dev",
+      modelName: "llama-3-korean-bllossom-8b",
+      fallbackMode: true,
+      hybridModeEnabled: false,
+      dailyGptQuota: 30
+    },
+    chats: [
+      {
+        id: "chat-default",
+        userId: "user-1",
+        title: "소다봇 제작 & 코딩 세션 🤖",
+        createdAt: new Date().toISOString(),
+        messages: [
+          {
+            id: "msg-1",
+            sender: "assistant",
+            text: "안녕! 나는 디랩(D-Lab)의 인공지능 코딩 로봇 '소다봇'이야! 🤖 소다봇 하드웨어 제작, 회로 핀 연결, ESP32/아두이노 펌웨어 코딩 중 궁금한 점이 있으면 언제든 물어봐. 직접 코드를 작성하고 제어할 수 있도록 도와줄게!",
+            timestamp: new Date().toISOString()
+          }
+        ]
+      }
+    ],
+    curriculumWeekShiftVersion: 1,
+    courseContents: DEFAULT_COURSE_CONTENTS,
+    friendProfiles: [],
+    friendships: [],
+    directMessages: [],
+    userPresences: {}
+  };
 }
 
-initDB();
+type TalkProfile = Omit<User, "displayName" | "campus" | "role">;
+
+function syncCommonUsers(db: DBStructure) {
+  const profiles = new Map(db.users.map(user => [user.username, user]));
+  db.users = studioAccounts().prepare("SELECT username, name, role, campus FROM users").all().map(account => {
+    const username = String(account.username);
+    const profile = profiles.get(username) ?? {
+      username,
+      id: username === "admin" ? "user-1" : username.startsWith("student_") ? `student-${username.slice(8)}` : `studio:${username}`,
+      canAccessChat: account.name === "김루미"
+    };
+    const role: User["role"] = account.role === "admin" || account.role === "tutor" ? account.role : "student";
+    return Object.assign(profile, {
+      displayName: String(account.name),
+      role,
+      campus: isCampus(account.campus) ? account.campus : null
+    });
+  });
+}
 
 let sharedDB: DBStructure | undefined;
 function readDB(): DBStructure {
-  if (sharedDB) return sharedDB;
-  initDB();
-  const raw = fs.readFileSync(DB_FILE, "utf8");
-  const db: DBStructure = JSON.parse(raw);
+  if (sharedDB) {
+    syncCommonUsers(sharedDB);
+    return sharedDB;
+  }
+  const studio = studioAccounts();
+  let saved = studio.prepare("SELECT payload FROM talk_state WHERE id = 1").get();
+  if (!saved) {
+    const initial = fs.existsSync(LEGACY_DB_FILE)
+      ? JSON.parse(fs.readFileSync(LEGACY_DB_FILE, "utf8"))
+      : createDefaultDB();
+    studio.prepare("INSERT OR IGNORE INTO talk_state (id, payload) VALUES (1, ?)").run(JSON.stringify(initial));
+    saved = studio.prepare("SELECT payload FROM talk_state WHERE id = 1").get();
+  }
+  const { talkProfiles, users, ...state } = JSON.parse(String(saved?.payload)) as
+    Omit<DBStructure, "users"> & { talkProfiles?: TalkProfile[]; users?: User[] };
+  const db: DBStructure = { ...state, users: (talkProfiles ?? users ?? []) as User[] };
+  syncCommonUsers(db);
   sharedDB = db;
-  let changed = false;
+  let changed = !talkProfiles;
   if (!db.curriculumWeekShiftVersion) {
     for (const item of db.courseContents || []) {
     if (item.id === "content-week-4-lcd-code-lab" && item.filename === "soda-3-1.ino") {
@@ -763,6 +787,18 @@ function readDB(): DBStructure {
   }
   if (db.users && Array.isArray(db.users)) {
     db.users.forEach(u => {
+      if (u.username !== "admin" && u.role !== "admin" && u.role !== "tutor") {
+        let previousExpiry = 0;
+        for (const registration of u.keyRegistrations ?? []) {
+          if (registration.validityDays === undefined) {
+            registration.validityDays = STUDENT_KEY_VALIDITY_DAYS;
+            registration.expiresAt = Math.max(registration.registeredAt, previousExpiry) +
+              STUDENT_KEY_VALIDITY_DAYS * DAY_MS;
+            changed = true;
+          }
+          previousExpiry = registration.expiresAt;
+        }
+      }
       if (u.aiSkillState) {
         const slots = normalizeSkillSlots(u.aiSkillState.skills || []);
         if (JSON.stringify(slots) !== JSON.stringify(u.aiSkillState.skills)) { u.aiSkillState.skills = slots; changed = true; }
@@ -782,9 +818,13 @@ function readDB(): DBStructure {
 }
 
 function writeDB(data: DBStructure) {
-  const temp = DB_FILE + ".tmp";
-  fs.writeFileSync(temp, JSON.stringify(data, null, 2), "utf8");
-  fs.renameSync(temp, DB_FILE);
+  const { users, ...state } = data;
+  const talkProfiles = users.map(user => {
+    const { displayName, campus, role, passwordHash, ...profile } = user as User & { passwordHash?: string };
+    return profile;
+  });
+  studioAccounts().prepare("UPDATE talk_state SET payload = ? WHERE id = 1")
+    .run(JSON.stringify({ ...state, talkProfiles }));
   sharedDB = data;
 }
 
@@ -1432,11 +1472,12 @@ interface SessionUser {
   id: string;
   username: string;
   displayName: string;
-  role: "admin" | "student" | "user";
+  role: "admin" | "tutor" | "student" | "user";
   canAccessChat: boolean;
   personalApiKey?: string;
   friendSettings?: any;
   lastActivity: number;
+  keyExpiresAt?: number;
 }
 
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30분 무동작 시 세션 만료
@@ -1448,8 +1489,15 @@ function getSession(token: string): SessionUser | undefined {
   const session = sessions.get(token);
   if (!session) return undefined;
 
+  const account = readDB().users.find(user => user.id === session.id);
+  if (!account || account.role !== session.role) {
+    sessions.delete(token);
+    return undefined;
+  }
+
   const now = Date.now();
-  if (session.lastActivity && now - session.lastActivity > SESSION_TIMEOUT_MS) {
+  if ((session.keyExpiresAt !== undefined && now >= session.keyExpiresAt) ||
+      (session.lastActivity && now - session.lastActivity > SESSION_TIMEOUT_MS)) {
     sessions.delete(token);
     return undefined;
   }
@@ -1462,7 +1510,8 @@ function getSession(token: string): SessionUser | undefined {
 setInterval(() => {
   const now = Date.now();
   for (const [token, session] of sessions.entries()) {
-    if (session.lastActivity && now - session.lastActivity > SESSION_TIMEOUT_MS) {
+    if ((session.keyExpiresAt !== undefined && now >= session.keyExpiresAt) ||
+      (session.lastActivity && now - session.lastActivity > SESSION_TIMEOUT_MS)) {
       sessions.delete(token);
     }
   }
@@ -1478,6 +1527,42 @@ function createSession(userData: Omit<SessionUser, "lastActivity">): { sessionId
   return { sessionId, sessionUser };
 }
 
+function addKeyRegistration(user: User, registeredBy: string | null) {
+  const registeredAt = Date.now();
+  const previousExpiry = user.keyRegistrations?.at(-1)?.expiresAt ?? registeredAt;
+  const validityDays = user.role === "tutor" ? 120 : STUDENT_KEY_VALIDITY_DAYS;
+  const registration = {
+    registeredAt,
+    validityDays,
+    expiresAt: Math.max(registeredAt, previousExpiry) + validityDays * DAY_MS,
+    registeredBy
+  };
+  (user.keyRegistrations ??= []).push(registration);
+  return registration;
+}
+
+function completeLogin(
+  res: express.Response,
+  userData: Omit<SessionUser, "lastActivity">
+) {
+  if (userData.role !== "admin") {
+    const db = readDB();
+    const user = db.users.find(candidate => candidate.id === userData.id);
+    if (!user) return res.status(401).json({ error: "사용자를 찾을 수 없습니다." });
+    let registration = user.keyRegistrations?.at(-1);
+    if (!registration) {
+      registration = addKeyRegistration(user, null);
+      writeDB(db);
+    }
+    if (registration.expiresAt <= Date.now()) {
+      return res.status(403).json({ error: expiredKeyMessage });
+    }
+    userData.keyExpiresAt = registration.expiresAt;
+  }
+  const { sessionId, sessionUser } = createSession(userData);
+  return res.json({ success: true, sessionId, user: sessionUser });
+}
+
 function ensureUserApiKey(user: User, db: DBStructure): string {
   if (!user.personalApiKey) {
     user.personalApiKey = "sk-soda-" + crypto.randomBytes(16).toString("hex");
@@ -1486,235 +1571,114 @@ function ensureUserApiKey(user: User, db: DBStructure): string {
   return user.personalApiKey;
 }
 
+function enrollSodabot(studio: ReturnType<typeof studioAccounts>, username: string) {
+  studio.prepare(`
+    INSERT INTO enrollments (username, course, enrolled, updated_at)
+    VALUES (?, 'sodabot', 1, ?)
+    ON CONFLICT(username, course) DO UPDATE SET enrolled = 1, updated_at = excluded.updated_at
+  `).run(username, Date.now());
+}
+
 app.post("/api/auth/login", async (req, res) => {
-  const { loginType, name, phone, username, password } = req.body;
-  const db = readDB();
-
-  const identifier = (username || name)?.trim();
-  const secret = (password || phone)?.trim();
-
-  if (!identifier || !secret) {
-    return res.status(400).json({ error: "아이디(또는 이름)와 비밀번호(또는 전화번호 뒷자리)를 모두 입력해 주세요." });
+  const { loginType, name, phone, username, password } = req.body ?? {};
+  const identifier = typeof (username || name) === "string" ? (username || name).trim() : "";
+  const secret = typeof (password || phone) === "string" ? (password || phone).trim() : "";
+  if (!identifier || !secret || secret.length > 100) {
+    return res.status(400).json({ error: "아이디 또는 이름과 비밀번호를 확인해 주세요." });
   }
 
-  // 1. 마스터 관리자 프리패스
-  if ((identifier === "admin" && (secret === "password123" || secret === "admin123")) ||
-      (identifier === "aiden" && (secret === "3531" || secret === "1234"))) {
-    let adminUser = db.users.find(u => u.username === identifier);
-    if (!adminUser) {
-      adminUser = {
-        id: "admin-" + Date.now(),
-        username: identifier,
-        displayName: identifier === "aiden" ? "에이든 (관리자)" : "운영자",
-        passwordHash: secret,
-        role: "admin",
-        canAccessChat: true
-      };
-      db.users.push(adminUser);
-    }
-    const apiKey = ensureUserApiKey(adminUser, db);
-
-    const { sessionId, sessionUser } = createSession({
-      id: adminUser.id,
-      username: adminUser.username,
-      displayName: adminUser.displayName,
-      role: "admin",
-      canAccessChat: true,
-      personalApiKey: apiKey
-    });
-    return res.json({ success: true, sessionId, user: sessionUser });
-  }
-
-  // 2. 관리자 명시 로그인 요청인 경우 로컬 DB 검사
-  if (loginType === "admin") {
-    const user = db.users.find(u => u.username === identifier);
-    if (!user || user.passwordHash !== secret) {
-      return res.status(401).json({ error: "관리자 아이디 또는 비밀번호가 올바르지 않습니다." });
-    }
-    const apiKey = ensureUserApiKey(user, db);
-    const isUserAdmin = user.username === "admin" || user.role === "admin";
-    const { sessionId, sessionUser } = createSession({
-      id: user.id,
-      username: user.username,
-      displayName: user.displayName,
-      role: isUserAdmin ? "admin" : (user.role || "student"),
-      canAccessChat: isUserAdmin ? true : (user.canAccessChat ?? false),
-      personalApiKey: apiKey
-    });
-    return res.json({ success: true, sessionId, user: sessionUser });
-  }
-
-  // 3. 로컬 DB(db.users) 계정 검사 (관리자 또는 기존 등록된 사용자/학생 ID)
-  const localMatched = db.users.find(u => 
-    (u.username === identifier || u.displayName === identifier || u.id === identifier) && 
-    (u.passwordHash === secret || (!u.passwordHash && secret === "1234"))
-  );
-  if (localMatched) {
-    const apiKey = ensureUserApiKey(localMatched, db);
-    const isUserAdmin = localMatched.username === "admin" || localMatched.role === "admin";
-    const { sessionId, sessionUser } = createSession({
-      id: localMatched.id,
-      username: localMatched.username,
-      displayName: localMatched.displayName,
-      role: isUserAdmin ? "admin" : (localMatched.role || "student"),
-      canAccessChat: isUserAdmin ? true : (localMatched.canAccessChat ?? false),
-      personalApiKey: apiKey
-    });
-    return res.json({ success: true, sessionId, user: sessionUser });
-  }
-
-  // 4. 학생 MySQL 인증 (Name + Phone 4 digits via soda-home MySQL)
-  const studentName = (name || username)?.trim();
-  const phoneLast4 = (phone || password)?.trim();
-
-  if (!studentName || !phoneLast4) {
-    return res.status(400).json({ error: "학생 이름과 전화번호 뒷 4자리를 모두 입력해 주세요." });
-  }
-
-  // 마스터 관리자 체크
-  if (studentName === "aiden" && phoneLast4 === "3531") {
-    let aidenUser = db.users.find(u => u.username === "aiden");
-    if (!aidenUser) {
-      aidenUser = {
-        id: "admin-aiden",
-        username: "aiden",
-        displayName: "Aiden (Master Admin)",
-        passwordHash: "3531",
-        role: "admin",
-        canAccessChat: true
-      };
-      db.users.push(aidenUser);
-    }
-    const apiKey = ensureUserApiKey(aidenUser, db);
-    const { sessionId, sessionUser } = createSession({
-      id: aidenUser.id,
-      username: "aiden",
-      displayName: "Aiden (Master Admin)",
-      role: "admin",
-      canAccessChat: true,
-      personalApiKey: apiKey
-    });
-    return res.json({ success: true, sessionId, user: sessionUser });
-  }
-
+  const accountId = identifier.toLowerCase();
+  const emailLogin = identifier.includes("@");
   try {
-    const pool = getMysqlPool();
-    const [rows] = await pool.execute(
-      `SELECT id, name, phone_parent, grade, status
-       FROM api_studentmaster
-       WHERE name = ? AND RIGHT(REPLACE(phone_parent, '-', ''), 4) = ?
-       ORDER BY (status = "재원생") DESC, id DESC
-       LIMIT 1`,
-      [studentName, phoneLast4]
-    );
-
-    const students = rows as any[];
-
-    if (students.length === 0) {
-      const [nameCheck] = await pool.execute(
-        'SELECT id FROM api_studentmaster WHERE name = ? LIMIT 1',
-        [studentName]
+    const studio = studioAccounts();
+    const pending = emailLogin && studio.prepare("SELECT salt, hash FROM talk_signup_requests WHERE username = ?").get(accountId);
+    if (pending && equalSecret((await studioPassword(secret, String(pending.salt))).hash, String(pending.hash))) {
+      return res.status(403).json({ error: "관리자 승인 대기 중입니다." });
+    }
+    const exact = studio.prepare("SELECT username, salt, hash FROM users WHERE username = ?").get(accountId);
+    const accounts = exact ? [exact] : emailLogin || loginType === "admin" ? [] :
+      studio.prepare("SELECT username, salt, hash FROM users WHERE name = ? AND role = 'student'").all(identifier);
+    const verified = [];
+    for (const account of accounts) {
+      const { hash } = await studioPassword(secret, String(account.salt));
+      if (equalSecret(hash, String(account.hash))) verified.push(account);
+    }
+    if (verified.length > 1) {
+      return res.status(401).json({ error: "같은 이름의 계정이 있습니다. 학생 아이디로 로그인해 주세요." });
+    }
+    let matchedUsername = verified[0]?.username;
+    if (!matchedUsername) {
+      if (exact || emailLogin || loginType === "admin" || !/^\d{4}$/.test(secret)) {
+        return res.status(401).json({ error: "아이디 또는 비밀번호가 올바르지 않습니다." });
+      }
+      const [rows] = await getMysqlPool().execute(
+        `SELECT id, name FROM api_studentmaster
+         WHERE name = ? AND RIGHT(REPLACE(phone_parent, '-', ''), 4) = ?
+         ORDER BY (status = '재원생') DESC, id DESC LIMIT 1`,
+        [identifier, secret]
       );
-      if ((nameCheck as any[]).length === 0) {
-        return res.status(401).json({ error: "등록된 학생 정보를 찾을 수 없습니다. 이름을 다시 확인해 주세요." });
+      const student = rows[0];
+      if (!student) return res.status(401).json({ error: "학생 이름 또는 전화번호 뒷 4자리를 확인해 주세요." });
+      matchedUsername = `student_${student.id}`;
+      const { salt, hash } = await studioPassword(secret);
+      studio.exec("BEGIN IMMEDIATE");
+      try {
+        const result = studio.prepare(`
+          INSERT INTO users (username, name, role, salt, hash, created_at, campus)
+          VALUES (?, ?, 'student', ?, ?, ?, '목동')
+          ON CONFLICT(username) DO NOTHING
+        `).run(matchedUsername, student.name, salt, hash, new Date().toISOString());
+        if (result.changes) enrollSodabot(studio, String(matchedUsername));
+        studio.exec("COMMIT");
+        if (!result.changes) return res.status(401).json({ error: "등록된 학생 아이디와 비밀번호로 로그인해 주세요." });
+      } catch (error) {
+        studio.exec("ROLLBACK");
+        throw error;
       }
-      return res.status(401).json({ error: "전화번호 뒷 4자리가 일치하지 않습니다." });
     }
-
-    const student = students[0];
-    const studentUsername = `student_${student.id}`;
-
-    // Upsert to local db.json
-    let localUser = db.users.find(u => u.username === studentUsername || u.id === `student-${student.id}`);
-    const isRumi = student.name === "김루미" || studentUsername === "김루미";
-    if (!localUser) {
-      localUser = {
-        id: `student-${student.id}`,
-        username: studentUsername,
-        displayName: student.name,
-        passwordHash: phoneLast4,
-        role: "student",
-        canAccessChat: isRumi ? true : false
-      };
-      db.users.push(localUser);
-    } else {
-      localUser.displayName = student.name;
-      if (isRumi) {
-        localUser.canAccessChat = true;
-      }
-      writeDB(db);
-    }
-    const apiKey = ensureUserApiKey(localUser, db);
-    const isRumiOrAdmin = isRumi || localUser?.canAccessChat;
-    const { sessionId, sessionUser } = createSession({
-      id: localUser.id,
-      username: localUser.username,
-      displayName: localUser.displayName,
-      role: "student",
-      canAccessChat: Boolean(isRumiOrAdmin || localUser.canAccessChat),
-      personalApiKey: apiKey
+    const db = readDB();
+    const user = db.users.find(candidate => candidate.username === matchedUsername);
+    if (!user) return res.status(401).json({ error: "사용자를 찾을 수 없습니다." });
+    const personalApiKey = ensureUserApiKey(user, db);
+    return completeLogin(res, {
+      id: user.id, username: user.username, displayName: user.displayName, role: user.role || "student",
+      canAccessChat: user.role === "admin" || Boolean(user.canAccessChat), personalApiKey
     });
-
-    return res.json({ success: true, sessionId, user: sessionUser });
-
-  } catch (err: any) {
-    console.error("Student login MySQL query error:", err);
-    // Fallback: Check local db.json if MySQL is temporarily offline
-    const fallbackUser = db.users.find(
-      u => (u.displayName === studentName || u.username === studentName) && u.passwordHash === phoneLast4
-    );
-    if (fallbackUser) {
-      const apiKey = ensureUserApiKey(fallbackUser, db);
-      const { sessionId, sessionUser } = createSession({
-        id: fallbackUser.id,
-        username: fallbackUser.username,
-        displayName: fallbackUser.displayName,
-        role: fallbackUser.role || "student",
-        canAccessChat: fallbackUser.canAccessChat ?? false,
-        personalApiKey: apiKey
-      });
-      return res.json({ success: true, sessionId, user: sessionUser });
-    }
-
-    return res.status(500).json({ error: "학생 인증 데이터베이스에 접속할 수 없습니다. 관리자에게 문의하세요." });
+  } catch (error) {
+    console.error("Account login failed", error);
+    return res.status(503).json({ error: "회원 데이터베이스에 연결할 수 없습니다." });
   }
 });
 
-app.post("/api/auth/signup", (req, res) => {
-  const { username, displayName, password } = req.body;
-  if (!username || !displayName || !password) {
-    return res.status(400).json({ error: "모든 항목을 입력해 주세요." });
+app.post("/api/auth/signup", async (req, res) => {
+  const { email, name, password, signupCode, campus } = req.body ?? {};
+  const username = typeof email === "string" ? email.trim().toLowerCase() : "";
+  const displayName = typeof name === "string" ? name.trim() : "";
+  if (username.length > 80 || !/^[^\s@]{1,64}@[^\s@]+\.[^\s@]{2,}$/.test(username) ||
+      !displayName || displayName.length > 20 || typeof password !== "string" ||
+      password.length < 8 || password.length > 100 || password !== password.trim()) {
+    return res.status(400).json({ error: "이메일, 이름(20자 이내), 비밀번호(앞뒤 공백 없이 8~100자)를 확인해 주세요." });
   }
-
-  const db = readDB();
-  const exists = db.users.some(u => u.username === username);
-  if (exists) {
-    return res.status(400).json({ error: "이미 존재하는 아이디입니다." });
+  if (!isCampus(campus)) {
+    return res.status(400).json({ error: "캠퍼스를 선택해 주세요." });
   }
-
-  const newUser: User = {
-    id: "user-" + Date.now(),
-    username,
-    displayName,
-    passwordHash: password,
-    role: "student",
-    canAccessChat: false // 기본적으로 대화 권한 비활성화 (개발 탭만 오픈)
-  };
-
-  const apiKey = ensureUserApiKey(newUser, db);
-  db.users.push(newUser);
-  writeDB(db);
-
-  const { sessionId, sessionUser } = createSession({
-    id: newUser.id,
-    username: newUser.username,
-    displayName: newUser.displayName,
-    role: "student",
-    canAccessChat: false,
-    personalApiKey: apiKey
-  });
-
-  res.json({ success: true, sessionId, user: sessionUser });
+  const expectedCode = process.env.SODA_TALK_SIGNUP_CODE;
+  if (expectedCode && (typeof signupCode !== "string" || !equalSecret(signupCode.trim(), expectedCode))) {
+    return res.status(403).json({ error: "가입 코드가 올바르지 않습니다." });
+  }
+  try {
+    const studio = studioAccounts();
+    const { salt, hash } = await studioPassword(password);
+    const result = studio.prepare(`
+      INSERT OR IGNORE INTO talk_signup_requests (username, name, salt, hash, created_at, campus)
+      SELECT ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM users WHERE username = ?)
+    `).run(username, displayName, salt, hash, new Date().toISOString(), campus, username);
+    if (!result.changes) return res.status(409).json({ error: "이미 등록되었거나 승인 대기 중인 이메일입니다." });
+    return res.status(201).json({ success: true });
+  } catch (error) {
+    console.error("Studio signup failed", error);
+    return res.status(503).json({ error: "가입 신청을 저장할 수 없습니다." });
+  }
 });
 
 app.post("/api/auth/logout", (req, res) => {
@@ -1739,9 +1703,14 @@ app.get("/api/auth/me", (req, res) => {
   if (!session) {
     const matchedUser = db.users.find(u => u.personalApiKey === token);
     if (matchedUser) {
-      const isUserAdmin = matchedUser.username === "admin" || matchedUser.role === "admin";
+      const isUserAdmin = isAdministrator(matchedUser);
+      const keyExpiresAt = matchedUser.keyRegistrations?.at(-1)?.expiresAt;
+      if (!isUserAdmin && (keyExpiresAt === undefined || keyExpiresAt <= Date.now())) {
+        return res.status(403).json({ error: keyExpiresAt === undefined ? "먼저 로그인해 키 등록을 완료해 주세요." : expiredKeyMessage });
+      }
       const apiKey = ensureUserApiKey(matchedUser, db);
       session = {
+        keyExpiresAt: isUserAdmin ? undefined : keyExpiresAt,
         id: matchedUser.id,
         username: matchedUser.username,
         displayName: matchedUser.displayName,
@@ -1759,7 +1728,7 @@ app.get("/api/auth/me", (req, res) => {
   // DB 최신 권한 상태와 실시간 동기화
   const dbUser = db.users.find(u => u.id === session!.id);
   if (dbUser) {
-    const isUserAdmin = dbUser.username === "admin" || dbUser.role === "admin" || dbUser.displayName === "김루미" || dbUser.username === "김루미";
+    const isUserAdmin = isAdministrator(dbUser);
     const apiKey = ensureUserApiKey(dbUser, db);
     session.displayName = dbUser.displayName;
     session.role = isUserAdmin ? "admin" : (dbUser.role || "student");
@@ -1768,7 +1737,45 @@ app.get("/api/auth/me", (req, res) => {
     session.friendSettings = dbUser.friendSettings || null;
   }
 
-  res.json({ user: session });
+  res.json({ user: {
+    ...session,
+    keyExpiresAt: dbUser && !isAdministrator(dbUser) ? dbUser.keyRegistrations?.at(-1)?.expiresAt : undefined,
+    keyRenewalRequestedAt: dbUser?.keyRenewalRequestedAt
+  } });
+});
+
+app.patch("/api/auth/profile", (req, res) => {
+  const token = (req.headers.authorization || "").replace(/^Bearer /, "");
+  const session = getSession(token);
+  const db = readDB();
+  const user = session && db.users.find(candidate => candidate.id === session.id);
+  if (!user || token === user.personalApiKey) return res.status(401).json({ error: "다시 로그인해 주세요." });
+
+  const displayName = typeof req.body?.displayName === "string" ? req.body.displayName.trim() : "";
+  if (!displayName || displayName.length > 20) {
+    return res.status(400).json({ error: "이름을 1~20자로 입력해 주세요." });
+  }
+  studioAccounts().prepare("UPDATE users SET name = ? WHERE username = ?").run(displayName, user.username);
+  user.displayName = displayName;
+  writeDB(db);
+  for (const active of sessions.values()) {
+    if (active.id === user.id) active.displayName = displayName;
+  }
+  return res.json({ displayName });
+});
+
+app.post("/api/auth/key-renewal-request", (req, res) => {
+  const token = (req.headers.authorization || "").replace(/^Bearer /, "");
+  const session = getSession(token);
+  const db = readDB();
+  const user = session && db.users.find(candidate => candidate.id === session.id);
+  if (!user || token === user.personalApiKey) return res.status(401).json({ error: "다시 로그인해 주세요." });
+  if (isAdministrator(user)) return res.status(400).json({ error: "관리자 계정은 연장이 필요하지 않습니다." });
+  if (user.keyRenewalRequestedAt === undefined) {
+    user.keyRenewalRequestedAt = Date.now();
+    writeDB(db);
+  }
+  return res.json({ keyRenewalRequestedAt: user.keyRenewalRequestedAt });
 });
 
 app.post("/api/sodabot/speak", express.json(), async (req, res) => {
@@ -1804,53 +1811,180 @@ app.get("/api/auth/current-key", (req, res) => {
 // ----------------------------------------------------
 // Admin API
 // ----------------------------------------------------
-const requireAdmin = (req: any, res: any, next: any) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) return res.status(401).json({ error: "인증되지 않은 사용자입니다." });
-  
-  const token = authHeader.replace("Bearer ", "");
+function managementActor(req: express.Request) {
+  const token = (req.headers.authorization || "").replace(/^Bearer /, "");
   const session = getSession(token);
-  if (!session || (session.username !== "admin" && session.role !== "admin")) {
-    return res.status(403).json({ error: "운영자 권한이 필요합니다." });
+  if (!session) return null;
+  const actor = readDB().users.find(user => user.id === session.id);
+  return actor ?? null;
+}
+
+const isAdministrator = (user: User) => user.role === "admin";
+
+function userCampus(user: User): Campus | null {
+  return user.campus ?? null;
+}
+
+function canManageStudent(actor: User, target: User) {
+  if (isAdministrator(actor)) return true;
+  const campus = userCampus(actor);
+  return actor.role === "tutor" && campus !== null && !isAdministrator(target) &&
+    target.role !== "tutor" && userCampus(target) === campus;
+}
+
+const requireAdmin: express.RequestHandler = (req, res, next) => {
+  const actor = managementActor(req);
+  if (!actor || !isAdministrator(actor)) {
+    res.status(actor ? 403 : 401).json({ error: "운영자 권한이 필요합니다." });
+    return;
   }
+  res.locals.actor = actor;
   next();
 };
 
-app.get("/api/admin/users", requireAdmin, (req, res) => {
+const requireStaff: express.RequestHandler = (req, res, next) => {
+  const actor = managementActor(req);
+  if (!actor || (!isAdministrator(actor) && (actor.role !== "tutor" || !userCampus(actor)))) {
+    res.status(actor ? 403 : 401).json({ error: "관리 권한이 필요합니다." });
+    return;
+  }
+  res.locals.actor = actor;
+  next();
+};
+
+app.put("/api/admin/users/:id/role", requireAdmin, (req, res) => {
+  const { role, campus } = req.body ?? {};
   const db = readDB();
-  // Ensure each user has default canAccessChat
-  const users = db.users.map(u => ({
-    ...u,
-    canAccessChat: u.username === "admin" || u.role === "admin" ? true : (u.canAccessChat ?? false),
-    role: u.username === "admin" ? "admin" : (u.role || "student")
+  const target = db.users.find(user => user.id === req.params.id);
+  if (!target) return res.status(404).json({ error: "사용자를 찾을 수 없습니다." });
+  if (isAdministrator(target) || (role !== "student" && role !== "tutor") ||
+      (campus !== null && !isCampus(campus)) || (role === "tutor" && !campus)) {
+    return res.status(400).json({ error: "역할과 캠퍼스를 확인해 주세요. 튜터는 캠퍼스가 필요합니다." });
+  }
+  target.role = role;
+  target.campus = campus;
+  studioAccounts().prepare("UPDATE users SET role = ?, campus = ? WHERE username = ?").run(role, campus, target.username);
+  writeDB(db);
+  for (const session of sessions.values()) {
+    if (session.id === target.id) session.role = role;
+  }
+  return res.json({ success: true });
+});
+
+app.get("/api/admin/signup-requests", requireStaff, (_req, res) => {
+  try {
+    const actor: User = res.locals.actor;
+    const campus = isAdministrator(actor) ? null : userCampus(actor);
+    const requests = studioAccounts().prepare(
+      "SELECT username, name, campus FROM talk_signup_requests WHERE (? = 1 OR campus = ?) ORDER BY created_at"
+    ).all(Number(isAdministrator(actor)), campus);
+    return res.json({ requests });
+  } catch {
+    return res.status(503).json({ error: "가입 신청 목록을 불러올 수 없습니다." });
+  }
+});
+
+app.post("/api/admin/signup-requests/:email/approve", requireStaff, (req, res) => {
+  try {
+    const studio = studioAccounts();
+    studio.exec("BEGIN IMMEDIATE");
+    try {
+      const email = req.params.email;
+      const actor: User = res.locals.actor;
+      const campus = isAdministrator(actor) ? null : userCampus(actor);
+      const result = studio.prepare(`
+        INSERT OR IGNORE INTO users (username, name, role, salt, hash, created_at, campus)
+        SELECT username, name, 'student', salt, hash, created_at, campus FROM talk_signup_requests WHERE username = ? AND (? = 1 OR campus = ?)
+      `).run(email, Number(isAdministrator(actor)), campus);
+      if (!result.changes) {
+        studio.exec("ROLLBACK");
+        return res.status(409).json({ error: "승인할 수 있는 신청이 없거나 같은 이메일의 계정이 존재합니다." });
+      }
+      enrollSodabot(studio, email);
+      studio.prepare("DELETE FROM talk_signup_requests WHERE username = ?").run(email);
+      studio.exec("COMMIT");
+      return res.json({ success: true });
+    } catch (error) {
+      studio.exec("ROLLBACK");
+      throw error;
+    }
+  } catch (error) {
+    console.error("Studio approval failed", error);
+    return res.status(503).json({ error: "가입 신청을 승인할 수 없습니다." });
+  }
+});
+
+app.get("/api/admin/users", requireStaff, (req, res) => {
+  const db = readDB();
+  const actor: User = res.locals.actor;
+  const users = db.users.filter(user => canManageStudent(actor, user)).map(u => ({
+    id: u.id,
+    username: u.username,
+    displayName: u.displayName,
+    campus: userCampus(u),
+    keyRegistrations: u.keyRegistrations ?? [],
+    keyRenewalRequestedAt: u.keyRenewalRequestedAt,
+    role: isAdministrator(u) ? "admin" : u.role === "tutor" ? "tutor" : "student",
+    canAccessChat: isAdministrator(u) || Boolean(u.canAccessChat),
+    ...(isAdministrator(actor) ? { personalApiKey: u.personalApiKey, persona: u.persona } : {})
   }));
   res.json({ users });
 });
 
-app.post("/api/admin/users", requireAdmin, (req, res) => {
-  const { username, displayName, password, canAccessChat } = req.body;
+app.post("/api/admin/users/:id/key-registrations", requireStaff, (req, res) => {
+  const actor: User = res.locals.actor;
   const db = readDB();
-  if (db.users.some(u => u.username === username)) return res.status(400).json({ error: "이미 존재하는 아이디입니다." });
-  
-  const newUser: User = {
-    id: "user-" + Date.now(),
-    username,
-    displayName,
-    passwordHash: password,
-    role: "student",
-    canAccessChat: Boolean(canAccessChat)
-  };
-  db.users.push(newUser);
+  const user = db.users.find(candidate => candidate.id === req.params.id);
+  if (!user || !canManageStudent(actor, user) || isAdministrator(user)) {
+    return res.status(404).json({ error: "등록 가능한 사용자를 찾을 수 없습니다." });
+  }
+  const registration = addKeyRegistration(user, actor.username);
+  delete user.keyRenewalRequestedAt;
   writeDB(db);
-  res.json({ success: true, user: newUser });
+  for (const session of sessions.values()) {
+    if (session.id === user.id) session.keyExpiresAt = registration.expiresAt;
+  }
+  return res.status(201).json({ registration });
+});
+
+app.post("/api/admin/users", requireAdmin, async (req, res) => {
+  const { username, displayName, password, canAccessChat } = req.body ?? {};
+  if (typeof username !== "string" || !username.trim() || typeof displayName !== "string" ||
+      !displayName.trim() || typeof password !== "string" || !password || password.length > 100) {
+    return res.status(400).json({ error: "아이디, 이름, 비밀번호를 확인해 주세요." });
+  }
+  const accountId = username.trim().toLowerCase();
+  const { salt, hash } = await studioPassword(password);
+  const studio = studioAccounts();
+  studio.exec("BEGIN IMMEDIATE");
+  try {
+    const result = studio.prepare(`
+      INSERT INTO users (username, name, role, salt, hash, created_at)
+      VALUES (?, ?, 'student', ?, ?, ?) ON CONFLICT(username) DO NOTHING
+    `).run(accountId, displayName.trim(), salt, hash, new Date().toISOString());
+    if (!result.changes) {
+      studio.exec("ROLLBACK");
+      return res.status(400).json({ error: "이미 존재하는 아이디입니다." });
+    }
+    enrollSodabot(studio, accountId);
+    studio.exec("COMMIT");
+  } catch (error) {
+    studio.exec("ROLLBACK");
+    throw error;
+  }
+  const db = readDB();
+  const user = db.users.find(candidate => candidate.username === accountId)!;
+  user.canAccessChat = Boolean(canAccessChat);
+  writeDB(db);
+  return res.json({ success: true, user });
 });
 
 // 개별 사용자 권한 설정
-app.put("/api/admin/users/:id/permission", requireAdmin, (req, res) => {
+app.put("/api/admin/users/:id/permission", requireStaff, (req, res) => {
   const { canAccessChat } = req.body;
   const db = readDB();
   const user = db.users.find(u => u.id === req.params.id);
-  if (!user) return res.status(404).json({ error: "유저를 찾을 수 없습니다." });
+  if (!user || !canManageStudent(res.locals.actor, user)) return res.status(404).json({ error: "유저를 찾을 수 없습니다." });
 
   if (user.username === "admin") {
     user.canAccessChat = true;
@@ -1867,7 +2001,7 @@ app.put("/api/admin/users/:id/permission", requireAdmin, (req, res) => {
     }
   }
 
-  res.json({ success: true, user });
+  res.json({ success: true });
 });
 
 // 전체 학생 권한 일괄 설정
@@ -1893,14 +2027,22 @@ app.post("/api/admin/users/batch-permission", requireAdmin, (req, res) => {
   res.json({ success: true, message: `모든 학생의 대화 권한이 ${canAccessChat ? "활성화" : "비활성화"}되었습니다.` });
 });
 
-app.put("/api/admin/users/:id", requireAdmin, (req, res) => {
+app.put("/api/admin/users/:id", requireAdmin, async (req, res) => {
   const { displayName, password, canAccessChat } = req.body;
   const db = readDB();
   const user = db.users.find(u => u.id === req.params.id);
   if (!user) return res.status(404).json({ error: "유저를 찾을 수 없습니다." });
   
-  if (displayName) user.displayName = displayName;
-  if (password) user.passwordHash = password;
+  const studio = studioAccounts();
+  if (password) {
+    if (typeof password !== "string" || password.length > 100) return res.status(400).json({ error: "비밀번호를 확인해 주세요." });
+    const { salt, hash } = await studioPassword(password);
+    studio.prepare("UPDATE users SET salt = ?, hash = ? WHERE username = ?").run(salt, hash, user.username);
+  }
+  if (typeof displayName === "string" && displayName.trim()) {
+    user.displayName = displayName.trim();
+    studio.prepare("UPDATE users SET name = ? WHERE username = ?").run(user.displayName, user.username);
+  }
   if (canAccessChat !== undefined && user.username !== "admin") {
     user.canAccessChat = Boolean(canAccessChat);
   }
@@ -1908,10 +2050,41 @@ app.put("/api/admin/users/:id", requireAdmin, (req, res) => {
   res.json({ success: true, user });
 });
 
+app.put("/api/admin/users/:id/persona", requireAdmin, (req, res) => {
+  const { persona } = req.body ?? {};
+  if (typeof persona !== "string") return res.status(400).json({ error: "페르소나를 확인해 주세요." });
+
+  const db = readDB();
+  const user = db.users.find(candidate => candidate.id === req.params.id);
+  if (!user) return res.status(404).json({ error: "사용자를 찾을 수 없습니다." });
+
+  user.persona = persona;
+  writeDB(db);
+  res.json({ success: true });
+});
+
 app.delete("/api/admin/users/:id", requireAdmin, (req, res) => {
   if (req.params.id === "user-1") return res.status(400).json({ error: "최고 관리자는 삭제할 수 없습니다." });
   const db = readDB();
-  db.users = db.users.filter(u => u.id !== req.params.id);
+  const user = db.users.find(candidate => candidate.id === req.params.id);
+  if (!user || isAdministrator(user)) return res.status(404).json({ error: "삭제할 사용자를 찾을 수 없습니다." });
+  const studio = studioAccounts();
+  studio.exec("BEGIN IMMEDIATE");
+  try {
+    for (const table of ["sessions", "state", "enrollments", "maker_files", "maker_feedback", "maker_ai_calls", "users"]) {
+      if (studio.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(table)) {
+        studio.prepare(`DELETE FROM ${table} WHERE username = ?`).run(user.username);
+      }
+    }
+    studio.exec("COMMIT");
+  } catch (error) {
+    studio.exec("ROLLBACK");
+    throw error;
+  }
+  db.users = db.users.filter(candidate => candidate.id !== user.id);
+  for (const [token, session] of sessions) {
+    if (session.id === user.id) sessions.delete(token);
+  }
   writeDB(db);
   res.json({ success: true });
 });
@@ -2063,10 +2236,10 @@ app.post("/api/admin/course-contents/reset-default", requireAdmin, (req, res) =>
   res.json({ success: true, message: "기본 주차별 실습 컨텐츠로 복원되었습니다.", contents: DEFAULT_COURSE_CONTENTS });
 });
 
-app.get("/api/admin/users/:id/stats", requireAdmin, (req, res) => {
+app.get("/api/admin/users/:id/stats", requireStaff, (req, res) => {
   const db = readDB();
   const user = db.users.find(u => u.id === req.params.id);
-  if (!user) return res.status(404).json({ error: "유저를 찾을 수 없습니다." });
+  if (!user || !canManageStudent(res.locals.actor, user)) return res.status(404).json({ error: "유저를 찾을 수 없습니다." });
 
   const userChats = db.chats.filter(c => c.userId === user.id);
   const totalMessages = userChats.reduce((acc, chat) => acc + chat.messages.length, 0);
@@ -2112,6 +2285,18 @@ app.get("/api/admin/stats/all", requireAdmin, (req, res) => {
       dailyGptQuota: db.settings.dailyGptQuota ?? 30
     }
   });
+});
+
+app.get("/api/admin/users/:id/chats", requireStaff, (req, res) => {
+  const db = readDB();
+  const target = db.users.find(user => user.id === req.params.id);
+  if (!target || !canManageStudent(res.locals.actor, target)) {
+    return res.status(404).json({ error: "사용자를 찾을 수 없습니다." });
+  }
+  const chats = db.chats.filter(chat => chat.userId === target.id);
+  const lastActivity = (chat: ChatRoom) => Date.parse(chat.messages.at(-1)?.timestamp ?? chat.createdAt);
+  chats.sort((a, b) => lastActivity(b) - lastActivity(a));
+  return res.json(chats.map(({ id, userId, title, createdAt, messages }) => ({ id, userId, title, createdAt, messages })));
 });
 
 app.get("/api/admin/chats", requireAdmin, (req, res) => {
@@ -2332,7 +2517,7 @@ app.get("/api/chats", (req, res) => {
   if (!session) return res.status(401).json({ error: "세션 만료" });
 
   const db = readDB();
-  const isAdmin = session.role === "admin" || session.username === "admin";
+  const isAdmin = session.role === "admin";
   let userChats = db.chats.filter(c => c.userId === session.id || (isAdmin && (c.userId === "user-1" || !c.userId)));
 
   if (userChats.length === 0) {
@@ -2542,7 +2727,7 @@ app.post("/api/chats/:id/messages", aiCapacity, async (req, res) => {
 
   const db = readDB();
   const dbUser = db.users.find(u => u.id === session.id);
-  const isAuthorized = session.username === "admin" || session.role === "admin" || (dbUser && (dbUser.canAccessChat ?? false));
+  const isAuthorized = session.role === "admin" || (dbUser && (dbUser.canAccessChat ?? false));
   if (!isAuthorized) {
     return res.status(403).json({ error: "대화 기능 접근 권한이 없습니다. 운영자의 승인을 기다려주세요." });
   }
@@ -3597,9 +3782,14 @@ app.post("/api/friends/groups/messages/:messageId/play-sodabot", (req, res) => {
 // Front-End Integration via Vite & Static Hosting
 // ----------------------------------------------------
 async function startServer() {
+  const httpServer = http.createServer(app);
+
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: process.env.DISABLE_HMR === 'true' ? false : { server: httpServer }
+      },
       appType: "spa"
     });
     app.use(vite.middlewares);
@@ -3611,7 +3801,8 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  readDB();
+  httpServer.listen(PORT, "0.0.0.0", () => {
     console.log(`Server is running at http://0.0.0.0:${PORT}`);
   });
 }
