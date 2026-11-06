@@ -370,7 +370,7 @@ export default function App() {
   const [modelName, setModelName] = useState("meta-llama-3-8b-instruct");
   const [fallbackMode, setFallbackMode] = useState(true);
   const [hybridModeEnabled, setHybridModeEnabled] = useState(false);
-  const [dailyGptQuota, setDailyGptQuota] = useState(30);
+  const [dailyGptQuota, setDailyGptQuota] = useState(10);
   const [lmStudioConnected, setLmStudioConnected] = useState<boolean | null>(null);
   const [testingConnection, setTestingConnection] = useState(false);
   const [testMessage, setTestMessage] = useState("");
@@ -2342,12 +2342,12 @@ export default function App() {
                     <tr>
                       <th className="p-3 font-semibold">유저</th>
                       <th className="p-3 font-semibold text-center">총 대화방</th>
-                      <th className="p-3 font-semibold w-1/2">오늘 GPT 사용 현황 (한도: {globalStats?.settings?.dailyGptQuota || dailyGptQuota}회)</th>
+                      <th className="p-3 font-semibold w-1/2">오늘 GPT 사용 현황 (한도: {globalStats?.settings?.dailyGptQuota ?? dailyGptQuota}회)</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#EAE6DF]">
                     {globalStats?.users?.map((u: any) => {
-                      const quota = globalStats?.settings?.dailyGptQuota || dailyGptQuota || 30;
+                      const quota = globalStats?.settings?.dailyGptQuota ?? dailyGptQuota;
                       const usage = u.gptUsageCount || 0;
                       const percentage = Math.min((usage / quota) * 100, 100);
                       const isExhausted = usage >= quota;

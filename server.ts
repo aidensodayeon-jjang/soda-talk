@@ -1,7 +1,7 @@
 import { studioAccounts, studioPassword, equalSecret } from "./src/utils/studioAccounts";
 import { kitKeyError, normalizeKitKey, registerKitKeyRoutes } from "./src/utils/kitKeys";
 import { compileAiSkillPrompt, normalizeSkillSlots } from './src/utils/aiSkillUtils';
-import { reserveGptRoute, withProviderFallback } from './src/utils/aiRouting';
+import { koreaDay, reserveGptRoute, withProviderFallback } from './src/utils/aiRouting';
 import { createRequestCapacity } from './src/utils/requestCapacity';
 import { fetchHardwareSpeech } from './src/utils/hardwareTts';
 import { quizTurn, parseQuizQuestion, hasUntrackedQuiz, type QuizState } from './src/utils/quiz';
@@ -646,7 +646,7 @@ function createDefaultDB(): DBStructure {
       modelName: "llama-3-korean-bllossom-8b",
       fallbackMode: true,
       hybridModeEnabled: false,
-      dailyGptQuota: 30
+      dailyGptQuota: 10
     },
     chats: [
       {
@@ -860,7 +860,7 @@ async function completeWithFallback(user: User, db: DBStructure, body: any) {
     const data=await response.json();
     if(!data.choices?.[0]?.message?.content?.trim()) throw new Error("Empty AI response");
     return data;
-  });
+  }, primary || !db.settings.hybridModeEnabled);
 }
 
 function getJosa(word: string, type: '은는' | '을를' | '이가' | '아야' | '이야'): string {
@@ -2274,7 +2274,7 @@ app.get("/api/admin/users/:id/stats", requireStaff, (req, res) => {
       username: user.username,
       displayName: user.displayName,
       lastGptDate: user.lastGptDate || null,
-      gptUsageCount: user.gptUsageCount || 0
+      gptUsageCount: user.lastGptDate === koreaDay() ? user.gptUsageCount || 0 : 0
     },
     stats: {
       totalChats: userChats.length,
@@ -2282,7 +2282,7 @@ app.get("/api/admin/users/:id/stats", requireStaff, (req, res) => {
     },
     settings: {
       hybridModeEnabled: db.settings.hybridModeEnabled,
-      dailyGptQuota: db.settings.dailyGptQuota ?? 30
+      dailyGptQuota: db.settings.dailyGptQuota ?? 10
     }
   });
 });
@@ -2299,7 +2299,7 @@ app.get("/api/admin/stats/all", requireAdmin, (req, res) => {
       totalChats: userChats.length,
       totalMessages: totalMessages,
       lastGptDate: u.lastGptDate || null,
-      gptUsageCount: u.gptUsageCount || 0
+      gptUsageCount: u.lastGptDate === koreaDay() ? u.gptUsageCount || 0 : 0
     };
   });
 
@@ -2307,7 +2307,7 @@ app.get("/api/admin/stats/all", requireAdmin, (req, res) => {
     users: allUsersStats,
     settings: {
       hybridModeEnabled: db.settings.hybridModeEnabled,
-      dailyGptQuota: db.settings.dailyGptQuota ?? 30
+      dailyGptQuota: db.settings.dailyGptQuota ?? 10
     }
   });
 });
@@ -2510,7 +2510,8 @@ app.post("/api/lmstudio/stream", aiCapacity, async (req, res) => {
   const controller=new AbortController();
   res.once("close",()=>{if(!res.writableEnded)controller.abort();});
   let started=false;
-  for (const gpt of [primary,!primary]) {
+  const routes = !primary && db.settings.hybridModeEnabled ? [false] : [primary, !primary];
+  for (const gpt of routes) {
     try {
       const config=providerConfig(gpt,db);
       const upstream=await fetch(config.url,{method:"POST",headers:{"Content-Type":"application/json",Authorization:config.auth},body:JSON.stringify({
@@ -2533,7 +2534,7 @@ app.post("/api/lmstudio/stream", aiCapacity, async (req, res) => {
       if(res.destroyed || controller.signal.aborted)return;
       // Never concatenate a second model's answer onto a partial answer.
       if(started)break;
-      console.warn(`[AI] ${gpt ? "GPT" : "LM Studio"} 실패, 대체 모델 시도`);
+      console.warn(`[AI] ${gpt ? "GPT" : "LM Studio"} 연결 실패`);
     }
   }
   res.write(`data: ${JSON.stringify({choices:[{delta:{content:"\n응답 연결이 중단됐습니다. 두 모델의 연결 상태를 확인해주세요."}}]})}\n\n`);

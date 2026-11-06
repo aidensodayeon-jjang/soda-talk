@@ -4,10 +4,12 @@ export function koreaDay(now = new Date()): string {
 export function reserveGptRoute(user: {lastGptDate?:string;gptUsageCount?:number}, settings: {aiProvider?:string;hybridModeEnabled?:boolean;dailyGptQuota?:number}, now = new Date()): boolean {
   const today=koreaDay(now);
   if(user.lastGptDate!==today){user.lastGptDate=today;user.gptUsageCount=0;}
-  const gpt=settings.aiProvider==='openai'||(settings.hybridModeEnabled===true&&(user.gptUsageCount||0)<(settings.dailyGptQuota??30));
+  const gpt=settings.hybridModeEnabled === true
+    ? (user.gptUsageCount || 0) < (settings.dailyGptQuota ?? 10)
+    : settings.aiProvider === 'openai';
   if(gpt)user.gptUsageCount=(user.gptUsageCount||0)+1;
   return gpt;
 }
-export async function withProviderFallback<T>(primaryGpt:boolean, attempt:(gpt:boolean)=>Promise<T>):Promise<T>{
-  try{return await attempt(primaryGpt);}catch{return await attempt(!primaryGpt);}
+export async function withProviderFallback<T>(primaryGpt:boolean, attempt:(gpt:boolean)=>Promise<T>, allowFallback = true):Promise<T>{
+  try{return await attempt(primaryGpt);}catch(error){if(!allowFallback)throw error;return await attempt(!primaryGpt);}
 }
