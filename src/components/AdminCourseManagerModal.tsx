@@ -33,6 +33,7 @@ export default function AdminCourseManagerModal({ token, onClose, onContentsUpda
   // Editing / Creating State
   const [isEditing, setIsEditing] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const isEditingVideo = contents.some(item => item.id === selectedId && item.contentType === "video");
 
   // Form Fields
   const [week, setWeek] = useState(1);
@@ -113,8 +114,8 @@ void loop() {
     setError("");
     setSuccessMsg("");
 
-    if (!title.trim() || !code.trim()) {
-      setError("제목과 소스코드는 필수 항목입니다.");
+    if (!title.trim() || (!isEditingVideo && !code.trim())) {
+      setError(isEditingVideo ? "제목은 필수 항목입니다." : "제목과 소스코드는 필수 항목입니다.");
       return;
     }
 
@@ -126,7 +127,7 @@ void loop() {
       language,
       tags: tags.split(",").map(t => t.trim()).filter(Boolean),
       pinMap: pinMap.trim() || undefined,
-      code
+      code: isEditingVideo ? undefined : code
     };
 
     try {
@@ -314,6 +315,7 @@ void loop() {
                     type="text"
                     required
                     value={filename}
+                    readOnly={isEditingVideo}
                     onChange={e => setFilename(e.target.value)}
                     placeholder="sodabot_week1_basic.ino"
                     className="w-full px-3 py-2 text-xs bg-white border border-[#EAE6DF] rounded-xl focus:outline-none focus:border-indigo-400 font-mono"
@@ -324,6 +326,7 @@ void loop() {
                   <label className="text-[11px] font-semibold text-[#5C5B57]">개발 언어</label>
                   <select
                     value={language}
+                    disabled={isEditingVideo}
                     onChange={e => setLanguage(e.target.value as any)}
                     className="w-full px-3 py-2 text-xs bg-white border border-[#EAE6DF] rounded-xl focus:outline-none focus:border-indigo-400 font-medium"
                   >
@@ -371,7 +374,7 @@ void loop() {
               </div>
 
               {/* Code Editor */}
-              <div className="space-y-1.5">
+              {!isEditingVideo && <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <label className="text-[11px] font-semibold text-[#5C5B57] flex items-center gap-1">
                     <Code className="w-3.5 h-3.5 text-indigo-600" />
@@ -400,7 +403,7 @@ void loop() {
                     placeholder="// 여기에 아두이노 또는 파이썬 코드를 작성하세요..."
                   />
                 </div>
-              </div>
+              </div>}
 
               {/* Form Footer */}
               <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#EAE6DF]">
@@ -459,7 +462,7 @@ void loop() {
                           </td>
                           <td className="p-3">
                             <span className="px-2 py-0.5 bg-gray-100 text-gray-700 text-[10px] font-mono font-bold rounded">
-                              {item.language.toUpperCase()}
+                              {item.contentType === "video" ? "영상" : item.language.toUpperCase()}
                             </span>
                             <div className="flex flex-wrap gap-1 mt-1.5">
                               {item.tags?.map((t, idx) => (
@@ -484,7 +487,7 @@ void loop() {
                               onClick={() => setPreviewContent(item)}
                               className="px-2.5 py-1.5 bg-white border border-[#EAE6DF] hover:border-indigo-300 hover:text-indigo-600 rounded-lg text-[10px] font-medium transition-colors inline-flex items-center gap-1 cursor-pointer"
                             >
-                              <Eye className="w-3 h-3" /> 코드 보기
+                              <Eye className="w-3 h-3" /> {item.contentType === "video" ? "영상 보기" : "코드 보기"}
                             </button>
                             <button
                               onClick={() => handleOpenEdit(item)}
@@ -521,7 +524,17 @@ void loop() {
                       미리보기 닫기 ✕
                     </button>
                   </div>
-                  <div className="max-h-60 overflow-y-auto p-2 scrollbar-thin">
+                  {previewContent.contentType === "video" ? (
+                    <video
+                      aria-label={previewContent.title}
+                      controls
+                      playsInline
+                      preload="none"
+                      src={`/videos/${encodeURIComponent(previewContent.filename)}`}
+                      poster={previewContent.imageUrl}
+                      className="mx-auto aspect-video w-full max-w-xl rounded-lg bg-black"
+                    />
+                  ) : <div className="max-h-60 overflow-y-auto p-2 scrollbar-thin">
                     <table className="w-full border-collapse font-mono text-xs">
                       <tbody>
                         {(previewContent.code || "").split("\n").map((line, idx) => (
@@ -536,7 +549,7 @@ void loop() {
                         ))}
                       </tbody>
                     </table>
-                  </div>
+                  </div>}
                 </div>
               )}
             </div>

@@ -5,6 +5,7 @@ import { sodabotTransport } from './utils/sodabotTransport';
 import { renderTextToBitmapPayload } from './utils/textBitmapRenderer';
 import React, { useState, useEffect, useRef } from "react";
 import AuthScreen from "./components/AuthScreen";
+import AdminKitKeysScreen from "./components/AdminKitKeysScreen";
 import StudentChatHistory from "./components/StudentChatHistory";
 import SodabotConnectScreen from "./components/SodabotConnectScreen";
 import SodabotSettingsScreen from "./components/SodabotSettingsScreen";
@@ -71,6 +72,7 @@ import {
   FolderOpen,
   FolderCode,
   FileCode,
+  Film,
   Code2,
   Copy,
   Download,
@@ -379,7 +381,7 @@ export default function App() {
   const [systemStatus, setSystemStatus] = useState<{ memoryUsage?: { total: number, free: number }, openaiUsage?: { used: number, limit: number } }>({});
 
   // Admin Panel State
-  const [adminPage, setAdminPage] = useState<"users" | "monitoring">("users");
+  const [adminPage, setAdminPage] = useState<"users" | "monitoring" | "kitKeys">("users");
   const [adminCampus, setAdminCampus] = useState("all");
   const [adminSearch, setAdminSearch] = useState("");
   const [showAdminPanel, setShowAdminPanel] = useState(window.location.hash === "#admin");
@@ -408,7 +410,7 @@ export default function App() {
   const [newPassword, setNewPassword] = useState("");
   const [adminError, setAdminError] = useState("");
 
-  const [signupRequests, setSignupRequests] = useState<{ username: string; name: string; campus: string | null }[]>([]);
+  const [signupRequests, setSignupRequests] = useState<{ username: string; name: string; campus: string | null; kitVerified?: number }[]>([]);
   const [signupRequestError, setSignupRequestError] = useState("");
   const [approvingEmail, setApprovingEmail] = useState("");
 
@@ -568,6 +570,7 @@ export default function App() {
           <td colSpan={columns - 1} className="p-3">
             <span className="mr-2 font-medium">{request.name}</span>
             <span className="text-xs text-[#86868B]">{request.username} · {request.campus ?? "캠퍼스 미선택"} · 가입 승인 대기</span>
+            {request.kitVerified === 1 && <span className="ml-2 rounded bg-emerald-50 px-1.5 py-0.5 text-xs font-semibold text-emerald-700">키트 인증</span>}
           </td>
           <td className="p-3 text-right">
             <button type="button" disabled={Boolean(approvingEmail)} onClick={() => approveSignup(request.username)}
@@ -1996,6 +1999,10 @@ export default function App() {
               <button onClick={() => setAdminPage("users")} aria-current={adminPage === "users" ? "page" : undefined} className="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-indigo-700 hover:bg-indigo-50 border border-transparent hover:border-indigo-200 flex items-center gap-2 transition-colors cursor-pointer">
                 <Users className="w-4 h-4" /> 유저 및 권한 관리
               </button>
+              <button type="button" onClick={() => setAdminPage("kitKeys")} aria-current={adminPage === "kitKeys" ? "page" : undefined}
+                className="flex w-full items-center gap-2 rounded-xl border border-transparent px-3 py-2 text-left text-xs font-semibold text-indigo-700 transition-colors hover:border-indigo-200 hover:bg-indigo-50">
+                <Key className="h-4 w-4 shrink-0" /> 키트 인증 키 관리
+              </button>
               <button onClick={() => setShowCourseManager(true)} className="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-blue-700 hover:bg-blue-50 border border-transparent hover:border-blue-200 flex items-center gap-2 transition-colors cursor-pointer">
                 <FolderCode className="w-4 h-4 text-blue-600" /> 주차별 컨텐츠 관리
               </button>
@@ -2060,7 +2067,9 @@ export default function App() {
           </div>
         </aside>
 
-        {adminPage === "users" ? (
+        {adminPage === "kitKeys" ? (
+          <AdminKitKeysScreen token={token} />
+        ) : adminPage === "users" ? (
           <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-white p-6">
               {/* Header */}
               <div className="flex items-center justify-between pb-4 border-b border-[#FAF9F6] shrink-0">
@@ -2830,7 +2839,9 @@ export default function App() {
                           const isInteractive = codeItem.contentType === 'interactive' || codeItem.filename?.endsWith('.html');
                           const isCircuit = codeItem.contentType === 'circuit' || codeItem.title.includes('회로') || codeItem.title.includes('배선도');
                           const isEditor = codeItem.contentType === 'editor';
-                          const ext = isInteractive ? '탐구' : (codeItem.filename ? (codeItem.filename.split('.').pop() || 'ino') : 'ino');
+                          const isVideo = codeItem.contentType === 'video';
+                          const ItemIcon = isVideo ? Film : FileCode;
+                          const ext = isVideo ? '영상' : isInteractive ? '탐구' : (codeItem.filename ? (codeItem.filename.split('.').pop() || 'ino') : 'ino');
 
                           return (
                             <button
@@ -2847,7 +2858,7 @@ export default function App() {
                               }`}
                             >
                               <div className="flex items-center gap-1.5 min-w-0 pr-1">
-                                <FileCode className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-white' : isInteractive ? 'text-[#168571]' : 'text-indigo-500'}`} />
+                                <ItemIcon className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-white' : isInteractive ? 'text-[#168571]' : 'text-indigo-500'}`} />
                                 <span className="truncate text-xs font-semibold">{codeItem.title}</span>
                               </div>
                               <span className={`text-[8px] px-1.5 py-0.5 rounded font-mono shrink-0 ${

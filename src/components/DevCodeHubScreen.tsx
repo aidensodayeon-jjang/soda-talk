@@ -6,6 +6,7 @@ import buttonSoundCode from "../../firmware/soda-1-2.ino?raw";
 import lcdHelloCode from "../../firmware/soda-3-1.ino?raw";
 import soundLabCode from "../../firmware/soda-1-1.ino?raw";
 import React, { useState, useEffect, useRef } from 'react';
+import type { CourseContent } from '../types';
 import LcdPixelEditor from './LcdPixelEditor';
 import soda63Code from '../../firmware/soda-6-3.ino?raw';
 import soda81Code from '../../firmware/soda-8-1.ino?raw';
@@ -37,28 +38,13 @@ import {
   Palette
 } from 'lucide-react';
 
-interface CodeItem {
-  id: string;
-  week: number;
-  title: string;
-  description: string;
-  filename: string;
-  language: "arduino" | "python" | "cpp" | "json";
-  tags: string[];
-  pinMap?: string;
-  code: string;
-  contentType?: "code" | "circuit" | "doc" | "editor" | "interactive";
-  imageUrl?: string;
-  updatedAt?: string;
-}
-
 interface DevCodeHubProps {
   className?: string;
   selectedCodeId?: string;
   onSelectCode?: (id: string) => void;
 }
 
-const SAMPLE_CODES: CodeItem[] = [
+const SAMPLE_CODES: CourseContent[] = [
   {
     id: "content-week-2-breadboard-secret",
     week: 2,
@@ -828,7 +814,7 @@ void loop() {
 
 export default function DevCodeHubScreen({ className, selectedCodeId, onSelectCode }: DevCodeHubProps) {
   const interactiveFrameRef = useRef<HTMLIFrameElement>(null);
-  const [codes, setCodes] = useState<CodeItem[]>(SAMPLE_CODES);
+  const [codes, setCodes] = useState<CourseContent[]>(SAMPLE_CODES);
   const [loading, setLoading] = useState(false);
   const [selectedWeek, setSelectedWeek] = useState<number | "all">(1);
   const [selectedLanguage, setSelectedLanguage] = useState<string>("all");
@@ -854,7 +840,7 @@ export default function DevCodeHubScreen({ className, selectedCodeId, onSelectCo
       const data = await res.json();
       if (res.ok && data.contents && data.contents.length > 0) {
         setCodes(data.contents);
-        if (!data.contents.some((c: CodeItem) => c.id === activeCodeId)) {
+        if (!data.contents.some((c: CourseContent) => c.id === activeCodeId)) {
           setActiveCodeId(data.contents[0].id);
         }
       }
@@ -887,6 +873,7 @@ export default function DevCodeHubScreen({ className, selectedCodeId, onSelectCo
   });
 
   const activeItem = codes.find(c => c.id === activeCodeId) || filteredCodes[0] || codes[0];
+  const videoUrl = `/videos/${encodeURIComponent(activeItem.filename)}`;
 
   const handleCopy = async (id: string, code: string) => {
     let copied = false;
@@ -925,7 +912,7 @@ export default function DevCodeHubScreen({ className, selectedCodeId, onSelectCo
     }
   };
 
-  const handleDownload = (item: CodeItem) => {
+  const handleDownload = (item: CourseContent) => {
     const blob = new Blob([item.code], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -960,8 +947,26 @@ export default function DevCodeHubScreen({ className, selectedCodeId, onSelectCo
         </div>
       )}
 
-      {/* Main Content Area: Editor OR Full Width Code Viewer */}
-      {activeItem.contentType === "editor" ? (
+      {activeItem.contentType === "video" ? (
+        <div className="flex-1 overflow-auto bg-[#1e1e2e] p-4 sm:p-6">
+          <section aria-labelledby="dino-intro-title" className="mx-auto max-w-4xl rounded-2xl border border-[#45475a] bg-[#181825] p-3 sm:p-5">
+            <p className="text-xs font-bold text-emerald-300">{activeItem.title} · 5–6주차 프로젝트 소개</p>
+            <h2 id="dino-intro-title" className="mt-1 text-xl font-bold text-white sm:text-2xl">버튼 하나로 만드는 디노 게임</h2>
+            <video
+              aria-labelledby="dino-intro-title"
+              controls
+              playsInline
+              preload="none"
+              poster={activeItem.imageUrl}
+              className="mt-3 aspect-video w-full rounded-xl bg-black"
+            >
+              <source src={videoUrl} type="video/mp4" />
+              <a href={videoUrl}>디노 게임 소개 영상 열기</a>
+            </video>
+            <p className="mt-3 text-sm leading-relaxed text-[#bac2de]">{activeItem.description}</p>
+          </section>
+        </div>
+      ) : activeItem.contentType === "editor" ? (
         <LcdPixelEditor />
       ) : (
         <div className="flex-1 flex flex-col h-full bg-[#1E1E2E] overflow-hidden">
@@ -1058,18 +1063,20 @@ export default function DevCodeHubScreen({ className, selectedCodeId, onSelectCo
           </div>
 
           {/* Description & Pin Map Info Bar (Dark Subheader) */}
-          <div className="bg-[#1e1e2e]/95 px-6 py-2.5 border-b border-[#313244] text-xs text-[#a6adc8] flex flex-wrap items-center justify-between gap-2 shrink-0">
-            <div className="flex items-center gap-2">
-              <Info className="w-3.5 h-3.5 text-[#89b4fa]" />
-              <span>{activeItem.description}</span>
-            </div>
-            {activeItem.pinMap && (
-              <div className="flex items-center gap-1.5 text-[11px] font-mono text-[#f9e2af] bg-[#313244]/60 px-2.5 py-1 rounded-lg border border-[#f9e2af]/20">
-                <Cpu className="w-3.5 h-3.5 text-[#f9e2af]" />
-                <span className="font-bold">핀 연결: {activeItem.pinMap}</span>
+          {activeItem.id !== "content-week-2-breadboard-secret" && (
+            <div className="bg-[#1e1e2e]/95 px-6 py-2.5 border-b border-[#313244] text-xs text-[#a6adc8] flex flex-wrap items-center justify-between gap-2 shrink-0">
+              <div className="flex items-center gap-2">
+                <Info className="w-3.5 h-3.5 text-[#89b4fa]" />
+                <span>{activeItem.description}</span>
               </div>
-            )}
-          </div>
+              {activeItem.pinMap && (
+                <div className="flex items-center gap-1.5 text-[11px] font-mono text-[#f9e2af] bg-[#313244]/60 px-2.5 py-1 rounded-lg border border-[#f9e2af]/20">
+                  <Cpu className="w-3.5 h-3.5 text-[#f9e2af]" />
+                  <span className="font-bold">핀 연결: {activeItem.pinMap}</span>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Content Body: Interactive Simulator View OR Circuit Diagram Image View OR Code View */}
           {activeItem.contentType === "interactive" ? (
