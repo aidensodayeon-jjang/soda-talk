@@ -5,6 +5,7 @@ import { sodabotTransport } from './utils/sodabotTransport';
 import { renderTextToBitmapPayload } from './utils/textBitmapRenderer';
 import React, { useState, useEffect, useRef } from "react";
 import AuthScreen from "./components/AuthScreen";
+import AdminKitKeysScreen from "./components/AdminKitKeysScreen";
 import StudentChatHistory from "./components/StudentChatHistory";
 import SodabotConnectScreen from "./components/SodabotConnectScreen";
 import SodabotSettingsScreen from "./components/SodabotSettingsScreen";
@@ -71,6 +72,7 @@ import {
   FolderOpen,
   FolderCode,
   FileCode,
+  Film,
   Code2,
   Copy,
   Download,
@@ -363,7 +365,7 @@ export default function App() {
   // Settings Panel State
   const [showSettings, setShowSettings] = useState(false);
   const [aiProvider, setAiProvider] = useState("local");
-  const [openaiApiKey, setOpenaiApiKey] = useState("");
+  const [openaiConfigured, setOpenaiConfigured] = useState(false);
   const [lmStudioUrl, setLmStudioUrl] = useState("https://granular-kindly-morally.ngrok-free.dev");
   const [modelName, setModelName] = useState("meta-llama-3-8b-instruct");
   const [fallbackMode, setFallbackMode] = useState(true);
@@ -373,13 +375,10 @@ export default function App() {
   const [testingConnection, setTestingConnection] = useState(false);
   const [testMessage, setTestMessage] = useState("");
 
-  const [temperature, setTemperature] = useState(0.7);
-  const [maxTokens, setMaxTokens] = useState(1024);
-  const [language, setLanguage] = useState("Korean");
   const [systemStatus, setSystemStatus] = useState<{ memoryUsage?: { total: number, free: number }, openaiUsage?: { used: number, limit: number } }>({});
 
   // Admin Panel State
-  const [adminPage, setAdminPage] = useState<"users" | "monitoring">("users");
+  const [adminPage, setAdminPage] = useState<"users" | "monitoring" | "kitKeys">("users");
   const [adminCampus, setAdminCampus] = useState("all");
   const [adminSearch, setAdminSearch] = useState("");
   const [showAdminPanel, setShowAdminPanel] = useState(window.location.hash === "#admin");
@@ -408,7 +407,7 @@ export default function App() {
   const [newPassword, setNewPassword] = useState("");
   const [adminError, setAdminError] = useState("");
 
-  const [signupRequests, setSignupRequests] = useState<{ username: string; name: string; campus: string | null }[]>([]);
+  const [signupRequests, setSignupRequests] = useState<{ username: string; name: string; campus: string | null; kitVerified?: number }[]>([]);
   const [signupRequestError, setSignupRequestError] = useState("");
   const [approvingEmail, setApprovingEmail] = useState("");
 
@@ -568,6 +567,7 @@ export default function App() {
           <td colSpan={columns - 1} className="p-3">
             <span className="mr-2 font-medium">{request.name}</span>
             <span className="text-xs text-[#86868B]">{request.username} · {request.campus ?? "캠퍼스 미선택"} · 가입 승인 대기</span>
+            {request.kitVerified === 1 && <span className="ml-2 rounded bg-emerald-50 px-1.5 py-0.5 text-xs font-semibold text-emerald-700">키트 인증</span>}
           </td>
           <td className="p-3 text-right">
             <button type="button" disabled={Boolean(approvingEmail)} onClick={() => approveSignup(request.username)}
@@ -823,9 +823,12 @@ export default function App() {
         setMainNavTab("dev");
       }
       fetchChats();
-      fetchLMStudioConfig();
     }
   }, [user?.id]);
+
+  useEffect(() => {
+    if (token && user?.role === "admin") fetchLMStudioConfig();
+  }, [token, user?.role]);
 
   // 3. Auto-scroll chat history to bottom
   useEffect(() => {
@@ -989,19 +992,18 @@ export default function App() {
 
   const fetchLMStudioConfig = async () => {
     try {
-      const res = await fetch("/api/lmstudio/config");
+      const res = await fetch("/api/lmstudio/config", {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       const data = await res.json();
       if (res.ok) {
         if (data.aiProvider) setAiProvider(data.aiProvider || "local");
-        setOpenaiApiKey(data.openaiApiKey || "");
+        setOpenaiConfigured(data.openaiConfigured === true);
         if (data.lmStudioUrl) setLmStudioUrl(data.lmStudioUrl);
         if (data.modelName) setModelName(data.modelName);
         setFallbackMode(data.fallbackMode);
         if (data.hybridModeEnabled !== undefined) setHybridModeEnabled(data.hybridModeEnabled);
         if (data.dailyGptQuota !== undefined) setDailyGptQuota(data.dailyGptQuota);
-        if (data.temperature !== undefined) setTemperature(data.temperature);
-        if (data.maxTokens !== undefined) setMaxTokens(data.maxTokens);
-        if (data.language !== undefined) setLanguage(data.language);
         checkConnection(data.lmStudioUrl);
       }
     } catch (err) {
@@ -1034,10 +1036,14 @@ export default function App() {
     try {
       const res = await fetch("/api/lmstudio/test", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ lmStudioUrl: url })
       });
       const data = await res.json();
+      if (!res.ok) {
+        setLmStudioConnected(false);
+        return { connected: false, message: data.error || "연결을 확인할 수 없습니다." };
+      }
       setLmStudioConnected(data.connected);
       return data;
     } catch (err) {
@@ -1232,8 +1238,6 @@ export default function App() {
             { role: "system", content: sodabotPersona },
             ...conversationHistory
           ],
-          temperature: temperature,
-          max_tokens: maxTokens,
           stream: true
         })
       });
@@ -1340,10 +1344,9 @@ export default function App() {
     try {
       const res = await fetch("/api/lmstudio/config", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           aiProvider,
-          openaiApiKey,
           lmStudioUrl,
           modelName,
           fallbackMode,
@@ -1357,20 +1360,6 @@ export default function App() {
       }
     } catch (err) {
       console.error("Failed to save settings", err);
-    }
-  };
-
-  const handleToggleProvider = async () => {
-    const newProvider = aiProvider === "local" ? "openai" : "local";
-    setAiProvider(newProvider); // Optimistic UI update
-    try {
-      await fetch("/api/lmstudio/config", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ aiProvider: newProvider })
-      });
-    } catch (err) {
-      console.error("Failed to toggle provider", err);
     }
   };
 
@@ -1996,6 +1985,10 @@ export default function App() {
               <button onClick={() => setAdminPage("users")} aria-current={adminPage === "users" ? "page" : undefined} className="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-indigo-700 hover:bg-indigo-50 border border-transparent hover:border-indigo-200 flex items-center gap-2 transition-colors cursor-pointer">
                 <Users className="w-4 h-4" /> 유저 및 권한 관리
               </button>
+              <button type="button" onClick={() => setAdminPage("kitKeys")} aria-current={adminPage === "kitKeys" ? "page" : undefined}
+                className="flex w-full items-center gap-2 rounded-xl border border-transparent px-3 py-2 text-left text-xs font-semibold text-indigo-700 transition-colors hover:border-indigo-200 hover:bg-indigo-50">
+                <Key className="h-4 w-4 shrink-0" /> 키트 인증 키 관리
+              </button>
               <button onClick={() => setShowCourseManager(true)} className="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-blue-700 hover:bg-blue-50 border border-transparent hover:border-blue-200 flex items-center gap-2 transition-colors cursor-pointer">
                 <FolderCode className="w-4 h-4 text-blue-600" /> 주차별 컨텐츠 관리
               </button>
@@ -2060,7 +2053,9 @@ export default function App() {
           </div>
         </aside>
 
-        {adminPage === "users" ? (
+        {adminPage === "kitKeys" ? (
+          <AdminKitKeysScreen token={token} />
+        ) : adminPage === "users" ? (
           <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-white p-6">
               {/* Header */}
               <div className="flex items-center justify-between pb-4 border-b border-[#FAF9F6] shrink-0">
@@ -2291,13 +2286,16 @@ export default function App() {
                         const checked = e.target.checked;
                         setHybridModeEnabled(checked);
                         try {
-                          await fetch("/api/lmstudio/config", {
+                          const res = await fetch("/api/lmstudio/config", {
                             method: "POST",
-                            headers: { "Content-Type": "application/json" },
+                            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
                             body: JSON.stringify({ hybridModeEnabled: checked, dailyGptQuota })
                           });
+                          if (!res.ok) throw new Error("Failed to update GPT settings");
                           fetchGlobalStats();
-                        } catch (err) { }
+                        } catch {
+                          setHybridModeEnabled(!checked);
+                        }
                       }}
                       className="sr-only peer"
                     />
@@ -2312,14 +2310,17 @@ export default function App() {
                     <button
                       onClick={async () => {
                         try {
-                          await fetch("/api/lmstudio/config", {
+                          const res = await fetch("/api/lmstudio/config", {
                             method: "POST",
-                            headers: { "Content-Type": "application/json" },
+                            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
                             body: JSON.stringify({ dailyGptQuota, hybridModeEnabled })
                           });
+                          if (!res.ok) throw new Error("Failed to update GPT settings");
                           alert("저장되었습니다!");
                           fetchGlobalStats();
-                        } catch (err) { }
+                        } catch {
+                          alert("설정을 저장하지 못했습니다.");
+                        }
                       }}
                       className="px-4 py-2 bg-[#1D1D1F] hover:bg-black text-white rounded-xl text-xs font-semibold transition-colors shadow-sm"
                     >
@@ -2621,8 +2622,8 @@ export default function App() {
                     <button type="button" onClick={() => setAiProvider("openai")} className={`flex-1 py-2 rounded-xl text-xs border ${aiProvider === "openai" ? "bg-indigo-50 border-indigo-200 text-indigo-700" : "bg-white border-[#EAE6DF]"}`}>클라우드 (OpenAI)</button>
                   </div>
                 </div>
-                {aiProvider === "openai" && (
-                  <input type="password" value={openaiApiKey} onChange={e => setOpenaiApiKey(e.target.value)} className="w-full p-3 bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl text-xs" placeholder="OpenAI API Key" />
+                {(aiProvider === "openai" || hybridModeEnabled) && (
+                  <p className="text-xs text-[#5C5B57]">OpenAI 키: {openaiConfigured ? "서버에 설정됨" : "서버 환경변수 설정 필요"}</p>
                 )}
                 <input type="text" value={lmStudioUrl} onChange={e => setLmStudioUrl(e.target.value)} className="w-full p-3 bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl text-xs" placeholder="LM Studio URL" />
                 <input type="text" value={modelName} onChange={e => setModelName(e.target.value)} className="w-full p-3 bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl text-xs" placeholder="모델명" />
@@ -2830,7 +2831,9 @@ export default function App() {
                           const isInteractive = codeItem.contentType === 'interactive' || codeItem.filename?.endsWith('.html');
                           const isCircuit = codeItem.contentType === 'circuit' || codeItem.title.includes('회로') || codeItem.title.includes('배선도');
                           const isEditor = codeItem.contentType === 'editor';
-                          const ext = isInteractive ? '탐구' : (codeItem.filename ? (codeItem.filename.split('.').pop() || 'ino') : 'ino');
+                          const isVideo = codeItem.contentType === 'video';
+                          const ItemIcon = isVideo ? Film : FileCode;
+                          const ext = isVideo ? '영상' : isInteractive ? '탐구' : (codeItem.filename ? (codeItem.filename.split('.').pop() || 'ino') : 'ino');
 
                           return (
                             <button
@@ -2847,7 +2850,7 @@ export default function App() {
                               }`}
                             >
                               <div className="flex items-center gap-1.5 min-w-0 pr-1">
-                                <FileCode className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-white' : isInteractive ? 'text-[#168571]' : 'text-indigo-500'}`} />
+                                <ItemIcon className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-white' : isInteractive ? 'text-[#168571]' : 'text-indigo-500'}`} />
                                 <span className="truncate text-xs font-semibold">{codeItem.title}</span>
                               </div>
                               <span className={`text-[8px] px-1.5 py-0.5 rounded font-mono shrink-0 ${
@@ -4322,7 +4325,7 @@ export default function App() {
 
 
       {/* 5. Server Settings Modal */}
-      {showSettings && (
+      {showSettings && user.role === "admin" && (
         <div className="fixed inset-0 bg-[#1D1D1F]/40 backdrop-blur-sm flex justify-center items-center z-50 animate-fade-in p-4">
           <div className="bg-white border border-[#EAE6DF] rounded-3xl w-full max-w-lg shadow-2xl p-6 relative overflow-hidden flex flex-col">
             <div className="flex items-center justify-between pb-4 border-b border-[#FAF9F6] shrink-0">
@@ -4351,11 +4354,8 @@ export default function App() {
                 </div>
               </div>
 
-              {aiProvider === "openai" && (
-                <div className="space-y-2 animate-fade-in">
-                  <label className="text-xs font-bold text-[#1D1D1F]">OpenAI API Key</label>
-                  <input type="password" value={openaiApiKey} onChange={e => setOpenaiApiKey(e.target.value)} className="w-full p-3 bg-[#FAF9F6] border border-[#EAE6DF] rounded-xl text-xs font-mono focus:border-indigo-400 focus:outline-none" placeholder="sk-..." />
-                </div>
+              {(aiProvider === "openai" || hybridModeEnabled) && (
+                <p className="text-xs text-[#5C5B57]">OpenAI 키: {openaiConfigured ? "서버에 설정됨" : "서버 환경변수 설정 필요"}</p>
               )}
 
               <div className="space-y-2">

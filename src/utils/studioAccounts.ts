@@ -22,6 +22,16 @@ export function studioAccounts() {
         username TEXT PRIMARY KEY, name TEXT NOT NULL, salt TEXT NOT NULL,
         hash TEXT NOT NULL, created_at TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS talk_kit_keys (
+        code TEXT PRIMARY KEY,
+        created_at INTEGER NOT NULL,
+        starts_on TEXT,
+        ends_on TEXT,
+        issued_at INTEGER,
+        used_at INTEGER,
+        used_by TEXT
+      );
+      CREATE INDEX IF NOT EXISTS talk_kit_keys_used_by ON talk_kit_keys (used_by);
     `);
     db.exec("BEGIN IMMEDIATE");
     for (const table of ["talk_signup_requests", "users"]) {

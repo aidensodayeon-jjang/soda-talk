@@ -1,4 +1,5 @@
 import { studioAccounts, studioPassword, equalSecret } from "./src/utils/studioAccounts";
+import { kitKeyError, normalizeKitKey, registerKitKeyRoutes } from "./src/utils/kitKeys";
 import { compileAiSkillPrompt, normalizeSkillSlots } from './src/utils/aiSkillUtils';
 import { reserveGptRoute, withProviderFallback } from './src/utils/aiRouting';
 import { createRequestCapacity } from './src/utils/requestCapacity';
@@ -24,6 +25,7 @@ import mysql from "mysql2/promise";
 env.allowLocalModels = false;
 
 dotenv.config();
+const openaiApiKey = process.env.OPENAI_API_KEY?.trim();
 
 const app = express();
 const aiCapacity = createRequestCapacity(8, req => {
@@ -361,6 +363,18 @@ const DEFAULT_COURSE_CONTENTS: CourseContent[] = [
     imageUrl: "/simulations/lcd-expression-lab/index.html", tags: ["LCD", "표정", "버튼", "LED", "효과음"], code: getFirmwareCode("soda-expression.ino"),
   },
   {
+    id: "content-week-5-dino-intro",
+    week: 5,
+    title: "5-0. 인트로",
+    description: "5주차에는 LCD에 공룡을 그리고 버튼으로 점프시켜요. 6주차에는 장애물과 점수 규칙을 더해, 화면·버튼·스피커가 함께 반응하는 게임을 완성해요.",
+    filename: "dino-project-intro.mp4",
+    language: "arduino",
+    contentType: "video",
+    imageUrl: "/videos/dino-project-poster.jpg",
+    tags: ["디노게임", "프로젝트 소개"],
+    code: ""
+  },
+  {
     id: "content-week-4-dino-basic",
     week: 5,
     title: "5-1. 공룡과 바닥 표시",
@@ -602,7 +616,6 @@ interface DBStructure {
   users: User[];
   settings: {
     aiProvider?: string;
-    openaiApiKey?: string;
     lmStudioUrl: string;
     modelName: string;
     fallbackMode: boolean; // default true for easy emulation
@@ -698,9 +711,12 @@ function readDB(): DBStructure {
   const { talkProfiles, users, ...state } = JSON.parse(String(saved?.payload)) as
     Omit<DBStructure, "users"> & { talkProfiles?: TalkProfile[]; users?: User[] };
   const db: DBStructure = { ...state, users: (talkProfiles ?? users ?? []) as User[] };
+  const legacySettings = db.settings as DBStructure["settings"] & { openaiApiKey?: string };
+  const hadStoredOpenaiKey = Object.hasOwn(legacySettings, "openaiApiKey");
+  delete legacySettings.openaiApiKey;
   syncCommonUsers(db);
   sharedDB = db;
-  let changed = !talkProfiles;
+  let changed = !talkProfiles || hadStoredOpenaiKey;
   if (!db.curriculumWeekShiftVersion) {
     for (const item of db.courseContents || []) {
     if (item.id === "content-week-4-lcd-code-lab" && item.filename === "soda-3-1.ino") {
@@ -828,34 +844,16 @@ function writeDB(data: DBStructure) {
   sharedDB = data;
 }
 
-function checkHybridQuotaAndRoute(user: User, db: DBStructure) {
-  const useGpt = reserveGptRoute(user, db.settings);
-
-  if (useGpt) {
-    return {
-      url: "https://api.openai.com/v1/chat/completions",
-      auth: `Bearer ${db.settings.openaiApiKey || ""}`,
-      routedToGpt: true
-    };
-  } else {
-    return {
-      url: `${db.settings.lmStudioUrl}/v1/chat/completions`,
-      auth: "Bearer lm-studio",
-      routedToGpt: false
-    };
-  }
-}
-
 function providerConfig(gpt: boolean, db: DBStructure) {
+  if (gpt && !openaiApiKey) throw new Error("GPT API key is not configured");
   return {url:gpt ? "https://api.openai.com/v1/chat/completions" : `${db.settings.lmStudioUrl}/v1/chat/completions`,
-    auth:gpt ? `Bearer ${db.settings.openaiApiKey || ""}` : "Bearer lm-studio",
+    auth:gpt ? `Bearer ${openaiApiKey}` : "Bearer lm-studio",
     model:gpt ? "gpt-4o-mini" : db.settings.modelName};
 }
 async function completeWithFallback(user: User, db: DBStructure, body: any) {
-  const primary = checkHybridQuotaAndRoute(user,db).routedToGpt;
+  const primary = reserveGptRoute(user, db.settings);
   writeDB(db);
   return withProviderFallback(primary, async gpt => {
-    if (gpt && !db.settings.openaiApiKey) throw new Error("GPT API key is not configured");
     const config=providerConfig(gpt,db);
     const response=await fetch(config.url,{method:"POST",headers:{"Content-Type":"application/json",Authorization:config.auth},body:JSON.stringify({...body,model:config.model,stream:false})});
     if(!response.ok) { await response.body?.cancel(); throw new Error(`AI HTTP ${response.status}`); }
@@ -1045,7 +1043,7 @@ app.post('/api/hw/tts', aiCapacity, express.json({ limit: '16kb' }), async (req,
 
   if (!text) return res.status(400).json({ error: "No text provided" });
   if (text.length > 1000) return res.status(400).json({ error: "Text is too long" });
-  if (!db.settings.openaiApiKey) {
+  if (!openaiApiKey) {
     return res.status(503).json({ error: "OpenAI API key is not configured" });
   }
 
@@ -1054,7 +1052,7 @@ app.post('/api/hw/tts', aiCapacity, express.json({ limit: '16kb' }), async (req,
   const onClose = () => { if (!res.writableEnded) controller.abort(); };
   res.on("close", onClose);
   try {
-    const pcmBuffer = await fetchHardwareSpeech(db.settings.openaiApiKey, text, controller.signal);
+    const pcmBuffer = await fetchHardwareSpeech(openaiApiKey, text, controller.signal);
     if (res.destroyed) return;
     res.status(200);
     res.setHeader("Content-Type", "audio/pcm");
@@ -1335,6 +1333,7 @@ app.post('/api/hw/audio-chat', aiCapacity, upload.single('file'), async (req, re
   if (!user) return res.status(403).json({ error: "Invalid SODA API Key" });
 
   if (!req.file) return res.status(400).json({ error: "No audio file provided" });
+  if (!openaiApiKey) return res.status(503).json({ error: "OpenAI API key is not configured" });
 
   try {
     // 1. STT (Audio to Text) using OpenAI Whisper API
@@ -1348,14 +1347,13 @@ app.post('/api/hw/audio-chat', aiCapacity, upload.single('file'), async (req, re
     const whisperRes = await fetch("https://api.openai.com/v1/audio/transcriptions", {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${db.settings.openaiApiKey || ""}`
+        "Authorization": `Bearer ${openaiApiKey}`
       },
       body: formData as any
     });
 
     if (!whisperRes.ok) {
-      const errText = await whisperRes.text();
-      console.error("Whisper API error:", errText);
+      await whisperRes.body?.cancel();
       throw new Error(`Whisper API failed: ${whisperRes.status}`);
     }
 
@@ -1456,7 +1454,8 @@ app.use('/v1', (req, res, next) => {
   const user = findUserByApiKey(token, db);
   if (!user) return res.status(403).json({ error: "Invalid SODA API Key" });
 
-  req.headers.authorization = `Bearer ${db.settings.openaiApiKey || ""}`;
+  if (!openaiApiKey) return res.status(503).json({ error: "OpenAI API key is not configured" });
+  req.headers.authorization = `Bearer ${openaiApiKey}`;
   next();
 }, createProxyMiddleware({
   target: 'https://api.openai.com',
@@ -1651,7 +1650,7 @@ app.post("/api/auth/login", async (req, res) => {
 });
 
 app.post("/api/auth/signup", async (req, res) => {
-  const { email, name, password, signupCode, campus } = req.body ?? {};
+  const { email, name, password, signupCode, kitKey, campus } = req.body ?? {};
   const username = typeof email === "string" ? email.trim().toLowerCase() : "";
   const displayName = typeof name === "string" ? name.trim() : "";
   if (username.length > 80 || !/^[^\s@]{1,64}@[^\s@]+\.[^\s@]{2,}$/.test(username) ||
@@ -1666,15 +1665,35 @@ app.post("/api/auth/signup", async (req, res) => {
   if (expectedCode && (typeof signupCode !== "string" || !equalSecret(signupCode.trim(), expectedCode))) {
     return res.status(403).json({ error: "가입 코드가 올바르지 않습니다." });
   }
+  const code = typeof kitKey === "string" ? normalizeKitKey(kitKey) : "";
+  if (kitKey !== undefined && (typeof kitKey !== "string" || (kitKey.trim() && !code))) {
+    return res.status(400).json({ error: "키트 인증 키의 형식을 확인해 주세요." });
+  }
   try {
     const studio = studioAccounts();
     const { salt, hash } = await studioPassword(password);
-    const result = studio.prepare(`
-      INSERT OR IGNORE INTO talk_signup_requests (username, name, salt, hash, created_at, campus)
-      SELECT ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM users WHERE username = ?)
-    `).run(username, displayName, salt, hash, new Date().toISOString(), campus, username);
-    if (!result.changes) return res.status(409).json({ error: "이미 등록되었거나 승인 대기 중인 이메일입니다." });
-    return res.status(201).json({ success: true });
+    studio.exec("BEGIN IMMEDIATE");
+    let committed = false;
+    try {
+      const now = Date.now();
+      if (code) {
+        const error = kitKeyError(studio, code, now);
+        if (error) return res.status(409).json({ error });
+      }
+      const result = studio.prepare(`
+        INSERT OR IGNORE INTO talk_signup_requests (username, name, salt, hash, created_at, campus)
+        SELECT ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM users WHERE username = ?)
+      `).run(username, displayName, salt, hash, new Date(now).toISOString(), campus, username);
+      if (!result.changes) return res.status(409).json({ error: "이미 등록되었거나 승인 대기 중인 이메일입니다." });
+      if (code) {
+        studio.prepare("UPDATE talk_kit_keys SET used_at = ?, used_by = ? WHERE code = ?").run(now, username, code);
+      }
+      studio.exec("COMMIT");
+      committed = true;
+      return res.status(201).json({ success: true, kitVerified: Boolean(code) });
+    } finally {
+      if (!committed) studio.exec("ROLLBACK");
+    }
   } catch (error) {
     console.error("Studio signup failed", error);
     return res.status(503).json({ error: "가입 신청을 저장할 수 없습니다." });
@@ -1852,6 +1871,8 @@ const requireStaff: express.RequestHandler = (req, res, next) => {
   next();
 };
 
+registerKitKeyRoutes(app, requireAdmin);
+
 app.put("/api/admin/users/:id/role", requireAdmin, (req, res) => {
   const { role, campus } = req.body ?? {};
   const db = readDB();
@@ -1875,9 +1896,12 @@ app.get("/api/admin/signup-requests", requireStaff, (_req, res) => {
   try {
     const actor: User = res.locals.actor;
     const campus = isAdministrator(actor) ? null : userCampus(actor);
-    const requests = studioAccounts().prepare(
-      "SELECT username, name, campus FROM talk_signup_requests WHERE (? = 1 OR campus = ?) ORDER BY created_at"
-    ).all(Number(isAdministrator(actor)), campus);
+    const requests = studioAccounts().prepare(`
+      SELECT request.username, request.name, request.campus, EXISTS (
+        SELECT 1 FROM talk_kit_keys WHERE used_by = request.username AND used_at IS NOT NULL
+      ) AS kitVerified
+      FROM talk_signup_requests AS request WHERE (? = 1 OR request.campus = ?) ORDER BY request.created_at
+    `).all(Number(isAdministrator(actor)), campus);
     return res.json({ requests });
   } catch {
     return res.status(503).json({ error: "가입 신청 목록을 불러올 수 없습니다." });
@@ -2137,6 +2161,7 @@ app.get("/api/course-contents", (req, res) => {
     return c;
   }).sort((a, b) => {
     const rank = (id: string) => ({
+      "content-week-5-dino-intro": -1,
       "content-week-2-breadboard-secret": -5, "content-week-2-circuit-lab": -4, "content-week-2-sound-lab": -3,
       "content-week-2-circuit-diagram": -4, "content-week-2-amplifier-lab": -3, "content-week-2-sound": -2, "content-week-2-btn-led-sound": -1, "content-week-4-lcd-code-lab": -1, "content-week-3-lcd-lab": 0.5, "content-week-3-lcd-hello": 1, "content-week-3-lcd-basic": 2, "content-week-4-lcd-shapes-lab": 2.5, "content-week-3-lcd-shapes": 3, "content-week-4-lcd-frame-lab": 3.5, "content-week-3-lcd-editor": 4, "content-week-4-lcd-expression-lab": 5
     }[id] || 0);
@@ -2364,17 +2389,22 @@ app.get("/api/system/status", (req, res) => {
 // ----------------------------------------------------
 // LM Studio Settings API
 // ----------------------------------------------------
-app.get("/api/lmstudio/config", (req, res) => {
-  const db = readDB();
-  res.json(db.settings);
+function serverSettingsResponse(settings: DBStructure["settings"]) {
+  return { ...settings, openaiConfigured: Boolean(openaiApiKey) };
+}
+
+app.get("/api/lmstudio/config", requireAdmin, (_req, res) => {
+  res.set("Cache-Control", "no-store").json(serverSettingsResponse(readDB().settings));
 });
 
-app.post("/api/lmstudio/config", (req, res) => {
-  const { aiProvider, openaiApiKey, lmStudioUrl, modelName, fallbackMode, temperature, maxTokens, language, hybridModeEnabled, dailyGptQuota } = req.body;
+app.post("/api/lmstudio/config", requireAdmin, (req, res) => {
+  if (Object.hasOwn(req.body, "openaiApiKey")) {
+    return res.status(400).json({ error: "OpenAI API 키는 서버 환경변수에서 설정해야 합니다." });
+  }
+  const { aiProvider, lmStudioUrl, modelName, fallbackMode, temperature, maxTokens, language, hybridModeEnabled, dailyGptQuota } = req.body;
   const db = readDB();
 
   if (aiProvider !== undefined) db.settings.aiProvider = aiProvider;
-  if (openaiApiKey !== undefined) db.settings.openaiApiKey = openaiApiKey;
   if (lmStudioUrl !== undefined) db.settings.lmStudioUrl = lmStudioUrl;
   if (modelName !== undefined) db.settings.modelName = modelName;
   if (fallbackMode !== undefined) db.settings.fallbackMode = fallbackMode;
@@ -2385,10 +2415,10 @@ app.post("/api/lmstudio/config", (req, res) => {
   if (dailyGptQuota !== undefined) db.settings.dailyGptQuota = dailyGptQuota;
 
   writeDB(db);
-  res.json({ success: true, settings: db.settings });
+  res.set("Cache-Control", "no-store").json({ success: true, settings: serverSettingsResponse(db.settings) });
 });
 
-app.post("/api/lmstudio/test", async (req, res) => {
+app.post("/api/lmstudio/test", requireAdmin, async (req, res) => {
   // Global state for LM Studio settings (mocked persistence)
   let globalLmStudioUrl = "https://granular-kindly-morally.ngrok-free.dev";
   let globalLmStudioConnected = false;
@@ -2473,7 +2503,7 @@ app.post("/api/lmstudio/stream", aiCapacity, async (req, res) => {
     req.body.messages = [{role:"system",content:buildSharedSystemPrompt(user,false)},...req.body.messages.filter(m => m.role !== "system")];
   }
   if (!user) return res.status(401).json({error:"사용자를 찾을 수 없습니다."});
-  const primary=checkHybridQuotaAndRoute(user,db).routedToGpt;
+  const primary = reserveGptRoute(user, db.settings);
   writeDB(db);
   res.setHeader("Content-Type","text/event-stream");
   res.setHeader("Cache-Control","no-cache");
@@ -2483,7 +2513,13 @@ app.post("/api/lmstudio/stream", aiCapacity, async (req, res) => {
   for (const gpt of [primary,!primary]) {
     try {
       const config=providerConfig(gpt,db);
-      const upstream=await fetch(config.url,{method:"POST",headers:{"Content-Type":"application/json",Authorization:config.auth},body:JSON.stringify({...req.body,model:config.model,stream:true}),signal:controller.signal});
+      const upstream=await fetch(config.url,{method:"POST",headers:{"Content-Type":"application/json",Authorization:config.auth},body:JSON.stringify({
+        ...req.body,
+        model: config.model,
+        temperature: req.body.temperature ?? db.settings.temperature ?? 0.7,
+        max_tokens: req.body.max_tokens ?? db.settings.maxTokens ?? 1024,
+        stream: true
+      }),signal:controller.signal});
       if(!upstream.ok || !upstream.body) {await upstream.body?.cancel();throw new Error(`AI HTTP ${upstream.status}`);}
       const reader=upstream.body.getReader();
       while(true) {

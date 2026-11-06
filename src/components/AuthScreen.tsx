@@ -49,7 +49,9 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
       changeMode(false);
       setIdentifier(String(fields.email).trim().toLowerCase());
       setSecret("");
-      setNotice("가입 신청이 접수되었습니다. 관리자 승인 후 로그인할 수 있습니다.");
+      setNotice(data.kitVerified
+        ? "키트 인증과 가입 신청이 완료되었습니다. 관리자 승인 후 로그인할 수 있습니다."
+        : "가입 신청이 접수되었습니다. 관리자 승인 후 로그인할 수 있습니다.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "가입 신청에 실패했습니다.");
     } finally {
@@ -139,6 +141,7 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
               { name: "name", label: "이름", type: "text", autoComplete: "name", maxLength: 20 },
               { name: "password", label: "비밀번호", type: "password", autoComplete: "new-password", minLength: 8, maxLength: 100 },
               { name: "signupCode", label: "가입 코드 (안내받은 경우)", type: "password", autoComplete: "off", maxLength: 128, required: false },
+              { name: "kitKey", label: "키트 인증 키 (선택)", type: "text", autoComplete: "off", maxLength: 32, required: false, placeholder: "SODA-XXXX-XXXX-XXXX", spellCheck: false },
             ].map(({ label, ...field }) => (
               <label key={field.name} className="block text-xs font-semibold text-[#555B60]">
                 {label}
