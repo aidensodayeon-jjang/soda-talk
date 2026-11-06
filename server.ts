@@ -13,7 +13,6 @@ import path from "path";
 import fs from "fs";
 import os from "os";
 import crypto from "crypto";
-import { createProxyMiddleware } from "http-proxy-middleware";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import multer from "multer";
@@ -961,7 +960,7 @@ function findUserByApiKey(token: string, db: DBStructure): User | undefined {
 // ----------------------------------------------------
 // SODA API Gateway (Hardware Proxy)
 // ----------------------------------------------------
-app.post('/v1/chat/completions', express.json(), async (req, res) => {
+app.post('/v1/chat/completions', aiCapacity, express.json(), async (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
 
@@ -1444,23 +1443,9 @@ app.post('/api/hw/audio-chat', aiCapacity, upload.single('file'), async (req, re
   }
 });
 
-app.use('/v1', (req, res, next) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
-
-  const token = authHeader.replace("Bearer ", "").trim();
-  const db = readDB();
-  
-  const user = findUserByApiKey(token, db);
-  if (!user) return res.status(403).json({ error: "Invalid SODA API Key" });
-
-  if (!openaiApiKey) return res.status(503).json({ error: "OpenAI API key is not configured" });
-  req.headers.authorization = `Bearer ${openaiApiKey}`;
-  next();
-}, createProxyMiddleware({
-  target: 'https://api.openai.com',
-  changeOrigin: true
-}));
+app.use('/v1', (_req, res) => {
+  res.status(404).json({ error: "Unsupported Soda API endpoint" });
+});
 
 app.use(express.json());
 
@@ -1578,15 +1563,35 @@ function enrollSodabot(studio: ReturnType<typeof studioAccounts>, username: stri
   `).run(username, Date.now());
 }
 
+const loginWindowMs = 10 * 60 * 1000;
+const loginAttempts = new Map<string, { count: number; expiresAt: number }>();
+setInterval(() => {
+  const now = Date.now();
+  for (const [account, attempt] of loginAttempts) {
+    if (attempt.expiresAt <= now) loginAttempts.delete(account);
+  }
+}, 60_000).unref();
+
 app.post("/api/auth/login", async (req, res) => {
   const { loginType, name, phone, username, password } = req.body ?? {};
   const identifier = typeof (username || name) === "string" ? (username || name).trim() : "";
   const secret = typeof (password || phone) === "string" ? (password || phone).trim() : "";
-  if (!identifier || !secret || secret.length > 100) {
+  if (!identifier || identifier.length > 254 || !secret || secret.length > 100) {
     return res.status(400).json({ error: "아이디 또는 이름과 비밀번호를 확인해 주세요." });
   }
 
   const accountId = identifier.toLowerCase();
+  const now = Date.now();
+  const previousAttempt = loginAttempts.get(accountId);
+  const attempt = previousAttempt && previousAttempt.expiresAt > now
+    ? previousAttempt
+    : { count: 0, expiresAt: now + loginWindowMs };
+  if (attempt.count >= 8 || (!previousAttempt && loginAttempts.size >= 10_000)) {
+    res.set("Retry-After", String(Math.ceil((attempt.expiresAt - now) / 1000)));
+    return res.status(429).json({ error: "로그인 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요." });
+  }
+  attempt.count++;
+  loginAttempts.set(accountId, attempt);
   const emailLogin = identifier.includes("@");
   try {
     const studio = studioAccounts();
@@ -1639,6 +1644,7 @@ app.post("/api/auth/login", async (req, res) => {
     const user = db.users.find(candidate => candidate.username === matchedUsername);
     if (!user) return res.status(401).json({ error: "사용자를 찾을 수 없습니다." });
     const personalApiKey = ensureUserApiKey(user, db);
+    loginAttempts.delete(accountId);
     return completeLogin(res, {
       id: user.id, username: user.username, displayName: user.displayName, role: user.role || "student",
       canAccessChat: user.role === "admin" || Boolean(user.canAccessChat), personalApiKey
@@ -3831,7 +3837,8 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), "dist");
+    app.get(["/server.cjs", "/server.cjs.map"], (_req, res) => res.sendStatus(404));
+    const distPath = path.join(process.cwd(), "dist", "client");
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
