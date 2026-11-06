@@ -3888,7 +3888,7 @@ export default function App() {
                 const userCustomName = localStorage.getItem(`sodabot_${userKey}_custom_name`) || localStorage.getItem('sodabot_custom_name') || '';
                 const userSsid = localStorage.getItem(`sodabot_${userKey}_wifi_ssid`) || localStorage.getItem('sodabot_wifi_ssid') || '';
                 const userPass = localStorage.getItem(`sodabot_${userKey}_wifi_password`) || localStorage.getItem('sodabot_wifi_password') || '';
-                const userApiKey = user?.personalApiKey || localStorage.getItem(`sodabot_${userKey}_api_key`) || localStorage.getItem('sodabot_api_key') || 'sk-soda-33b8c4c9312d29b8a01f1803e890a758';
+                const userApiKey = user?.personalApiKey || localStorage.getItem(`sodabot_${userKey}_api_key`) || localStorage.getItem('sodabot_api_key') || '';
                 const cleanRobotName = userCustomName.replace(/[^a-zA-Z0-9_-]/g, '') || (user?.displayName ? user.displayName.replace(/[^a-zA-Z0-9_-]/g, '') : 'ROBOT');
 
                 const isWeek9 = currentView === 'firmware_v9';

@@ -261,7 +261,7 @@ export function generateCustomFirmware(
   const mainFunctionName = findMainExecutableFunction(parts.functionCode || '') || extractedFunctions[0] || '';
 
   const host = apiHost || (typeof window !== 'undefined' && window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1' ? window.location.hostname : '192.168.0.171');
-  const key = apiKey || 'sk-soda-9597fe97de4771e361b8a171c9aefd7b';
+  const key = apiKey || '';
 
   // 1. 기본 템플릿 로드
   let merged = template;
@@ -383,7 +383,7 @@ export function generateSodabotFirmware(
 ): string {
   const name = robotName.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 10) || 'ROBOT';
   const host = apiHost || (typeof window !== 'undefined' && window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1' ? window.location.hostname : '192.168.0.171');
-  const key = apiKey || 'sk-soda-demo';
+  const key = apiKey || '';
 
   const substitutions: Record<string, string> = {
     __SODA_WIFI_SSID__: JSON.stringify(wifiSsid || 'Dlab_2G'),

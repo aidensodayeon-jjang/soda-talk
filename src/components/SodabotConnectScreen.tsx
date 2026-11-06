@@ -30,7 +30,7 @@ export default function SodabotConnectScreen({ currentUser }: SodabotConnectScre
     if (currentUser?.personalApiKey) return currentUser.personalApiKey;
     const saved = localStorage.getItem(getScopedKey("api_key"));
     if (saved && saved.startsWith("sk-soda-") && !saved.includes("자동발급중")) return saved;
-    return "sk-soda-23fdcaabe351c318b448d8540b9bb756";
+    return "";
   });
   const [copiedKey, setCopiedKey] = useState(false);
 
@@ -144,7 +144,7 @@ export default function SodabotConnectScreen({ currentUser }: SodabotConnectScre
     localStorage.setItem(getScopedKey("wifi_ssid"), ssid);
     localStorage.setItem(getScopedKey("wifi_password"), password);
 
-    const activeApiKey = apiKey || currentUser?.personalApiKey || 'sk-soda-demo';
+    const activeApiKey = apiKey || currentUser?.personalApiKey || '';
     const host = (typeof window !== 'undefined' && window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') ? window.location.hostname : '192.168.0.171';
     const code = generateSodabotFirmware(cleanName, ssid, password, activeApiKey, host);
     const blob = new Blob([code], { type: 'text/plain;charset=utf-8' });
@@ -163,7 +163,7 @@ export default function SodabotConnectScreen({ currentUser }: SodabotConnectScre
     localStorage.setItem(getScopedKey("wifi_ssid"), ssid);
     localStorage.setItem(getScopedKey("wifi_password"), password);
 
-    const activeApiKey = apiKey || currentUser?.personalApiKey || 'sk-soda-demo';
+    const activeApiKey = apiKey || currentUser?.personalApiKey || '';
     const host = (typeof window !== 'undefined' && window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') ? window.location.hostname : '192.168.0.171';
     const code = generateSodabotFirmware(cleanName, ssid, password, activeApiKey, host);
     await navigator.clipboard.writeText(code);
@@ -381,7 +381,7 @@ export default function SodabotConnectScreen({ currentUser }: SodabotConnectScre
                 </div>
                 
                 <div className="font-mono text-[11px] text-indigo-950 font-black bg-white/95 px-3 py-1.5 rounded-xl border border-indigo-200 select-all truncate tracking-tight shadow-inner">
-                  {apiKey || currentUser?.personalApiKey || "sk-soda-23fdcaabe351c318b448d8540b9bb756"}
+                  {apiKey || currentUser?.personalApiKey || "발급된 키 없음"}
                 </div>
               </div>
 
