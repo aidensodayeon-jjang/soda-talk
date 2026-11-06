@@ -1,11 +1,13 @@
 // Integration test against an isolated server with three fictional accounts.
+import { createStudioFixture } from "./studio-fixture.mjs";
 import {spawn} from 'node:child_process';import {mkdtemp,mkdir,writeFile,rm} from 'node:fs/promises';import path from 'node:path';import os from 'node:os';import assert from 'node:assert/strict';
 const root=process.cwd(),temp=await mkdtemp(path.join(os.tmpdir(),'soda-friends-'));const base='http://127.0.0.1:17995';let child;
-const users=['a','b','c'].map(id=>({id,username:id,displayName:'test-'+id,personalApiKey:'friends-test-'+id,role:'student'}));
+const users=['a','b','c'].map(id=>({id,username:id,displayName:'test-'+id,personalApiKey:'friends-test-'+id,role:'student',keyRegistrations:[{registeredAt:Date.now(),expiresAt:Date.now()+3600000,registeredBy:null,validityDays:60}]}));
 const api=(user,url,body,method=body?'POST':'GET')=>fetch(base+url,{method,headers:{Authorization:'Bearer friends-test-'+user,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});
 try{
  await mkdir(path.join(temp,'data'));await writeFile(path.join(temp,'data/db.json'),JSON.stringify({users,chats:[],settings:{},curriculumWeekShiftVersion:1,courseContents:[],friendProfiles:[],friendships:[{id:'ab',requesterId:'a',receiverId:'b',status:'accepted',createdAt:new Date().toISOString()}],directMessages:[],userPresences:{}}));
- child=spawn(process.execPath,['--import',path.join(root,'node_modules/tsx/dist/loader.mjs'),path.join(root,'server.ts')],{cwd:temp,env:{...process.env,NODE_ENV:'production',PORT:'17995'},stdio:'ignore'});
+ const studioPath = createStudioFixture(temp);
+ child=spawn(process.execPath,['--import',path.join(root,'node_modules/tsx/dist/loader.mjs'),path.join(root,'server.ts')],{cwd:temp,env:{...process.env,NODE_ENV:'production',SODA_STUDIO_DB_PATH:studioPath,PORT:'17995'},stdio:'ignore'});
  let ready=false;for(let i=0;i<100;i++){try{if((await fetch(base+'/api/server-info')).ok){ready=true;break}}catch{}await new Promise(r=>setTimeout(r,100))}assert.ok(ready);
  for(const u of users)assert.equal((await api(u.id,'/api/auth/me')).status,200);
  const sent=await api('a','/api/friends/messages/b',{content:'안녕'});assert.equal(sent.status,200);const dm=(await sent.json()).message;
