@@ -433,7 +433,7 @@ export default function App() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      await fetchSignupRequests();
+      await fetchAdminUsers();
     } catch (error) {
       setSignupRequestError(error instanceof Error ? error.message : "가입 승인에 실패했습니다.");
     } finally {
@@ -561,12 +561,14 @@ export default function App() {
 
   const renderSignupRequests = (columns: number, filtered = false) => (
     <>
+      {statusError && <tr><td colSpan={columns} role="alert" className="p-3 text-xs text-rose-600">{statusError}</td></tr>}
       {signupRequestError && <tr><td colSpan={columns} role="alert" className="p-3 text-xs text-rose-600">{signupRequestError}</td></tr>}
       {signupRequests.filter(request => !filtered || matchesAdminFilters(request.name, request.username, request.campus)).map(request => (
         <tr key={request.username}>
           <td colSpan={columns - 1} className="p-3">
             <span className="mr-2 font-medium">{request.name}</span>
-            <span className="text-xs text-[#86868B]">{request.username} · {request.campus ?? "캠퍼스 미선택"} · 가입 승인 대기</span>
+            <span className="text-xs text-[#86868B]">{request.username} · {request.campus ?? "캠퍼스 미선택"}</span>
+            <span className="ml-2 rounded-full bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700">승인 대기</span>
             {request.kitVerified === 1 && <span className="ml-2 rounded bg-emerald-50 px-1.5 py-0.5 text-xs font-semibold text-emerald-700">키트 인증</span>}
           </td>
           <td className="p-3 text-right">
@@ -578,6 +580,42 @@ export default function App() {
         </tr>
       ))}
     </>
+  );
+
+  const [updatingStatusFor, setUpdatingStatusFor] = useState("");
+  const [statusError, setStatusError] = useState("");
+
+  const updateAccountStatus = async (account: { id: string }, suspended: boolean) => {
+    setUpdatingStatusFor(account.id);
+    setStatusError("");
+    try {
+      const response = await fetch(`/api/admin/users/${encodeURIComponent(account.id)}/status`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ suspended })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+      await fetchAdminUsers();
+    } catch (error) {
+      setStatusError(error instanceof Error ? error.message : "계정 상태 변경에 실패했습니다.");
+    } finally {
+      setUpdatingStatusFor("");
+    }
+  };
+
+  const renderAccountStatus = (account: { id: string; displayName: string; role?: string; suspended?: boolean }) => (
+    <select
+      aria-label={`${account.displayName} 계정 상태`}
+      aria-busy={updatingStatusFor === account.id}
+      value={account.suspended ? "suspended" : "active"}
+      disabled={account.role === "admin" || Boolean(updatingStatusFor)}
+      onChange={event => updateAccountStatus(account, event.target.value === "suspended")}
+      className={`rounded-lg border px-2 py-1 text-[11px] font-semibold disabled:cursor-default disabled:opacity-60 ${account.suspended ? "border-rose-200 bg-rose-50 text-rose-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}
+    >
+      <option value="active">정상</option>
+      <option value="suspended">이용 정지</option>
+    </select>
   );
 
   const handleToggleChatPermission = async (userId: string, currentStatus: boolean) => {
@@ -1918,17 +1956,18 @@ export default function App() {
               <div className="overflow-x-auto">
                 <table className="w-full whitespace-nowrap border-t border-[#EAE6DF] text-left text-sm">
                   <thead className="border-b border-[#EAE6DF] bg-[#FAF9F6] text-xs text-gray-600">
-                    <tr><th scope="col" className="px-4 py-3">학생</th><th scope="col" className="px-4 py-3">계정</th><th scope="col" className="px-4 py-3">키 유효기간</th><th scope="col" className="px-4 py-3 text-right">관리</th></tr>
+                    <tr><th scope="col" className="px-4 py-3">학생</th><th scope="col" className="px-4 py-3">계정</th><th scope="col" className="px-4 py-3">계정 상태</th><th scope="col" className="px-4 py-3">키 유효기간</th><th scope="col" className="px-4 py-3 text-right">관리</th></tr>
                   </thead>
                   <tbody className="divide-y divide-[#EAE6DF]">
-                    {keyRegistrationError && <tr><td colSpan={4} role="alert" className="p-3 text-rose-600">{keyRegistrationError}</td></tr>}
-                    {renderSignupRequests(4)}
+                    {keyRegistrationError && <tr><td colSpan={5} role="alert" className="p-3 text-rose-600">{keyRegistrationError}</td></tr>}
+                    {renderSignupRequests(5)}
                     {adminUsers.map(student => {
                       const expiry = student.keyRegistrations?.at(-1)?.expiresAt;
                       return (
                         <tr key={student.id}>
                           <th scope="row" className="px-4 py-3 font-semibold">{student.displayName}</th>
                           <td className="px-4 py-3 text-xs text-gray-600">{student.username} · {student.campus}</td>
+                          <td className="px-4 py-3">{renderAccountStatus(student)}</td>
                           <td className="px-4 py-3 text-xs text-gray-600">
                             {expiry ? `${keyTimeRemaining(expiry)} · 만료일 ${new Date(expiry).toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul" })}` : "미등록"}
                           </td>
@@ -1951,7 +1990,7 @@ export default function App() {
                         </tr>
                       );
                     })}
-                    {!adminUsers.length && !signupRequests.length && <tr><td colSpan={4} className="p-3 text-gray-500">표시할 학생이나 가입 신청이 없습니다.</td></tr>}
+                    {!adminUsers.length && !signupRequests.length && <tr><td colSpan={5} className="p-3 text-gray-500">표시할 학생이나 가입 신청이 없습니다.</td></tr>}
                   </tbody>
                 </table>
               </div>
@@ -2107,16 +2146,17 @@ export default function App() {
                       <tr>
                         <th scope="col" className="px-3 py-2 font-semibold">사용자</th>
                         <th scope="col" className="px-3 py-2 font-semibold">역할 · 캠퍼스</th>
+                        <th scope="col" className="px-3 py-2 font-semibold">계정 상태</th>
                         <th scope="col" className="px-3 py-2 text-center font-semibold">대화 권한</th>
                         <th scope="col" className="px-3 py-2 font-semibold">키 유효기간</th>
                         <th scope="col" className="px-3 py-2 text-right font-semibold">관리</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#EAE6DF]">
-                      {roleError && <tr><td colSpan={5} role="alert" className="p-3 whitespace-normal text-rose-600">{roleError}</td></tr>}
-                      {renderSignupRequests(5, true)}
+                      {roleError && <tr><td colSpan={6} role="alert" className="p-3 whitespace-normal text-rose-600">{roleError}</td></tr>}
+                      {renderSignupRequests(6, true)}
                       {!filteredAdminUsers.length && !signupRequests.some(request => matchesAdminFilters(request.name, request.username, request.campus)) && (
-                        <tr><td colSpan={5} className="p-5 text-center text-[#86868B]">조건에 맞는 사용자가 없습니다.</td></tr>
+                        <tr><td colSpan={6} className="p-5 text-center text-[#86868B]">조건에 맞는 사용자가 없습니다.</td></tr>
                       )}
                       {filteredAdminUsers.map(u => {
                         const isUserAdmin = u.username === "admin" || u.role === "admin";
@@ -2149,6 +2189,7 @@ export default function App() {
                                 </form>
                               )}
                             </td>
+                            <td className="px-3 py-2">{renderAccountStatus(u)}</td>
                             <td className="px-3 py-2 text-center">
                               {isUserAdmin ? (
                                 <span className="text-[11px] font-semibold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-lg">
@@ -4181,13 +4222,14 @@ export default function App() {
                           <tr>
                             <th className="p-3 font-semibold">ID (계정)</th>
                             <th className="p-3 font-semibold">이름</th>
+                            <th className="p-3 font-semibold">계정 상태</th>
                             <th className="p-3 font-semibold text-center">대화 권한 (수업 제어)</th>
                             <th className="p-3 font-semibold">API Key</th>
                             <th className="p-3 font-semibold text-right">관리 액션</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-[#EAE6DF] text-[#1D1D1F]">
-                          {renderSignupRequests(5)}
+                          {renderSignupRequests(6)}
                           {adminUsers.map(u => {
                             const isUserAdmin = u.username === "admin" || u.role === "admin";
                             const hasChatAccess = isUserAdmin || Boolean(u.canAccessChat);
@@ -4200,6 +4242,7 @@ export default function App() {
                                   )}
                                 </td>
                                 <td className="p-3 font-medium">{u.displayName}</td>
+                                <td className="p-3">{renderAccountStatus(u)}</td>
                                 <td className="p-3 text-center">
                                   {isUserAdmin ? (
                                     <span className="text-[10px] font-semibold text-emerald-600 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-lg">

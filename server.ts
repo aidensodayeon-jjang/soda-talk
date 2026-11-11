@@ -97,6 +97,7 @@ interface User {
   keyRenewalRequestedAt?: number;
   role?: "admin" | "tutor" | "student" | "user";
   canAccessChat?: boolean;
+  suspended?: boolean;
   personalApiKey?: string;
   lastGptDate?: string;
   gptUsageCount?: number;
@@ -954,8 +955,22 @@ function buildDeterministicIdentityReply(user: User, message: string): string | 
 function findUserByApiKey(token: string, db: DBStructure): User | undefined {
   const cleanToken = token.trim();
   const session = cleanToken ? getSession(cleanToken) : null;
-  return resolveFriendUser(cleanToken, db.users, session?.id);
+  const user = resolveFriendUser(cleanToken, db.users, session?.id);
+  return user && !user.suspended ? user : undefined;
 }
+
+const suspendedAccountMessage = "이용 정지된 계정입니다. 관리자 또는 담당 선생님에게 문의해 주세요.";
+
+// Apply account suspension to both browser sessions and hardware API keys.
+app.use(["/api", "/v1"], (req, res, next) => {
+  const token = (req.headers.authorization || "").replace(/^Bearer /, "").trim();
+  if (token) {
+    const session = sessions.get(token);
+    const user = readDB().users.find(user => user.id === session?.id || user.personalApiKey === token);
+    if (user?.suspended) return res.status(403).json({ error: suspendedAccountMessage });
+  }
+  next();
+});
 
 // ----------------------------------------------------
 // SODA API Gateway (Hardware Proxy)
@@ -1474,7 +1489,7 @@ function getSession(token: string): SessionUser | undefined {
   if (!session) return undefined;
 
   const account = readDB().users.find(user => user.id === session.id);
-  if (!account || account.role !== session.role) {
+  if (!account || account.suspended || account.role !== session.role) {
     sessions.delete(token);
     return undefined;
   }
@@ -1533,6 +1548,7 @@ function completeLogin(
     const db = readDB();
     const user = db.users.find(candidate => candidate.id === userData.id);
     if (!user) return res.status(401).json({ error: "사용자를 찾을 수 없습니다." });
+    if (user.suspended) return res.status(403).json({ error: suspendedAccountMessage });
     let registration = user.keyRegistrations?.at(-1);
     if (!registration) {
       registration = addKeyRegistration(user, null);
@@ -1955,10 +1971,30 @@ app.get("/api/admin/users", requireStaff, (req, res) => {
     keyRegistrations: u.keyRegistrations ?? [],
     keyRenewalRequestedAt: u.keyRenewalRequestedAt,
     role: isAdministrator(u) ? "admin" : u.role === "tutor" ? "tutor" : "student",
-    canAccessChat: isAdministrator(u) || Boolean(u.canAccessChat),
+    suspended: Boolean(u.suspended),
+    canAccessChat: !u.suspended && (isAdministrator(u) || Boolean(u.canAccessChat)),
     ...(isAdministrator(actor) ? { personalApiKey: u.personalApiKey, persona: u.persona } : {})
   }));
   res.json({ users });
+});
+
+app.put("/api/admin/users/:id/status", requireStaff, (req, res) => {
+  const { suspended } = req.body ?? {};
+  if (typeof suspended !== "boolean") return res.status(400).json({ error: "계정 상태를 확인해 주세요." });
+  const db = readDB();
+  const user = db.users.find(user => user.id === req.params.id);
+  if (!user || !canManageStudent(res.locals.actor, user)) {
+    return res.status(404).json({ error: "사용자를 찾을 수 없습니다." });
+  }
+  if (isAdministrator(user)) return res.status(400).json({ error: "관리자 계정은 이용 정지할 수 없습니다." });
+  user.suspended = suspended;
+  writeDB(db);
+  if (suspended) {
+    for (const [token, session] of sessions) {
+      if (session.id === user.id) sessions.delete(token);
+    }
+  }
+  return res.json({ success: true, suspended });
 });
 
 app.post("/api/admin/users/:id/key-registrations", requireStaff, (req, res) => {
