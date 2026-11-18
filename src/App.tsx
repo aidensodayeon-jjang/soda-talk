@@ -18,6 +18,8 @@ import SodaAiLabScreen from "./components/SodaAiLabScreen";
 import SodaAiSkillScreen from "./components/SodaAiSkillScreen";
 import DevCodeHubScreen from "./components/DevCodeHubScreen";
 import AdminCourseManagerModal from "./components/AdminCourseManagerModal";
+import AdminCouponModal from "./components/AdminCouponModal";
+import AccessPassPanel from "./components/AccessPassPanel";
 import MobileBottomTabBar, { MobileTab } from "./components/mobile/MobileBottomTabBar";
 import MobileHomeScreen from "./components/mobile/MobileHomeScreen";
 import MobileControlScreen from "./components/mobile/MobileControlScreen";
@@ -26,6 +28,7 @@ import soda63Code from "../firmware/soda-6-3.ino?raw";
 import soda81Code from "../firmware/soda-8-1.ino?raw";
 import soda91Code from "../firmware/soda-9-1.ino?raw";
 import {
+  Ticket,
   Sparkles,
   Plus,
   Trash2,
@@ -95,7 +98,7 @@ function keyTimeRemaining(expiresAt: number) {
 
 export default function App() {
   const [token, setToken] = useState<string | null>(localStorage.getItem("authSessionId"));
-  const [user, setUser] = useState<{ id: string; username: string; displayName: string; role?: string; canAccessChat?: boolean; personalApiKey?: string; friendSettings?: any; keyExpiresAt?: number; keyRenewalRequestedAt?: number } | null>(null);
+  const [user, setUser] = useState<{ id: string; username: string; displayName: string; role?: string; canAccessChat?: boolean; personalApiKey?: string; friendSettings?: any; memberType?: "student" | "external"; campus?: string; accessUntil?: string; keyExpiresAt?: number; keyRenewalRequestedAt?: number } | null>(null);
   const [settingsVersion, setSettingsVersion] = useState<number>(0);
 
   // Helper for natural Korean postposition particles
@@ -390,6 +393,8 @@ export default function App() {
     window.addEventListener("hashchange", syncPage);
     return () => window.removeEventListener("hashchange", syncPage);
   }, []);
+  const [showCouponManager, setShowCouponManager] = useState(false);
+  const [showMyInfo, setShowMyInfo] = useState(false);
   const [adminUsers, setAdminUsers] = useState<any[]>([]);
   const [adminDetailsUserId, setAdminDetailsUserId] = useState<string | null>(null);
   const adminDetailsDialogRef = useRef<HTMLDialogElement>(null);
@@ -813,7 +818,6 @@ export default function App() {
     // 마운트 시 저장된 마지막 활동 시간 체크
     const savedLastActivity = parseInt(localStorage.getItem("soda_last_activity") || "0", 10);
     if (savedLastActivity && Date.now() - savedLastActivity > INACTIVITY_TIMEOUT_MS) {
-      alert("30분 동안 활동이 없어 세션이 만료되었습니다. 다시 로그인해 주세요.");
       handleLogout();
       return;
     }
@@ -841,7 +845,6 @@ export default function App() {
       const lastAct = lastActivityRef.current || parseInt(localStorage.getItem("soda_last_activity") || "0", 10);
       if (lastAct && now - lastAct > INACTIVITY_TIMEOUT_MS) {
         clearInterval(interval);
-        alert("30분 동안 활동이 없어 세션이 만료되었습니다. 다시 로그인해 주세요.");
         handleLogout();
         return;
       }
@@ -1657,6 +1660,22 @@ export default function App() {
   const openaiLimit = systemStatus?.openaiUsage?.limit || 10000;
   const openaiPercent = Math.min(100, Math.max(0, (openaiUsed / openaiLimit) * 100));
 
+  // ===== 외부인 이용권 미보유: 결제/쿠폰 등록 전까지 메뉴 잠금 =====
+  if (user.memberType === "external" && !user.canAccessChat) {
+    return (
+      <div className="min-h-[100dvh] bg-[#FAF9F6] flex items-center justify-center p-4">
+        <div className="w-full max-w-md bg-white border border-[#EAE6DF] rounded-3xl p-6 shadow-xl space-y-4">
+          <div>
+            <h2 className="text-lg font-extrabold text-[#1D1D1F]">{user.displayName}님, 환영합니다!</h2>
+            <p className="text-xs text-[#5C5B57]">SODABOT STUDIO를 이용하려면 이용권을 활성화해 주세요.</p>
+          </div>
+          <AccessPassPanel token={token} accessUntil={user.accessUntil} onUpdated={() => token && verifySession(token)} />
+          <button onClick={handleLogout} className="w-full py-2 text-xs text-[#86868B] hover:text-rose-600 cursor-pointer">로그아웃</button>
+        </div>
+      </div>
+    );
+  }
+
   // ===== RESPONSIVE MOBILE APP LAYOUT (<768px) =====
   if (isMobile && !onManagementPage) {
     const latestSettings = getLatestFriendSettings();
@@ -2030,6 +2049,9 @@ export default function App() {
               </button>
               <button onClick={() => setShowCourseManager(true)} className="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-blue-700 hover:bg-blue-50 border border-transparent hover:border-blue-200 flex items-center gap-2 transition-colors cursor-pointer">
                 <FolderCode className="w-4 h-4 text-blue-600" /> 주차별 컨텐츠 관리
+              </button>
+              <button onClick={() => setShowCouponManager(true)} className="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-amber-700 hover:bg-amber-50 border border-transparent hover:border-amber-200 flex items-center gap-2 transition-colors cursor-pointer">
+                <Ticket className="w-4 h-4" /> 쿠폰 관리
               </button>
               <button onClick={() => setShowSettings(true)} className="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-[#5C5B57] hover:bg-white border border-transparent hover:border-[#EAE6DF] flex items-center gap-2 transition-colors cursor-pointer">
                 <Settings className="w-4 h-4" /> 서버 설정
@@ -2723,6 +2745,8 @@ export default function App() {
           />
         )}
 
+        {showCouponManager && <AdminCouponModal token={token} onClose={() => setShowCouponManager(false)} />}
+
       </div>
     );
   }
@@ -3393,6 +3417,15 @@ export default function App() {
         <div className="p-3 border-t border-[#EAE6DF] bg-white space-y-2">
           {accountLink("")}
           <div className="grid grid-cols-1 gap-1.5 pt-0.5">
+            {user.memberType === "external" && (
+              <button
+                onClick={() => setShowMyInfo(true)}
+                className="py-1.5 px-2 bg-[#FAF9F6] hover:bg-indigo-50 border border-[#EAE6DF] hover:border-indigo-200 rounded-lg text-[10px] font-medium text-[#5C5B57] hover:text-indigo-700 flex items-center justify-center gap-1 cursor-pointer transition-colors"
+              >
+                <Ticket className="w-3 h-3" />
+                내 정보 · 이용권
+              </button>
+            )}
             <button
               id="sidebar-logout-btn"
               onClick={handleLogout}
@@ -3759,7 +3792,7 @@ export default function App() {
             onBackToChat={() => setCurrentView('chat')}
           />
         ) : currentView === 'sodabot' ? (
-          <SodabotConnectScreen currentUser={user} />
+          <SodabotConnectScreen currentUser={user} onOpenGreetingSettings={() => setCurrentView('settings')} />
         ) : currentView === 'sodabot_builder' ? (
           <SodabotFriendSettingsScreen currentUser={user} />
         ) : currentView === 'mic_lab' ? (
@@ -4121,6 +4154,23 @@ export default function App() {
 
 
 
+
+      {showMyInfo && (
+        <div className="fixed inset-0 bg-[#1D1D1F]/40 backdrop-blur-sm flex justify-center items-center z-50 p-4">
+          <div className="bg-white border border-[#EAE6DF] rounded-3xl w-full max-w-md shadow-2xl p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-bold text-[#1D1D1F]">내 정보 · 이용권</h3>
+              <button onClick={() => setShowMyInfo(false)} className="text-xs text-[#86868B] bg-[#FAF9F6] px-3 py-1.5 rounded-full cursor-pointer">닫기 ✕</button>
+            </div>
+            <div className="text-xs text-[#5C5B57] space-y-1 p-3 bg-[#FAF9F6] rounded-2xl">
+              <p>이름: <b className="text-[#1D1D1F]">{user.displayName}</b></p>
+              <p>이메일: <span className="font-mono">{user.username}</span></p>
+              {user.campus && <p>캠퍼스: {user.campus}</p>}
+            </div>
+            <AccessPassPanel token={token} accessUntil={user.accessUntil} onUpdated={() => token && verifySession(token)} />
+          </div>
+        </div>
+      )}
 
       {showAdminPanel && user.role === "admin" && (
         <div className="fixed inset-0 bg-[#1D1D1F]/40 backdrop-blur-sm flex justify-center items-center z-50 animate-fade-in p-4">

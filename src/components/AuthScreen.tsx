@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Lock, User, ArrowRight, AlertCircle, Bot } from "lucide-react";
+import { Lock, User, ArrowRight, AlertCircle, Bot, Eye, EyeOff } from "lucide-react";
 
 interface AuthScreenProps {
   onLoginSuccess: (token: string, user: { id: string; username: string; displayName: string; role?: string; canAccessChat?: boolean }) => void;
@@ -25,11 +25,18 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
 
   const [signingUp, setSigningUp] = useState(window.location.hash === "#signup");
   const [notice, setNotice] = useState("");
+  const [showPw, setShowPw] = useState(false);
+  const pwToggle = (
+    <button type="button" onClick={() => setShowPw(!showPw)} aria-label={showPw ? "비밀번호 숨기기" : "비밀번호 보기"} className="absolute inset-y-0 right-0 flex items-center pr-3.5 text-[#A0A5A3] hover:text-[#555B60] cursor-pointer">
+      {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+    </button>
+  );
 
   const changeMode = (signup: boolean) => {
     setError("");
     setNotice("");
     setSigningUp(signup);
+    setShowPw(false);
     window.history.replaceState(null, "", signup ? "#signup" : window.location.pathname + window.location.search);
   };
 
@@ -134,7 +141,7 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
 
         {notice && <p role="status" className="mb-5 text-sm text-[#168571]">{notice}</p>}
         {signingUp ? (
-          <form onSubmit={handleSignup} className="space-y-4">
+          <form key="signup" onSubmit={handleSignup} className="space-y-4">
             <h2 className="text-lg font-bold">회원가입</h2>
             {[
               { name: "email", label: "이메일", type: "email", autoComplete: "email", maxLength: 80 },
@@ -145,7 +152,10 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
             ].map(({ label, ...field }) => (
               <label key={field.name} className="block text-xs font-semibold text-[#555B60]">
                 {label}
-                <input {...field} required={field.required ?? true} className="mt-1.5 w-full h-12 px-4 rounded-xl border border-[#E9E7E2] bg-[#FAF9F6] text-sm focus:outline-[#168571]" />
+                <div className="relative mt-1.5">
+                  <input {...field} type={field.name === "password" && showPw ? "text" : field.type} required={field.required ?? true} className="w-full h-12 pl-4 pr-10 rounded-xl border border-[#E9E7E2] bg-[#FAF9F6] text-sm focus:outline-[#168571]" />
+                  {field.name === "password" && pwToggle}
+                </div>
               </label>
             ))}
             <label className="block text-xs font-semibold text-[#555B60]">
@@ -162,7 +172,7 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
             </button>
           </form>
         ) : (
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form key="login" onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-[#555B60] mb-1.5">
               이메일, 아이디 또는 이름
@@ -177,7 +187,11 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
                 required
                 placeholder="이메일, 아이디 또는 학생 이름"
                 value={identifier}
-                onChange={(e) => setIdentifier(e.target.value)}
+                onChange={(e) => {
+                  setIdentifier(e.target.value);
+                  // 다른 계정으로 바꾸면 이전에 저장된 비밀번호가 가려진 채 남지 않도록 비움
+                  if (secret === localStorage.getItem("savedSecret")) setSecret("");
+                }}
                 className="w-full h-[48px] pl-10 pr-4 bg-[#FAF9F6] border border-[#E9E7E2] rounded-[12px] text-sm text-[#20262B] placeholder:text-[#A0A5A3] transition-all duration-150 focus:outline-none focus:border-[#168571] focus:ring-2 focus:ring-[#168571]/15"
               />
             </div>
@@ -193,13 +207,14 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
               </span>
               <input
                 id="secret-input"
-                type="password"
+                type={showPw ? "text" : "password"}
                 required
                 placeholder="비밀번호 또는 전화번호 뒷 4자리"
                 value={secret}
                 onChange={(e) => setSecret(e.target.value)}
-                className="w-full h-[48px] pl-10 pr-4 bg-[#FAF9F6] border border-[#E9E7E2] rounded-[12px] text-sm text-[#20262B] placeholder:text-[#A0A5A3] transition-all duration-150 focus:outline-none focus:border-[#168571] focus:ring-2 focus:ring-[#168571]/15"
+                className="w-full h-[48px] pl-10 pr-10 bg-[#FAF9F6] border border-[#E9E7E2] rounded-[12px] text-sm text-[#20262B] placeholder:text-[#A0A5A3] transition-all duration-150 focus:outline-none focus:border-[#168571] focus:ring-2 focus:ring-[#168571]/15"
               />
+              {pwToggle}
             </div>
             <p className="text-[11px] text-[#858B8D] mt-1.5 leading-relaxed">
               가입 회원은 이메일과 비밀번호, 수강생은 이름과 전화번호 뒤 4자리로 로그인하세요.

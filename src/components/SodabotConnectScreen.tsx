@@ -1,9 +1,8 @@
 import { sodabotTransport } from '../utils/sodabotTransport';
 import React, { useState, useRef, useEffect } from 'react';
 import { 
-  Bluetooth, BluetoothSearching, CheckCircle2, Wifi, Power, RefreshCw, 
-  Check, RotateCcw, PenSquare, Activity, Smile, Volume2, Download, Copy,
-  Sparkles, Usb, Cpu, Terminal, ArrowRight, ShieldCheck, HelpCircle
+  Bluetooth, BluetoothSearching, CheckCircle2, Power, RefreshCw,
+  Check, Activity, Smile, Download, Copy, Cpu, ArrowRight, ShieldCheck, ChevronDown
 } from 'lucide-react';
 import { generateSodabotFirmware } from '../utils/sodabotFirmwareGenerator';
 
@@ -12,6 +11,7 @@ const CHAR_WRITE_UUID = '6b8a0002-4f2a-4b3c-9d5e-1a2b3c4d5e6f';
 const CHAR_NOTIFY_UUID = '6b8a0003-4f2a-4b3c-9d5e-1a2b3c4d5e6f';
 
 interface SodabotConnectScreenProps {
+  onOpenGreetingSettings?: () => void;
   currentUser?: {
     id: string;
     username: string;
@@ -22,7 +22,7 @@ interface SodabotConnectScreenProps {
   } | null;
 }
 
-export default function SodabotConnectScreen({ currentUser }: SodabotConnectScreenProps) {
+export default function SodabotConnectScreen({ currentUser, onOpenGreetingSettings }: SodabotConnectScreenProps) {
   const userKey = currentUser?.id || currentUser?.username || 'default';
   const getScopedKey = (key: string) => `sodabot_${userKey}_${key}`;
 
@@ -34,7 +34,7 @@ export default function SodabotConnectScreen({ currentUser }: SodabotConnectScre
   });
   const [copiedKey, setCopiedKey] = useState(false);
 
-  const [step, setStepState] = useState<1 | 2 | 3>(() => {
+  const [, setStepState] = useState<1 | 2 | 3>(() => {
     if (sodabotTransport.type !== 'none') return 3;
     const savedStep = localStorage.getItem(getScopedKey("connect_step"));
     if (savedStep) {
@@ -69,6 +69,7 @@ export default function SodabotConnectScreen({ currentUser }: SodabotConnectScre
     return localStorage.getItem(getScopedKey("robot_ip")) || localStorage.getItem("sodabot_robot_ip");
   });
   const [copiedCode, setCopiedCode] = useState(false);
+  const downloadDialog = useRef<HTMLDialogElement>(null);
 
   const bleDeviceRef = useRef<any>(null);
 
@@ -296,75 +297,89 @@ export default function SodabotConnectScreen({ currentUser }: SodabotConnectScre
 
   // Real-time Dynamic Expression Testing
   const sendExpression = (expr: string) => {
+    if (status !== 'connected') return;
     window.dispatchEvent(new CustomEvent("sodabot-send-command", {
       detail: { action: "set_expression", value: expr, label: `${expr} 표정 전송` }
     }));
   };
 
+  const connected = status === 'connected';
+  const connecting = isSearching || status === 'ble_connecting' || status === 'wifi_connecting';
+  const statusLabel = connected ? '연결 완료' : connecting ? '연결 중' : '연결 전';
+
   return (
-    <div className="flex-1 flex flex-col h-full bg-[#FAF9F6] p-8 overflow-y-auto font-sans">
-      <div className="max-w-6xl mx-auto w-full space-y-8">
-        
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-2xl font-bold text-[#1D1D1F] flex items-center gap-2">
-              <span>🤖 소다봇 맞춤 연결 & 펌웨어 허브</span>
-            </h2>
-            <p className="text-[#86868B] text-sm mt-1">
-              로봇 이름과 Wi-Fi를 입력하고 맞춤 펌웨어를 다운로드하여 소다봇을 100% 실시간으로 제어하세요.
-            </p>
-          </div>
-          {status === 'connected' && (
-            <div className="px-3.5 py-1.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-bold flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span>온라인 ({robotIp || 'BLE'})</span>
+    <div className="flex-1 flex flex-col h-full bg-slate-50 p-4 sm:p-8 overflow-y-auto font-sans">
+      <div className="max-w-5xl mx-auto w-full space-y-6 pb-6">
+        <header>
+          <h1 className="text-2xl font-bold text-slate-900">내 소다봇</h1>
+          <p className="text-sm text-slate-500 mt-2">평소 수업에서는 연결하기만 누르면 돼요. 처음 만들 때는 아래 처음 설정하기를 열어주세요.</p>
+        </header>
+
+        <section aria-labelledby="connect-title" className="bg-white border border-indigo-200 rounded-3xl overflow-hidden shadow-sm">
+          <div className="p-6 sm:p-8 border-b border-slate-100 flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <span className="text-xs font-bold text-indigo-600">평소 수업에서 사용</span>
+              <h2 id="connect-title" className="text-2xl font-bold text-slate-900 mt-2">소다봇 연결하기</h2>
+              <p className="text-sm text-slate-500 mt-2">내 소다봇을 연결하고 표정과 기능을 실행해 보세요.</p>
             </div>
-          )}
-        </div>
-
-        {/* Stepper (3단계까지 표시) */}
-        <div className="flex items-center justify-between relative px-10 max-w-4xl mx-auto">
-          <div className="absolute left-16 right-16 top-5 h-[1px] bg-[#EAE6DF] -z-10"></div>
-          {[
-            { num: 1, label: '1단계: 맞춤 코드 생성 & 다운로드', icon: Cpu },
-            { num: 2, label: '2단계: 아두이노 업로드 & 로봇 찾기', icon: BluetoothSearching },
-            { num: 3, label: '3단계: 연결 및 상태 확인', icon: Wifi }
-          ].map((s) => {
-            const isActive = step === s.num;
-            const isPassed = step > s.num;
-            return (
-              <div key={s.num} className="flex flex-col items-center gap-2 bg-[#FAF9F6] px-3">
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center transition-all shadow-sm
-                  ${isActive ? 'bg-indigo-600 text-white shadow-indigo-200 ring-4 ring-indigo-50' : 
-                    isPassed ? 'bg-emerald-500 text-white' : 'bg-white border border-[#EAE6DF] text-[#B0ACA5]'}`}>
-                  {isPassed ? <Check className="w-5 h-5" /> : <s.icon className="w-5 h-5" />}
-                </div>
-                <span className={`text-xs font-semibold ${isActive ? 'text-indigo-600 font-bold' : isPassed ? 'text-[#1D1D1F]' : 'text-[#B0ACA5]'}`}>
-                  {s.label}
-                </span>
+            <span role="status" aria-live="polite" className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold border ${connected ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : connecting ? 'text-indigo-700 bg-indigo-50 border-indigo-200' : 'text-slate-600 bg-slate-100 border-slate-200'}`}>
+              <span className={`w-2 h-2 rounded-full ${connected ? 'bg-emerald-500' : connecting ? 'bg-indigo-500 animate-pulse' : 'bg-slate-400'}`} />{statusLabel}
+            </span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2">
+            <div className="p-6 sm:p-8 flex flex-col items-center justify-center text-center gap-5 md:border-r border-slate-100">
+              <div className={`w-20 h-20 rounded-3xl flex items-center justify-center ${connected ? 'bg-emerald-50 text-emerald-600' : 'bg-indigo-50 text-indigo-600'}`}>
+                {connected ? <CheckCircle2 size={40} /> : <Bluetooth size={40} />}
               </div>
-            );
-          })}
-        </div>
-
-        {/* Main Content Grid (3개 카드 동일 크기 및 높이 균일 정렬) */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 pt-2 items-stretch">
-          
-          {/* Card 1: 1단계: 맞춤 설정 */}
-          <div className="bg-white border-2 border-indigo-100 rounded-3xl p-6 shadow-sm flex flex-col justify-between hover:border-indigo-200 transition-all h-full">
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-100 flex items-center gap-1">
-                  <Cpu className="w-3.5 h-3.5" /> 1단계: 맞춤 설정
-                </span>
-                <span className="text-[10px] text-indigo-700 font-extrabold bg-indigo-50 px-2.5 py-0.5 rounded-lg border border-indigo-100">
-                  {currentUser?.displayName || currentUser?.username || 'user'}
-                </span>
+              {connected ? <div className="space-y-2">
+                <h3 className="text-xl font-bold text-slate-900 break-all">{connectedDeviceName || robotName || '소다봇'}</h3>
+                <p className="text-sm text-emerald-700">소다봇이 연결됐어요! 표정을 눌러보세요.</p>
+                <p className="text-xs text-slate-500">{robotIp || '블루투스로 연결됨'}</p>
+                <button onClick={handleDisconnect} className="mt-2 px-4 py-2 border border-slate-200 rounded-xl text-sm text-slate-600 hover:bg-slate-50 flex items-center gap-2 mx-auto"><Power size={16} />연결 해제</button>
+              </div> : <>
+                <button onClick={handleDirectBlePair} disabled={connecting} className="w-full max-w-xs min-h-16 px-6 py-4 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-lg font-bold flex items-center justify-center gap-3 transition-colors disabled:opacity-60 disabled:cursor-wait focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-indigo-600">
+                  {connecting ? <RefreshCw size={23} className="animate-spin" /> : <BluetoothSearching size={23} />}
+                  {connecting ? '소다봇 연결 중…' : '소다봇 연결하기'}
+                </button>
+                <p className="text-sm text-slate-500 max-w-xs">{connecting ? '소다봇과 연결을 확인하고 있어요.' : '소다봇 전원을 켠 뒤, 목록에서 내 소다봇을 선택하세요.'}</p>
+                {status === 'error' && <p role="alert" className="text-sm text-rose-600">연결을 확인하지 못했어요. 소다봇 전원을 확인하고 다시 연결해 주세요.</p>}
+              </>}
+            </div>
+            <div className="p-6 sm:p-8 bg-slate-50/60 border-t md:border-t-0 border-slate-100">
+              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2"><Smile size={21} className="text-indigo-600" />소다봇 표정 바꾸기</h3>
+              <p id="expression-help" className="text-sm text-slate-500 mt-2 mb-5">{connected ? '표정을 누르면 소다봇 LCD 화면에 바로 나타나요.' : '소다봇을 연결하면 표정 버튼을 사용할 수 있어요.'}</p>
+              <div className="grid grid-cols-3 gap-3" aria-describedby="expression-help">
+                {[
+                  { id: 'happy', emoji: '😆', label: '행복' },
+                  { id: 'heart', emoji: '💖', label: '하트' },
+                  { id: 'wink', emoji: '😉', label: '윙크' },
+                  { id: 'surprised', emoji: '😲', label: '놀람' },
+                  { id: 'angry', emoji: '😡', label: '화남' },
+                  { id: 'sleepy', emoji: '😴', label: '졸림' }
+                ].map(exp => <button key={exp.id} disabled={!connected} onClick={() => sendExpression(exp.id)} className="min-h-20 p-3 rounded-2xl bg-white border border-slate-200 text-slate-800 hover:bg-indigo-50 hover:border-indigo-300 transition-colors flex flex-col items-center justify-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:border-slate-200 focus-visible:outline-2 focus-visible:outline-indigo-600"><span className="text-2xl" aria-hidden="true">{exp.emoji}</span><span className="text-sm font-bold">{exp.label}</span></button>)}
               </div>
-              
+              <div className="flex items-center gap-2 mt-5 text-xs text-slate-500"><Activity size={15} /><span>{connected ? '실시간 하드웨어 연결이 활성화되어 있어요.' : '연결 후 소다봇 화면에서 반응을 확인해 보세요.'}</span></div>
+            </div>
+          </div>
+          <details className="mx-6 sm:mx-8 mb-6 rounded-xl border border-slate-200 p-4 text-sm text-slate-600">
+            <summary className="cursor-pointer font-bold">연결 목록에 소다봇이 안 보이나요?</summary>
+            <div className="mt-3 space-y-2 leading-relaxed">
+              <p>Chrome을 완전히 종료한 뒤 다시 실행하고 연결을 시도하세요. Mac에서는 ⌘Q, Windows에서는 Chrome 메뉴 → 종료를 사용하세요.</p>
+              <p>Mac에서는 시스템 설정 → 개인정보 보호 및 보안 → Bluetooth에서 Google Chrome의 접근 권한도 확인하세요.</p>
+              <p>소다봇 전원을 확인하고 RESET 버튼을 한 번 누른 뒤 SODABOT_으로 시작하는 기기를 찾아보세요. 목록이 비었다고 프로그램을 다시 설치할 필요는 없어요.</p>
+            </div>
+          </details>
+        </section>
+
+        <details className="group bg-white border border-slate-200 rounded-2xl" >
+          <summary className="cursor-pointer p-5 sm:p-6 flex items-center justify-between gap-4 list-none [&::-webkit-details-marker]:hidden focus-visible:outline-2 focus-visible:outline-indigo-600 rounded-2xl">
+            <div><span className="text-xs font-semibold text-slate-500">처음 제작할 때 사용</span><h2 className="text-lg font-bold text-slate-800 mt-1 flex items-center gap-2"><Cpu size={19} className="text-indigo-500" />소다봇 처음 설정하기</h2><p className="text-sm text-slate-500 mt-2">소다봇을 처음 만들거나 다시 설치할 때만 사용합니다.</p><p className="text-sm font-semibold text-indigo-600 mt-1">선생님의 안내에 따라 진행하세요.</p></div>
+            <ChevronDown size={22} className="shrink-0 text-slate-400 group-open:rotate-180 transition-transform" />
+          </summary>
+          <div className="p-5 sm:p-6 border-t border-slate-100">
+            <div className="max-w-2xl mx-auto space-y-5">
               {/* 고유 API 키 조회 및 복사 */}
-              <div className="p-3 bg-gradient-to-r from-indigo-50/70 via-purple-50/50 to-blue-50/60 rounded-2xl border border-indigo-100 space-y-1.5 shadow-2xs">
+              <div className="p-3 bg-slate-50 rounded-2xl border border-indigo-100 space-y-1.5 shadow-2xs">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-1.5 text-xs font-black text-indigo-950">
                     <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
@@ -387,8 +402,8 @@ export default function SodabotConnectScreen({ currentUser }: SodabotConnectScre
 
               <div className="space-y-2.5">
                 <div>
-                  <label className="text-[11px] font-bold text-[#1D1D1F] block mb-1">새 펌웨어의 로봇 이름</label>
-                  <input 
+                  <label htmlFor="setup-robot-name" className="text-[11px] font-bold text-[#1D1D1F] block mb-1">로봇 이름</label>
+                  <input id="setup-robot-name"
                     type="text" 
                     placeholder="예: lumi, SODA_01" 
                     value={robotName} 
@@ -406,8 +421,8 @@ export default function SodabotConnectScreen({ currentUser }: SodabotConnectScre
                   </p>
                 </div>
                 <div>
-                  <label className="text-[11px] font-bold text-[#1D1D1F] block mb-1">Wi-Fi 이름 (SSID)</label>
-                  <input 
+                  <label htmlFor="setup-wifi-ssid" className="text-[11px] font-bold text-[#1D1D1F] block mb-1">Wi-Fi 이름 (SSID)</label>
+                  <input id="setup-wifi-ssid"
                     type="text" 
                     placeholder="예: MyHome_WiFi (2.4G)" 
                     value={ssid} 
@@ -416,8 +431,8 @@ export default function SodabotConnectScreen({ currentUser }: SodabotConnectScre
                   />
                 </div>
                 <div>
-                  <label className="text-[11px] font-bold text-[#1D1D1F] block mb-1">Wi-Fi 비밀번호</label>
-                  <input 
+                  <label htmlFor="setup-wifi-password" className="text-[11px] font-bold text-[#1D1D1F] block mb-1">Wi-Fi 비밀번호</label>
+                  <input id="setup-wifi-password"
                     type="password" 
                     placeholder="와이파이 비밀번호" 
                     value={password} 
@@ -426,19 +441,18 @@ export default function SodabotConnectScreen({ currentUser }: SodabotConnectScre
                   />
                 </div>
               </div>
-            </div>
 
             {/* Copy & Download Buttons */}
             <div className="pt-4 space-y-2">
               <button 
                 onClick={handleCopyCode}
-                className="w-full py-3 bg-gradient-to-r from-indigo-600 via-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 active:scale-98 text-white text-xs font-black rounded-xl transition-all shadow-lg shadow-indigo-200 hover:shadow-indigo-300 ring-4 ring-indigo-50 flex items-center justify-center gap-2 cursor-pointer tracking-tight"
+                className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 active:scale-98 text-white text-xs font-black rounded-xl transition-all shadow-lg shadow-indigo-200 hover:shadow-indigo-300 ring-4 ring-indigo-50 flex items-center justify-center gap-2 cursor-pointer tracking-tight"
               >
                 {copiedCode ? <Check className="w-4 h-4 text-emerald-300 animate-bounce" /> : <Copy className="w-4 h-4 text-indigo-200" />}
-                <span>{copiedCode ? '✓ 아두이노 코드 전체 복사 완료!' : '📋 아두이노 코드 전체 복사 (추천)'}</span>
+                <span>{copiedCode ? '✓ 아두이노 코드 전체 복사 완료!' : '맞춤 코드 복사'}</span>
               </button>
               <button 
-                onClick={handleDownloadFirmware}
+                onClick={() => downloadDialog.current?.showModal()}
                 className="w-full py-2.5 bg-[#FAF9F6] hover:bg-[#EAE6DF] border border-[#EAE6DF] text-[#5C5B57] hover:text-[#1D1D1F] text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
               >
                 <Download className="w-3.5 h-3.5 text-[#86868B]" />
@@ -453,204 +467,23 @@ export default function SodabotConnectScreen({ currentUser }: SodabotConnectScre
                 </div>
               </details>
             </div>
-          </div>
 
-          {/* Card 2: 2단계: 페어링 */}
-          <div className={`rounded-3xl p-6 shadow-xl flex flex-col justify-between transition-all relative overflow-hidden ring-4 h-full ${
-            status === 'connected' 
-              ? 'bg-gradient-to-b from-white to-emerald-50/70 border-2 border-emerald-400 ring-emerald-50' 
-              : 'bg-gradient-to-b from-white to-slate-50/60 border-2 border-slate-200 ring-slate-100 hover:border-emerald-300'
-          }`}>
-            {/* Decorative background glow */}
-            <div className={`absolute -top-12 -right-12 w-40 h-40 rounded-full blur-2xl pointer-events-none transition-colors ${
-              status === 'connected' ? 'bg-emerald-400/20' : 'bg-indigo-400/10'
-            }`} />
-            <div className={`absolute -bottom-10 -left-10 w-36 h-36 rounded-full blur-2xl pointer-events-none transition-colors ${
-              status === 'connected' ? 'bg-teal-400/20' : 'bg-blue-400/10'
-            }`} />
-
-            <div className="relative z-10 flex flex-col h-full justify-between space-y-4">
-              
-              {/* Card Header & Status Badge */}
-              <div className="flex items-center justify-between">
-                <span className={`text-[11px] font-black px-3 py-1 rounded-xl border flex items-center gap-1.5 shadow-xs transition-colors ${
-                  status === 'connected'
-                    ? 'text-emerald-700 bg-emerald-100 border-emerald-300'
-                    : 'text-slate-700 bg-slate-100 border-slate-200'
-                }`}>
-                  <BluetoothSearching className={`w-3.5 h-3.5 ${status === 'connected' ? 'text-emerald-600' : 'text-slate-500'}`} />
-                  2단계: 페어링
-                </span>
-                
-                {/* ON / OFF Indicator Badge */}
-                <div className="flex items-center gap-1.5">
-                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black tracking-wide border flex items-center gap-1.5 shadow-2xs ${
-                    status === 'connected'
-                      ? 'bg-emerald-500 text-white border-emerald-600'
-                      : 'bg-slate-200 text-slate-600 border-slate-300'
-                  }`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${status === 'connected' ? 'bg-white animate-pulse' : 'bg-slate-400'}`} />
-                    {status === 'connected' ? 'ON (연결됨)' : 'OFF (대기중)'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Robot Device Label */}
-              <div className="text-center my-auto">
-                <div className="text-base font-black text-[#1D1D1F] tracking-wide font-mono">
-                  {status === 'connected' && connectedDeviceName ? connectedDeviceName : `SODABOT_${robotName}`}
-                </div>
-                <div className="text-[11px] text-[#86868B] mt-1">
-                  {status === 'connected' ? '소다봇과 실시간 동적 페어링 완료' : '원형 버튼을 눌러 블루투스 페어링을 시작하세요'}
-                </div>
-              </div>
-
-              {/* Big Circular ON/OFF Button Area */}
-              <div className="my-auto flex flex-col items-center justify-center py-2">
-                {status === 'connected' ? (
-                  /* Connected ON State: Large Green Circular Pulse Button */
-                  <button
-                    onClick={handleDisconnect}
-                    className="group relative w-36 h-36 rounded-full bg-gradient-to-br from-emerald-400 via-emerald-500 to-teal-600 text-white flex flex-col items-center justify-center shadow-2xl shadow-emerald-500/40 ring-8 ring-emerald-100 hover:ring-rose-100 hover:from-rose-500 hover:to-red-600 transition-all cursor-pointer active:scale-95"
-                    title="클릭 시 연결 해제 (OFF)"
-                  >
-                    <div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center mb-1 group-hover:bg-white/30 transition-all">
-                      <Power className="w-6 h-6 text-white group-hover:scale-110 transition-transform" />
-                    </div>
-                    <span className="text-xs font-black tracking-wide group-hover:hidden">연결 완료</span>
-                    <span className="text-[10px] font-bold text-emerald-100 group-hover:hidden">ON (클릭시 해제)</span>
-                    <span className="text-xs font-black tracking-wide hidden group-hover:inline">연결 해제</span>
-                    <span className="text-[10px] font-bold text-rose-100 hidden group-hover:inline">OFF 전환</span>
-                  </button>
-                ) : isSearching || status === 'ble_connecting' || status === 'wifi_connecting' ? (
-                  /* Connecting State: Large Spinner Circle */
-                  <div className="w-36 h-36 rounded-full bg-gradient-to-br from-indigo-500 via-purple-500 to-blue-600 text-white flex flex-col items-center justify-center shadow-2xl shadow-indigo-500/30 ring-8 ring-indigo-100 animate-pulse">
-                    <RefreshCw className="w-8 h-8 text-white animate-spin mb-1.5" />
-                    <span className="text-xs font-black tracking-wide">페어링 진행 중</span>
-                    <span className="text-[10px] text-indigo-100 font-medium">기기 탐색 중...</span>
-                  </div>
-                ) : (
-                  /* Disconnected OFF State: Large Standby Circular Action Button */
-                  <button
-                    onClick={handleDirectBlePair}
-                    className="group relative w-36 h-36 rounded-full bg-gradient-to-br from-indigo-600 via-indigo-600 to-teal-500 hover:from-emerald-500 hover:to-teal-600 text-white flex flex-col items-center justify-center shadow-xl shadow-indigo-500/25 hover:shadow-emerald-500/35 ring-8 ring-indigo-50 hover:ring-emerald-100 transition-all cursor-pointer active:scale-95"
-                    title="소다봇 블루투스 페어링 시작 (ON)"
-                  >
-                    <div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center mb-1 group-hover:bg-white/30 group-hover:scale-110 transition-all">
-                      <Bluetooth className="w-7 h-7 text-white" />
-                    </div>
-                    <span className="text-xs font-black tracking-wide">페어링 시작</span>
-                    <span className="text-[10px] font-bold text-indigo-100 group-hover:text-emerald-100">TOUCH (ON)</span>
-                  </button>
-                )}
-              </div>
-
-              {/* Bottom Connection State Message */}
-              <div className="pt-2 text-center">
-                <span className={`inline-block text-[11px] font-bold px-3 py-1.5 rounded-full ${
-                  status === 'connected'
-                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                    : 'bg-slate-100 text-slate-600 border border-slate-200'
-                }`}>
-                  {status === 'connected'
-                    ? `🤖 ${connectedDeviceName || `SODABOT_${robotName}`} 연결됨 (${robotIp || 'BLE'})`
-                    : '🔘 원형 버튼을 클릭하여 블루투스 활성화'}
-                </span>
-              </div>
-              <details className="rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-950">
-                <summary className="cursor-pointer font-bold">페어링 목록에 소다봇이 안 보이나요?</summary>
-                <div className="mt-2 space-y-2 leading-relaxed">
-                  <p>Chrome을 완전히 종료한 뒤 다시 실행하고, 스튜디오에서 페어링을 다시 시도하세요. Mac에서는 ⌘Q, Windows에서는 Chrome 메뉴 → 종료를 사용하세요. 탭이나 창만 닫으면 검색 상태가 초기화되지 않을 수 있습니다.</p>
-                  <p>Mac에서는 시스템 설정 → 개인정보 보호 및 보안 → Bluetooth에서 Google Chrome의 접근 권한이 켜져 있는지도 확인하세요.</p>
-                  <p>ESP의 전원을 확인하고 RESET 버튼을 한 번 누른 뒤 SODABOT_으로 시작하는 기기를 찾아보세요. 목록이 비어 있다는 이유만으로 플래시를 삭제할 필요는 없습니다.</p>
-                </div>
-              </details>
-
-            </div>
-          </div>
-
-          {/* Card 3: 실시간 하드웨어 피드백 */}
-          <div className="bg-white border-2 border-[#EAE6DF] rounded-3xl p-6 shadow-sm relative overflow-hidden flex flex-col justify-between h-full">
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-base font-bold text-[#1D1D1F] flex items-center gap-1.5">
-                  <Activity className="w-4 h-4 text-indigo-600" />
-                  실시간 하드웨어 피드백
-                </h3>
-                {status === 'connected' && (
-                  <button 
-                    onClick={handleDisconnect}
-                    className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-[10px] font-bold transition-colors cursor-pointer flex items-center gap-1"
-                    title="연결 해제"
-                  >
-                    <Power className="w-3 h-3 text-rose-600" />
-                    연결 해제
-                  </button>
-                )}
-              </div>
-              
-              {/* Connection Status Box */}
-              <div className="flex flex-col items-center justify-center bg-gradient-to-b from-[#FAF9F6] to-[#F2EFE9] rounded-2xl py-4.5 border border-[#EAE6DF]">
-                {status === 'connected' ? (
-                  <>
-                    <div className="text-5xl mb-2 animate-bounce">🤖</div>
-                    <div className="bg-white px-3 py-1 rounded-full border border-[#EAE6DF] text-[11px] font-bold text-emerald-600 flex items-center gap-1.5 shadow-xs mb-1">
-                      <span className="w-2 h-2 bg-emerald-500 rounded-full animate-ping"></span>
-                      실시간 동적 연결됨
-                    </div>
-                    <span className="text-[10px] text-[#86868B] font-mono">{robotIp || connectedDeviceName || 'BLE 직결'}</span>
-                  </>
-                ) : (
-                  <>
-                    <div className="text-4xl mb-2 opacity-40">🤖💤</div>
-                    <div className="text-xs font-bold text-[#86868B] mb-1">소다봇 미연결</div>
-                    <p className="text-[10px] text-[#B0ACA5] text-center px-4">
-                      2단계에서 원형 버튼을 눌러 소다봇을 연결해 주세요.
-                    </p>
-                  </>
-                )}
-              </div>
-
-              {/* Simple Expression Test Only */}
-              <div className="space-y-2.5">
-                <div className="text-xs font-bold text-[#1D1D1F] flex items-center justify-between">
-                  <span>간단한 표정 확인</span>
-                  <span className="text-[10px] text-[#86868B]">100% 벡터 렌더링</span>
-                </div>
-                
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { id: 'happy', emoji: '😆', label: '행복' },
-                    { id: 'heart', emoji: '💖', label: '하트' },
-                    { id: 'wink', emoji: '😉', label: '윙크' },
-                    { id: 'surprised', emoji: '😲', label: '놀람' },
-                    { id: 'angry', emoji: '😡', label: '화남' },
-                    { id: 'sleepy', emoji: '😴', label: '졸림' }
-                  ].map(exp => (
-                    <button
-                      key={exp.id}
-                      onClick={() => sendExpression(exp.id)}
-                      className="py-2.5 px-2 rounded-2xl bg-[#FAF9F6] hover:bg-indigo-50 hover:border-indigo-200 border border-[#EAE6DF] text-xs transition-all active:scale-95 cursor-pointer flex flex-col items-center gap-1 shadow-2xs hover:shadow-xs"
-                    >
-                      <span className="text-lg">{exp.emoji}</span>
-                      <span className="text-[10px] font-bold text-[#1D1D1F]">{exp.label}</span>
-                    </button>
-                  ))}
-                </div>
+              <div className="rounded-xl border border-slate-200 p-4 space-y-2">
+                <h3 className="text-sm font-bold text-slate-800">예제 인사말 설정</h3>
+                <p className="text-sm text-slate-500">로봇 설정에서 인사말과 시작할 때의 표정·소리를 바꿀 수 있어요.</p>
+                <button type="button" onClick={onOpenGreetingSettings} className="text-sm font-bold text-indigo-600 hover:underline">인사말 설정 열기 <ArrowRight size={15} className="inline" /></button>
               </div>
             </div>
-
-            {/* Bottom Help note */}
-            <div className="pt-3 border-t border-[#EAE6DF] text-center">
-              <p className="text-[10px] text-[#86868B]">
-                💡 표정 버튼을 누르면 연결된 소다봇 LCD 화면에 즉시 표시됩니다.
-              </p>
-            </div>
-
           </div>
-
-        </div>
-
+        </details>
+        <dialog ref={downloadDialog} aria-labelledby="download-title" aria-describedby="download-description" className="m-auto w-[calc(100%-2rem)] max-w-md rounded-2xl p-6 sm:p-8 shadow-xl backdrop:bg-slate-900/40">
+          <h2 id="download-title" className="text-xl font-bold text-slate-900">소다봇 프로그램을 다시 설치할까요?</h2>
+          <p id="download-description" className="text-sm leading-relaxed text-slate-600 mt-4">이미 소다봇을 사용하고 있다면 다시 설치할 필요가 없습니다. 선생님의 안내를 받은 경우에만 진행하세요.</p>
+          <div className="flex justify-end gap-3 mt-6">
+            <button autoFocus onClick={() => downloadDialog.current?.close()} className="px-5 py-3 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 hover:bg-slate-50">취소</button>
+            <button onClick={() => { downloadDialog.current?.close(); handleDownloadFirmware(); }} className="px-5 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-sm font-bold text-white">계속 진행</button>
+          </div>
+        </dialog>
       </div>
     </div>
   );

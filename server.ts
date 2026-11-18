@@ -99,6 +99,7 @@ interface User {
   canAccessChat?: boolean;
   suspended?: boolean;
   personalApiKey?: string;
+  accessUntil?: string; // 외부인 이용권 만료 시각 (결제/쿠폰)
   lastGptDate?: string;
   gptUsageCount?: number;
   persona?: string;
@@ -612,8 +613,18 @@ export interface GroupChatMessage {
   playedOnSodabot?: boolean;
 }
 
+interface Coupon {
+  code: string;
+  days: number;
+  memo?: string;
+  createdAt: string;
+  usedBy?: string;
+  usedAt?: string;
+}
+
 interface DBStructure {
   users: User[];
+  coupons?: Coupon[];
   settings: {
     aiProvider?: string;
     lmStudioUrl: string;
@@ -956,7 +967,8 @@ function findUserByApiKey(token: string, db: DBStructure): User | undefined {
   const cleanToken = token.trim();
   const session = cleanToken ? getSession(cleanToken) : null;
   const user = resolveFriendUser(cleanToken, db.users, session?.id);
-  return user && !user.suspended ? user : undefined;
+  // 이용권 없는 외부인 키는 API 연동 차단
+  return user && !user.suspended && (!user.username.includes("@") || hasAccess(user)) ? user : undefined;
 }
 
 const suspendedAccountMessage = "이용 정지된 계정입니다. 관리자 또는 담당 선생님에게 문의해 주세요.";
@@ -1475,6 +1487,9 @@ interface SessionUser {
   canAccessChat: boolean;
   personalApiKey?: string;
   friendSettings?: any;
+  memberType?: "student" | "external";
+  campus?: string;
+  accessUntil?: string;
   lastActivity: number;
   keyExpiresAt?: number;
 }
@@ -1571,6 +1586,96 @@ function ensureUserApiKey(user: User, db: DBStructure): string {
   return user.personalApiKey;
 }
 
+// ----------------------------------------------------
+// 이용권 (외부인: 목업 결제 또는 키트 동봉 쿠폰으로 활성화)
+// ----------------------------------------------------
+function hasAccess(u: User): boolean {
+  if (u.suspended) return false;
+  if (u.role === "admin" || u.username === "admin") return true;
+  if (u.username.includes("@") && u.accessUntil && Date.parse(u.accessUntil) > Date.now()) return true;
+  return u.canAccessChat ?? false; // 관리자 수동 허용
+}
+
+// 남은 기간이 있으면 그 뒤에 이어 붙이고, 없으면 오늘(등록일)부터 계산
+function grantAccess(u: User, days: number) {
+  const base = Math.max(Date.now(), Date.parse(u.accessUntil || "") || 0);
+  u.accessUntil = new Date(base + days * 86400000).toISOString();
+}
+
+const ACCESS_PLANS: Record<string, { days: number; price: number }> = {
+  month: { days: 30, price: 5900 },
+  year: { days: 365, price: 50000 }
+};
+const COUPON_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // 0/O, 1/I 혼동 문자 제외
+const normalizeCoupon = (v: any) => String(v || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+function sessionDbUser(req: any, db: DBStructure): User | undefined {
+  const session = getSession(String(req.headers.authorization || "").replace("Bearer ", ""));
+  return session ? db.users.find(u => u.id === session.id) : undefined;
+}
+
+app.post("/api/access/redeem", (req, res) => {
+  const db = readDB();
+  const user = sessionDbUser(req, db);
+  if (!user) return res.status(401).json({ error: "로그인이 필요합니다." });
+  const code = normalizeCoupon(req.body.code);
+  const coupon = (db.coupons || []).find(c => c.code === code);
+  if (!coupon) return res.status(404).json({ error: "존재하지 않는 쿠폰 코드입니다." });
+  if (coupon.usedBy) return res.status(409).json({ error: "이미 사용된 쿠폰 코드입니다." });
+  coupon.usedBy = user.id;
+  coupon.usedAt = new Date().toISOString();
+  grantAccess(user, coupon.days);
+  writeDB(db);
+  res.json({ success: true, days: coupon.days, accessUntil: user.accessUntil });
+});
+
+// ponytail: 목업 결제 — 실제 PG 연동 시 결제 검증 후 grantAccess 호출로 교체
+app.post("/api/access/mock-pay", (req, res) => {
+  const db = readDB();
+  const user = sessionDbUser(req, db);
+  if (!user) return res.status(401).json({ error: "로그인이 필요합니다." });
+  const plan = ACCESS_PLANS[req.body.plan];
+  if (!plan) return res.status(400).json({ error: "알 수 없는 요금제입니다." });
+  grantAccess(user, plan.days);
+  writeDB(db);
+  res.json({ success: true, days: plan.days, accessUntil: user.accessUntil });
+});
+
+app.get("/api/admin/coupons", (req, res, next) => requireAdmin(req, res, next), (req, res) => {
+  const db = readDB();
+  const names = new Map(db.users.map(u => [u.id, `${u.displayName} (@${u.username})`]));
+  const coupons = (db.coupons || []).map(c => ({ ...c, usedByName: c.usedBy ? names.get(c.usedBy) || c.usedBy : undefined }));
+  res.json({ coupons: coupons.reverse() });
+});
+
+app.post("/api/admin/coupons", (req, res, next) => requireAdmin(req, res, next), (req, res) => {
+  const count = Math.min(Math.max(parseInt(req.body.count, 10) || 1, 1), 500);
+  const days = Math.min(Math.max(parseInt(req.body.days, 10) || 0, 1), 3650);
+  const memo = String(req.body.memo || "").trim().slice(0, 100);
+  const db = readDB();
+  db.coupons ||= [];
+  const existing = new Set(db.coupons.map(c => c.code));
+  const created: Coupon[] = [];
+  while (created.length < count) {
+    const code = Array.from({ length: 10 }, () => COUPON_CHARS[crypto.randomInt(COUPON_CHARS.length)]).join("");
+    if (existing.has(code)) continue;
+    existing.add(code);
+    created.push({ code, days, memo: memo || undefined, createdAt: new Date().toISOString() });
+  }
+  db.coupons.push(...created);
+  writeDB(db);
+  res.json({ success: true, coupons: created });
+});
+
+app.delete("/api/admin/coupons/:code", (req, res, next) => requireAdmin(req, res, next), (req, res) => {
+  const db = readDB();
+  const before = (db.coupons || []).length;
+  db.coupons = (db.coupons || []).filter(c => c.code !== req.params.code || c.usedBy);
+  if (db.coupons.length === before) return res.status(400).json({ error: "사용된 쿠폰은 삭제할 수 없습니다." });
+  writeDB(db);
+  res.json({ success: true });
+});
+
 function enrollSodabot(studio: ReturnType<typeof studioAccounts>, username: string) {
   studio.prepare(`
     INSERT INTO enrollments (username, course, enrolled, updated_at)
@@ -1663,7 +1768,9 @@ app.post("/api/auth/login", async (req, res) => {
     loginAttempts.delete(accountId);
     return completeLogin(res, {
       id: user.id, username: user.username, displayName: user.displayName, role: user.role || "student",
-      canAccessChat: user.role === "admin" || Boolean(user.canAccessChat), personalApiKey
+      canAccessChat: hasAccess(user), personalApiKey,
+      memberType: user.username.includes("@") ? "external" : "student",
+      campus: user.campus ?? undefined, accessUntil: user.accessUntil
     });
   } catch (error) {
     console.error("Account login failed", error);
@@ -1773,7 +1880,10 @@ app.get("/api/auth/me", (req, res) => {
     const apiKey = ensureUserApiKey(dbUser, db);
     session.displayName = dbUser.displayName;
     session.role = isUserAdmin ? "admin" : (dbUser.role || "student");
-    session.canAccessChat = isUserAdmin ? true : (dbUser.canAccessChat ?? false);
+    session.canAccessChat = isUserAdmin || hasAccess(dbUser);
+    session.accessUntil = dbUser.accessUntil;
+    session.memberType = dbUser.username.includes("@") ? "external" : "student";
+    session.campus = dbUser.campus ?? undefined;
     session.personalApiKey = apiKey;
     session.friendSettings = dbUser.friendSettings || null;
   }
@@ -1972,7 +2082,9 @@ app.get("/api/admin/users", requireStaff, (req, res) => {
     keyRenewalRequestedAt: u.keyRenewalRequestedAt,
     role: isAdministrator(u) ? "admin" : u.role === "tutor" ? "tutor" : "student",
     suspended: Boolean(u.suspended),
-    canAccessChat: !u.suspended && (isAdministrator(u) || Boolean(u.canAccessChat)),
+    canAccessChat: hasAccess(u),
+    accessUntil: u.accessUntil,
+    memberType: u.username.includes("@") ? "external" : "student",
     ...(isAdministrator(actor) ? { personalApiKey: u.personalApiKey, persona: u.persona } : {})
   }));
   res.json({ users });
@@ -2806,7 +2918,7 @@ app.post("/api/chats/:id/messages", aiCapacity, async (req, res) => {
 
   const db = readDB();
   const dbUser = db.users.find(u => u.id === session.id);
-  const isAuthorized = session.role === "admin" || (dbUser && (dbUser.canAccessChat ?? false));
+  const isAuthorized = session.role === "admin" || (dbUser && hasAccess(dbUser));
   if (!isAuthorized) {
     return res.status(403).json({ error: "대화 기능 접근 권한이 없습니다. 운영자의 승인을 기다려주세요." });
   }

@@ -1,0 +1,526 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>SODABOT Promo (landscape)</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<style>
+  html,body{margin:0;height:100%;background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden}
+  canvas{max-height:100vh;width:100vw;aspect-ratio:16/9;display:block}
+</style>
+</head>
+<body>
+<canvas id="c" width="1920" height="1080"></canvas>
+<script>
+// 1920x1080 landscape cut of index.html (same timeline, re-laid out; real robot cutout with arms). Everything is a pure function of time t → render(t), so the
+// recorder can step frames deterministically. Face shapes mirror firmware/soda-8-1.ino.
+const W = 1920, H = 1080, DUR = 39.8;
+const cv = document.getElementById('c'), c = cv.getContext('2d');
+const FONT = "Pretendard, 'Apple SD Gothic Neo', sans-serif";
+const EYE = '#0EA5F5', EYE_HI = '#38BDF8', MINT = '#168571', MINT_L = '#E8F4EF', AMBER = '#E89435';
+const INK = '#20262B', MUTED = '#858B8D', WARM = '#FAF9F6', BORDER = '#E9E7E2';
+
+const img = {};
+const SRC = { front: 'front.png', hero: 'l-hero.jpg', side: 'l-side.jpg', back: 'l-back.jpg' };
+const ready = Promise.all(Object.entries(SRC).map(([k, f]) => new Promise(r => {
+  const i = new Image(); i.onload = r; i.src = f; img[k] = i;
+}))).then(() => document.fonts.load(`900 100px Pretendard`)).then(() => document.fonts.ready);
+
+// ── helpers ──
+const cl = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const p = (t, a, b) => cl((t - a) / (b - a));
+const lerp = (a, b, k) => a + (b - a) * k;
+const out = k => 1 - Math.pow(1 - k, 3);
+const inOut = k => k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
+const back = k => { const s = 1.70158; return 1 + (s + 1) * Math.pow(k - 1, 3) + s * Math.pow(k - 1, 2); };
+
+function text(str, x, y, size, weight, color, { align = 'left', alpha = 1, ls = 0, base = 'alphabetic' } = {}) {
+  c.save();
+  c.globalAlpha *= alpha;
+  c.font = `${weight} ${size}px ${FONT}`;
+  c.fillStyle = color; c.textAlign = align; c.textBaseline = base;
+  c.letterSpacing = ls + 'px';
+  c.fillText(str, x, y);
+  c.restore();
+}
+// Multi-line headline: each line slides up out of a mask, staggered.
+function headline(lines, x, y, size, weight, color, t, t0, { align = 'left', lh = 1.22, stagger = .1 } = {}) {
+  lines.forEach((ln, i) => {
+    const k = out(p(t, t0 + i * stagger, t0 + i * stagger + .6));
+    if (k <= 0) return;
+    const ly = y + i * size * lh;
+    c.save();
+    c.beginPath(); c.rect(0, ly - size * 1.05, W, size * 1.35); c.clip();
+    text(ln, x, ly + (1 - k) * size * 1.1, size, weight, color, { align, alpha: k, ls: -size * .02 });
+    c.restore();
+  });
+}
+function rrect(x, y, w, h, r) { c.beginPath(); c.roundRect(x, y, w, h, r); }
+function capsule(x1, y1, x2, y2, r, col) {
+  c.strokeStyle = col; c.lineWidth = r * 2; c.lineCap = 'round';
+  c.beginPath(); c.moveTo(x1, y1); c.lineTo(x2, y2); c.stroke();
+}
+function sparkle(x, y, s, col) {
+  c.fillStyle = col; c.beginPath();
+  for (let i = 0; i < 8; i++) {
+    const a = i * Math.PI / 4, r = i % 2 ? s * .3 : s;
+    c.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r);
+  }
+  c.fill();
+}
+
+// ── LCD faces in firmware coordinates (320x240) ──
+const LEX = 100, REX = 220, EYE_Y = 120, EW = 84, EH = 68, ER = 20;
+const faces = {
+  idle(s) { // s.blink 0..1 covers the eye from the top, like blinkOnce()
+    for (const cx of [LEX, REX]) {
+      const top = EYE_Y - EH / 2, d = (s.blink || 0) * EH;
+      c.save(); c.beginPath(); c.rect(cx - EW, top + d, EW * 2, EH); c.clip();
+      c.fillStyle = EYE; rrect(cx - EW / 2, top, EW, EH, ER); c.fill();
+      c.restore();
+    }
+  },
+  happy(s) { // ^^ arches + gold sparkles
+    const off = s.off || 0;
+    for (const cx of [LEX, REX]) {
+      const cy = EYE_Y + 12 + off;
+      c.strokeStyle = EYE; c.lineWidth = 16; c.lineCap = 'butt';
+      c.beginPath(); c.arc(cx, cy, 36, Math.PI, 0); c.stroke();
+      sparkle(cx + 50, EYE_Y - 40 + off, 9 + 3 * Math.sin((s.tt || 0) * 9), '#FFDC64');
+    }
+  },
+  listening(s) { // squircle eyes + 3 sound bars per side
+    c.fillStyle = EYE;
+    rrect(110 - 38, 120 - 34, 76, 68, 22); c.fill();
+    rrect(210 - 38, 120 - 34, 76, 68, 22); c.fill();
+    const lv = s.level || 0;
+    const bars = [[60, 104, 38, 82], [60, 120, 32, 120], [60, 136, 38, 158]];
+    bars.forEach(([x1, y1, x2, y2], i) => {
+      const k = cl(lv - (i === 1 ? 0 : .6));
+      c.globalAlpha = .35 + .65 * k;
+      const col = lv >= 2 ? EYE_HI : EYE;
+      const ex = lerp(x1, x2, .55 + .45 * k), ey = lerp(y1, y2, .55 + .45 * k);
+      capsule(x1, y1, ex, ey, 5, col);
+      capsule(320 - x1, y1, 320 - ex, ey, 5, col);
+    });
+    c.globalAlpha = 1;
+  },
+  thinking(s) { // tilted eyes + floating question mark
+    const cx = 160, cy = 20 + (s.dy || 0);
+    c.strokeStyle = EYE; c.lineWidth = 7; c.lineCap = 'butt';
+    c.beginPath(); c.arc(cx, cy + 18, 13, Math.PI / 4, -Math.PI, true); c.stroke();
+    capsule(cx + 8, cy + 18, cx, cy + 28, 4, EYE);
+    capsule(cx, cy + 28, cx, cy + 36, 4, EYE);
+    c.fillStyle = EYE; c.beginPath(); c.arc(cx, cy + 48, 6, 0, 7); c.fill();
+    for (const [ex, a] of [[100, -.19], [220, .19]]) {
+      c.save(); c.translate(ex, 144); c.rotate(a);
+      rrect(-39, -33, 78, 66, 22); c.fill(); c.restore();
+    }
+  },
+  answering(s) { // eyes + D-shaped talking mouth
+    c.fillStyle = EYE;
+    rrect(LEX - 43, 106 - 35, 86, 70, 24); c.fill();
+    rrect(REX - 43, 106 - 35, 86, 70, 24); c.fill();
+    const [mw, top, r, h, rr] = s.open ? [68, 162, 34, 14, 6] : [54, 168, 27, 10, 5];
+    c.beginPath(); c.arc(160, top, r, 0, Math.PI); c.fill();
+    rrect(160 - mw / 2, top, mw, h, rr); c.fill();
+  },
+};
+// Draw a 320x240 LCD centered at (x,y)
+function lcd(x, y, scale, rot, kind, state = {}, { bg = null, glow = 0 } = {}) {
+  c.save();
+  c.translate(x, y); c.rotate(rot); c.scale(scale, scale); c.translate(-160, -120);
+  if (bg) { c.fillStyle = bg; c.fillRect(0, 0, 320, 240); }
+  if (glow) { c.shadowColor = 'rgba(14,165,245,.55)'; c.shadowBlur = glow; }
+  faces[kind](state);
+  c.restore();
+}
+
+// ── photo camera: point P (photo px) lands at screen C, scaled s, rotated r ──
+function cam(C, P, s, r = 0) {
+  c.translate(C[0], C[1]); c.rotate(r); c.scale(s, s); c.translate(-P[0], -P[1]);
+}
+function camPt(C, P, s, q) { return [C[0] + (q[0] - P[0]) * s, C[1] + (q[1] - P[1]) * s]; }
+// Live screen on front.png (cutout px). Re-paints the panel, then the animated face.
+const SCREEN_QUAD = [[345, 280], [742, 286], [712, 538], [336, 536]];
+const FACE_ON_PHOTO = [530, 402], FACE_SCALE = 1.2, FACE_ROT = .007, BUTTON = [378, 687];
+function photoScreen(kind, state, alpha = 1) {
+  c.save();
+  c.beginPath(); SCREEN_QUAD.forEach(([x, y]) => c.lineTo(x, y)); c.closePath(); c.clip();
+  const g = c.createLinearGradient(0, 280, 0, 540);
+  g.addColorStop(0, '#07081c'); g.addColorStop(1, '#04040f');
+  c.save(); c.globalAlpha *= alpha; c.fillStyle = g; c.fillRect(320, 260, 440, 300); c.restore();
+  lcd(FACE_ON_PHOTO[0], FACE_ON_PHOTO[1], FACE_SCALE, FACE_ROT, kind, state);
+  c.restore();
+}
+function vgrad(y0, y1, a0, a1, col = '0,0,0') {
+  const g = c.createLinearGradient(0, y0, 0, y1);
+  g.addColorStop(0, `rgba(${col},${a0})`); g.addColorStop(1, `rgba(${col},${a1})`);
+  c.fillStyle = g; c.fillRect(0, Math.min(y0, y1), W, Math.abs(y1 - y0));
+}
+const blinkAt = (t, ...ts) => Math.max(0, ...ts.map(b => 1 - Math.abs(t - b) / .09));
+function pill(str, x, y, size, fg, bg, { align = 'left', alpha = 1 } = {}) {
+  c.save(); c.globalAlpha *= alpha;
+  c.font = `700 ${size}px ${FONT}`; c.letterSpacing = size * .08 + 'px';
+  const w = c.measureText(str).width + size * 1.4, h = size * 2;
+  const x0 = align === 'center' ? x - w / 2 : x;
+  c.fillStyle = bg; rrect(x0, y, w, h, h / 2); c.fill();
+  c.fillStyle = fg; c.textBaseline = 'middle'; c.textAlign = 'left';
+  c.fillText(str, x0 + size * .7, y + h / 2 + 1);
+  c.restore();
+}
+
+// ── landscape scenes (local time lt). Same timeline as index.html so soundtrack.wav stays in sync ──
+const DARK = '#0A0F1C', COL = 124; // left text column x
+function stage() {
+  c.fillStyle = DARK; c.fillRect(0, 0, W, H);
+  const g = c.createRadialGradient(1440, 520, 0, 1440, 520, 780);
+  g.addColorStop(0, 'rgba(56,120,190,.30)'); g.addColorStop(1, 'rgba(56,120,190,0)');
+  c.fillStyle = g; c.fillRect(0, 0, W, H);
+}
+// Real robot cutout: its LCD centre lands at C, scaled s. The live face is painted on its screen.
+function robot(C, s, kind, state, alpha = 1) {
+  c.save(); cam(C, FACE_ON_PHOTO, s);
+  c.save(); c.globalAlpha *= alpha * .6; c.translate(470, 872); c.scale(1, .11);
+  const sh = c.createRadialGradient(0, 0, 0, 0, 0, 470);
+  sh.addColorStop(0, 'rgba(0,0,0,1)'); sh.addColorStop(1, 'rgba(0,0,0,0)');
+  c.fillStyle = sh; c.fillRect(-480, -480, 960, 960); c.restore();
+  c.save(); c.globalAlpha *= alpha; c.drawImage(img.front, 0, 0); c.restore();
+  photoScreen(kind, state, alpha);
+  c.restore();
+}
+const HOME = [1440, 470]; // where the robot rests on the right half
+const S1_FACE = [960, 440], S1_SCALE = 2.2;
+function scene1(lt) { // "hello" on a bare LCD
+  c.fillStyle = '#000'; c.fillRect(0, 0, W, H);
+  const k = back(p(lt, .25, .85));
+  const sc = S1_SCALE * (k || .0001);
+  if (lt > 2.05 && lt < 2.75) lcd(S1_FACE[0], S1_FACE[1], S1_SCALE, 0, 'happy', { off: -6 * Math.abs(Math.sin((lt - 2.1) * 7)), tt: lt }, { glow: 40 });
+  else lcd(S1_FACE[0], S1_FACE[1], sc, 0, 'idle', { blink: blinkAt(lt, 1.35) }, { glow: 40 });
+  const msg = '안녕! 나는 소다봇이야';
+  const n = Math.floor(cl((lt - 1.0) / 1.0) * msg.length);
+  text(msg.slice(0, n), 960, 900, 64, 700, '#fff', { align: 'center' });
+  if (lt > 1.0 && n < msg.length && Math.floor(lt * 4) % 2 === 0) {
+    c.font = `700 64px ${FONT}`;
+    const w = c.measureText(msg.slice(0, n)).width;
+    c.fillStyle = EYE; c.fillRect(960 + w / 2 + 8, 850, 6, 60);
+  }
+}
+function scene2(lt) { // zoom-out reveal of the real build
+  c.fillStyle = '#000'; c.fillRect(0, 0, W, H);
+  const k = inOut(p(lt, .1, 2.4)), a = p(lt, 0, 1.1);
+  c.save(); c.globalAlpha = a; stage(); c.restore();
+  const s = lerp(S1_SCALE / FACE_SCALE, .95, k);
+  robot([lerp(S1_FACE[0], HOME[0], k), lerp(S1_FACE[1], HOME[1], k)], s, 'idle', { blink: blinkAt(lt, 2.9, 4.2) }, a);
+  text('SODA SCIENCE LAB', COL, 330, 28, 700, EYE_HI, { alpha: out(p(lt, 1.6, 2.2)), ls: 6 });
+  headline(['SODABOT'], COL - 8, 500, 160, 900, '#fff', lt, 1.75);
+  headline(['내 손으로 만드는 AI 친구'], COL, 590, 54, 600, 'rgba(255,255,255,.92)', lt, 2.05);
+  const b = out(p(lt, 2.6, 3.2));
+  pill('그리고 · 정하고 · 대화하는 나만의 로봇', COL, 670 + (1 - b) * 30, 28, '#fff', 'rgba(255,255,255,.16)', { alpha: b });
+}
+// ── Studio scenes: headline on the left, the portrait UI card (drawn in its original 1080-wide coords) scaled on the right ──
+const PINK = '#FF5C8A', PANEL = '#F5F3EF';
+function group(x, y, k, draw) { c.save(); c.translate(x, y); c.scale(k, k); c.translate(-60, -600); draw(); c.restore(); }
+function uiCard(x, y, w, h) {
+  c.save();
+  c.shadowColor = 'rgba(32,38,43,.10)'; c.shadowBlur = 50; c.shadowOffsetY = 16;
+  c.fillStyle = '#fff'; rrect(x, y, w, h, 36); c.fill();
+  c.restore();
+  c.strokeStyle = BORDER; c.lineWidth = 2; rrect(x, y, w, h, 36); c.stroke();
+}
+function tap(x, y, lt, t0) {
+  const r = p(lt, t0, t0 + .5);
+  if (r <= 0 || r >= 1) return;
+  c.fillStyle = `rgba(22,133,113,${.25 * (1 - r)})`; c.beginPath(); c.arc(x, y, 20 + r * 60, 0, 7); c.fill();
+}
+function stepHead(lt, step, lines) {
+  pill(`STEP ${step}`, COL, 330, 30, '#fff', MINT, { alpha: out(p(lt, .05, .4)) });
+  headline(lines, COL, 520, 80, 800, INK, lt, .1);
+}
+const HEART = ['.XX.XX.', 'XXXXXXX', 'XXXXXXX', '.XXXXX.', '..XXX..', '...X...'];
+const PIX = [];
+HEART.forEach((r, y) => [...r].forEach((ch, x) => ch === 'X' && PIX.push([5 + y, 6 + x, PINK])));
+[[14, 9], [15, 10], [16, 11], [16, 12], [16, 13], [16, 14], [16, 15], [15, 9], [16, 10]].forEach(([y, x]) => PIX.push([y, x, EYE]));
+faces.bitmap = s => {
+  for (let i = 0; i < (s.n ?? PIX.length); i++) {
+    const [r, col, color] = PIX[i];
+    c.fillStyle = color;
+    for (const cc of [col, 31 - col]) c.fillRect(cc * 10 + .5, r * 10 + 20 + (s.off || 0), 9, 9);
+  }
+};
+function sceneFace(lt) {
+  c.fillStyle = WARM; c.fillRect(0, 0, W, H);
+  stepHead(lt, 1, ['표정을 내 손으로', '한 칸씩 그리고']);
+  group(1010, 56, .88, () => {
+    const k = out(p(lt, .2, .7)), y0 = 600 + (1 - k) * 60;
+    c.save(); c.globalAlpha *= k;
+    uiCard(60, y0, 960, 900);
+    text('2.0" LCD 화면편집기', 110, y0 + 80, 38, 800, INK);
+    text('소다봇 표정 스튜디오', 110, y0 + 124, 28, 500, MUTED);
+    const n = Math.floor(p(lt, .8, 3.3) * PIX.length);
+    const painting = PIX[Math.min(n, PIX.length - 1)];
+    ['✏️', '🧽', '🪣', '↔️'].forEach((g, i) => {
+      const on = i === 0 || i === 3;
+      c.fillStyle = on ? MINT_L : PANEL; rrect(110 + i * 92, y0 + 160, 76, 76, 20); c.fill();
+      if (on) { c.strokeStyle = MINT; c.lineWidth = 3; c.stroke(); }
+      text(g, 148 + i * 92, y0 + 212, 36, 400, INK, { align: 'center' });
+    });
+    text('좌우 대칭', 488, y0 + 210, 28, 700, MINT);
+    [PINK, EYE, '#FFD600', '#fff'].forEach((col, i) => {
+      const on = painting[2] === col;
+      c.fillStyle = col; c.beginPath(); c.arc(700 + i * 74, y0 + 198, on ? 28 : 22, 0, 7); c.fill();
+      c.strokeStyle = on ? INK : BORDER; c.lineWidth = on ? 4 : 2; c.stroke();
+    });
+    const cx0 = 124, cy0 = y0 + 262, cs = 26;
+    c.fillStyle = '#111418'; rrect(cx0 - 8, cy0 - 8, 32 * cs + 16, 24 * cs + 16, 18); c.fill();
+    c.strokeStyle = 'rgba(255,255,255,.06)'; c.lineWidth = 1;
+    for (let i = 0; i <= 32; i++) { c.beginPath(); c.moveTo(cx0 + i * cs, cy0); c.lineTo(cx0 + i * cs, cy0 + 24 * cs); c.stroke(); }
+    for (let j = 0; j <= 24; j++) { c.beginPath(); c.moveTo(cx0, cy0 + j * cs); c.lineTo(cx0 + 32 * cs, cy0 + j * cs); c.stroke(); }
+    c.strokeStyle = 'rgba(22,133,113,.5)'; c.setLineDash([10, 8]); c.lineWidth = 2;
+    c.beginPath(); c.moveTo(cx0 + 16 * cs, cy0); c.lineTo(cx0 + 16 * cs, cy0 + 24 * cs); c.stroke(); c.setLineDash([]);
+    for (let i = 0; i < n; i++) {
+      const [r, col, color] = PIX[i];
+      c.fillStyle = color;
+      for (const cc of [col, 31 - col]) c.fillRect(cx0 + cc * cs + 1, cy0 + r * cs + 1, cs - 2, cs - 2);
+    }
+    c.restore();
+    if (lt > .8 && lt < 3.5) {
+      const [r, col] = painting, px = cx0 + col * cs + cs / 2, py = cy0 + r * cs + cs / 2;
+      c.fillStyle = 'rgba(255,255,255,.35)'; c.beginPath(); c.arc(cx0 + (31 - col) * cs + cs / 2, py, 16, 0, 7); c.fill();
+      text('✏️', px + 6, py + 4, 64, 400, INK);
+    }
+    const bk = out(p(lt, 3.4, 3.8));
+    c.save(); c.globalAlpha *= bk;
+    const press = p(lt, 3.95, 4.05) * (1 - p(lt, 4.05, 4.25));
+    c.fillStyle = MINT; rrect(60 + press * 10, 1560 + press * 6, 960 - press * 20, 120, 60); c.fill();
+    c.restore();
+    text('아두이노 코드 만들기 ⚡', 540, 1640, 44, 800, '#fff', { align: 'center', alpha: bk });
+    tap(540, 1620, lt, 3.95);
+  });
+  const dk = inOut(p(lt, 4.2, 4.7));
+  if (dk > 0) { // the drawing shows up on the real robot
+    c.save(); c.globalAlpha *= dk;
+    stage();
+    robot(HOME, lerp(.95, 1.0, p(lt, 4.2, 6.4)), 'bitmap', { off: -4 * Math.abs(Math.sin((lt - 4.4) * 6)) });
+    headline(['내가 그린 표정이', '소다봇 얼굴로!'], COL, 500, 88, 800, '#fff', lt, 4.6);
+    c.restore();
+  }
+}
+function chips(labels, x, y, sel, lt, tSel) {
+  let cx = x, hit = null;
+  labels.forEach((lab, i) => {
+    c.font = `700 32px ${FONT}`;
+    const w = c.measureText(lab).width + 56, on = i === sel && lt >= tSel;
+    c.fillStyle = on ? MINT : PANEL; rrect(cx, y, w, 72, 36); c.fill();
+    text(lab, cx + w / 2, y + 47, 32, 700, on ? '#fff' : INK, { align: 'center' });
+    if (i === sel) hit = [cx + w / 2, y + 36];
+    cx += w + 16;
+  });
+  tap(hit[0], hit[1], lt, tSel);
+}
+function sceneFriend(lt) {
+  c.fillStyle = WARM; c.fillRect(0, 0, W, H);
+  stepHead(lt, 2, ['성격과 말투,', '기억까지 내가 정해요']);
+  group(1070, 26, .8, () => {
+    const k = out(p(lt, .2, .7)), y0 = 600 + (1 - k) * 60;
+    c.save(); c.globalAlpha *= k;
+    uiCard(60, y0, 960, 1000);
+    const label = (s, y) => text(s, 110, y, 30, 700, MUTED);
+    label('AI 이름', y0 + 80);
+    c.fillStyle = PANEL; rrect(110, y0 + 104, 860, 90, 24); c.fill();
+    const name = '소다'.slice(0, Math.floor(p(lt, .6, 1.0) * 2 + .001));
+    text(name, 140, y0 + 164, 42, 700, INK);
+    if (lt < 1.3 && Math.floor(lt * 4) % 2 === 0) {
+      c.font = `700 42px ${FONT}`; c.fillStyle = MINT; c.fillRect(146 + c.measureText(name).width, y0 + 124, 4, 50);
+    }
+    label('역할 선택', y0 + 260); chips(['공부친구', '코딩친구', '응원친구', '상담친구'], 110, y0 + 284, 2, lt, 1.3);
+    label('말투 선택', y0 + 420); chips(['존댓말', '친근한 친구말', '선생님 말투'], 110, y0 + 444, 1, lt, 1.8);
+    label('성격 선택', y0 + 580); chips(['친절함', '차분함', '유쾌함', '논리적'], 110, y0 + 604, 2, lt, 2.3);
+    label('기억 설정 · 중요한 정보 3개까지 기억해요!', y0 + 740);
+    [['🧠  내 이름은 민준', 2.8], ['⚽  축구를 제일 좋아해', 3.3]].forEach(([m, t0], i) => {
+      const mk = back(p(lt, t0, t0 + .4));
+      if (mk <= 0) return;
+      c.save(); c.translate(110, y0 + 770 + i * 100); c.scale(mk, mk);
+      c.fillStyle = MINT_L; rrect(0, 0, 600, 80, 24); c.fill();
+      c.restore();
+      text(m, 140, y0 + 822 + i * 100, 36, 700, INK, { alpha: cl(mk) });
+    });
+    c.restore();
+    const press = p(lt, 3.95, 4.05) * (1 - p(lt, 4.05, 4.25)), bk = out(p(lt, 3.5, 3.9));
+    c.save(); c.globalAlpha *= bk;
+    c.fillStyle = INK; rrect(60 + press * 10, 1660 + press * 6, 960 - press * 20, 120, 60); c.fill();
+    c.restore();
+    text('저장하기', 540, 1740, 44, 800, '#fff', { align: 'center', alpha: bk });
+    tap(540, 1720, lt, 3.95);
+    const tk = out(p(lt, 4.2, 4.5));
+    pill('✅ 소다봇 친구 설정이 안전하게 저장되었습니다!', 540, 1812 + (1 - tk) * 30, 28, '#fff', 'rgba(32,38,43,.92)', { align: 'center', alpha: tk });
+  });
+}
+function sceneChat(lt) {
+  c.fillStyle = WARM; c.fillRect(0, 0, W, H);
+  stepHead(lt, 3, ['스튜디오에서 대화하면', '나를 기억하는 친구']);
+  group(1000, 70, .92, () => {
+    const k = out(p(lt, .1, .6)), y0 = 600 + (1 - k) * 60;
+    c.save(); c.globalAlpha *= k;
+    uiCard(60, y0, 960, 1020);
+    c.fillStyle = '#111418'; c.beginPath(); c.arc(140, y0 + 80, 46, 0, 7); c.fill();
+    lcd(140, y0 + 80, .22, 0, 'idle', { blink: blinkAt(lt, 2.4) });
+    text('소다', 210, y0 + 74, 40, 800, INK);
+    c.fillStyle = '#22C55E'; c.beginPath(); c.arc(298, y0 + 61, 9, 0, 7); c.fill();
+    text('응원친구 · 친근한 친구말 · 유쾌함', 210, y0 + 116, 26, 500, MUTED);
+    c.fillStyle = BORDER; c.fillRect(60, y0 + 160, 960, 2);
+    const msg = (str, right, y, t0) => {
+      const mk = out(p(lt, t0, t0 + .35));
+      if (mk <= 0) return;
+      const lines = str.split('\n');
+      c.font = `600 40px ${FONT}`;
+      const w = Math.max(...lines.map(l => c.measureText(l).width)) + 72, h = lines.length * 56 + 44;
+      const x = right ? 980 - w : 100;
+      c.save(); c.globalAlpha *= mk; c.translate(0, (1 - mk) * 24);
+      c.fillStyle = right ? MINT : PANEL; rrect(x, y, w, h, 32); c.fill();
+      lines.forEach((l, i) => text(l, x + 36, y + 66 + i * 56, 40, 600, right ? '#fff' : INK));
+      c.restore();
+    };
+    const dots = (y, a, b) => {
+      if (lt < a || lt >= b) return;
+      c.fillStyle = PANEL; rrect(100, y, 170, 96, 32); c.fill();
+      for (let i = 0; i < 3; i++) {
+        c.fillStyle = MUTED; c.beginPath(); c.arc(145 + i * 40, y + 48 - 8 * Math.max(0, Math.sin(lt * 8 - i * .8)), 9, 0, 7); c.fill();
+      }
+    };
+    msg('소다야 나 오늘 축구 경기 있어!', true, y0 + 210, .4);
+    dots(y0 + 340, 1.0, 1.7);
+    msg('민준아 화이팅!! ⚽\n너라면 골 넣을 수 있어!', false, y0 + 340, 1.7);
+    pill('🧠 기억: 축구를 제일 좋아해', 100, y0 + 520 + (1 - out(p(lt, 2.0, 2.4))) * 20, 24, MINT, MINT_L, { alpha: out(p(lt, 2.0, 2.4)) });
+    msg('고마워 ㅎㅎ 끝나고 알려줄게', true, y0 + 620, 2.7);
+    dots(y0 + 750, 3.2, 3.8);
+    msg('기다릴게! 꼭 말해줘 😆', false, y0 + 750, 3.8);
+    c.fillStyle = PANEL; rrect(100, y0 + 900, 760, 84, 42); c.fill();
+    text('메시지 입력...', 140, y0 + 954, 32, 500, MUTED);
+    c.fillStyle = MINT; c.beginPath(); c.arc(928, y0 + 942, 42, 0, 7); c.fill();
+    text('➤', 928, y0 + 956, 36, 700, '#fff', { align: 'center' });
+    c.restore();
+  });
+}
+function scene4(lt) { // push-to-talk conversation: text + bubbles left, robot right
+  stage();
+  const C = [HOME[0], 480], s = lerp(1.0, 1.06, lt / 8);
+  const L = [.4, 2.6], T = [2.6, 4.3]; // listening, thinking; answering after
+  let kind = 'idle', st = { blink: 0 };
+  if (lt >= L[0] && lt < L[1]) { kind = 'listening'; st = { level: 1.6 + 1.4 * Math.abs(Math.sin(lt * 5.3)) * Math.abs(Math.sin(lt * 2.1 + 1)) }; }
+  else if (lt >= T[0] && lt < T[1]) { kind = 'thinking'; st = { dy: -3 - 3 * Math.cos(lt * 6) }; }
+  else if (lt >= T[1]) { kind = 'answering'; st = { open: lt < 7.4 && Math.sin(lt * 17) + Math.sin(lt * 6.3) > 0 }; }
+  robot(C, s, kind, st);
+  const [bx, by] = camPt(C, FACE_ON_PHOTO, s, BUTTON);
+  for (let i = 0; i < 2; i++) {
+    const r = p(lt, .1 + i * .25, 1.1 + i * .25);
+    if (r > 0 && r < 1) {
+      c.strokeStyle = `rgba(255,214,0,${1 - r})`; c.lineWidth = 6;
+      c.beginPath(); c.arc(bx, by, 62 + r * 100, 0, 7); c.stroke();
+    }
+  }
+  const pt = out(p(lt, .2, .6)) * (1 - p(lt, 2.2, 2.6));
+  if (pt > 0) pill('PUSH-TO-TALK', bx, by + 78, 24, INK, '#FFD600', { align: 'center', alpha: pt });
+  const phase = lt < T[0] ? 0 : lt < T[1] ? 1 : 2;
+  ['듣고', '생각하고', '대답해요'].forEach((lab, i) => {
+    const x = COL + i * 268, on = i === phase, a = out(p(lt, i * .1, .5 + i * .1));
+    c.save(); c.globalAlpha = a;
+    c.fillStyle = on ? EYE : 'rgba(255,255,255,.12)'; rrect(x, 190, 250, 76, 38); c.fill();
+    c.restore();
+    text(`${i + 1}  ${lab}`, x + 125, 240, 32, 700, on ? '#fff' : 'rgba(255,255,255,.6)', { align: 'center', alpha: a });
+  });
+  const heads = ['버튼을 누르고 말하면', 'AI가 생각하고', '목소리로 대답해요'];
+  const starts = [0, T[0], T[1]];
+  headline([heads[phase]], COL, 420, 76, 800, '#fff', lt, starts[phase] + .05);
+  const RIGHT = 830;
+  const bubble = (str, right, y, t0, typeDur, col, fg) => {
+    const k = out(p(lt, t0, t0 + .4));
+    if (k <= 0) return;
+    const lines = str.split('\n'), n = Math.floor(cl((lt - t0) / typeDur) * str.length);
+    c.font = `600 44px ${FONT}`;
+    const w = Math.max(...lines.map(l => c.measureText(l).width)) + 80, h = lines.length * 62 + 52;
+    const x = right ? RIGHT - w : COL;
+    c.save(); c.globalAlpha = k; c.translate(0, (1 - k) * 30);
+    c.fillStyle = col; rrect(x, y, w, h, 36); c.fill();
+    let left = n;
+    lines.forEach((l, i) => { text(l.slice(0, Math.max(0, left)), x + 40, y + 74 + i * 62, 44, 600, fg); left -= l.length + 1; });
+    c.restore();
+  };
+  bubble('소다야, 나 골 넣었어!', true, 540, .7, 1.0, '#fff', INK);
+  if (lt >= T[0] && lt < T[1] + .1) {
+    const k = out(p(lt, T[0], T[0] + .3));
+    c.save(); c.globalAlpha = k; c.fillStyle = EYE; rrect(COL, 710, 200, 110, 36); c.fill();
+    for (let i = 0; i < 3; i++) {
+      c.fillStyle = '#fff'; c.beginPath();
+      c.arc(COL + 50 + i * 50, 765 - 10 * Math.max(0, Math.sin(lt * 8 - i * .8)), 11, 0, 7); c.fill();
+    }
+    c.restore();
+  }
+  bubble('우와 민준아 최고야! ⚽\n역시 내 친구야!', false, 710, T[1], 1.4, EYE, '#fff');
+}
+function card(im, x, y, w, rot) {
+  const h = w * im.height / im.width;
+  c.save(); c.translate(x, y); c.rotate(rot);
+  c.shadowColor = 'rgba(32,38,43,.22)'; c.shadowBlur = 50; c.shadowOffsetY = 20;
+  c.fillStyle = '#fff'; rrect(-w / 2 - 14, -h / 2 - 14, w + 28, h + 28, 34); c.fill();
+  c.shadowColor = 'transparent';
+  rrect(-w / 2, -h / 2, w, h, 24); c.clip();
+  c.drawImage(im, -w / 2, -h / 2, w, h);
+  c.restore();
+}
+function scene6(lt) { // collage of the real robot from three sides
+  c.fillStyle = '#EDE9E2'; c.fillRect(0, 0, W, H);
+  headline(['하나하나 내가 만든', '나만의 AI 친구'], 960, 140, 72, 800, INK, lt, .1, { align: 'center' });
+  const a = back(p(lt, .2, .9)), b = back(p(lt, .35, 1.05)), m = back(p(lt, .6, 1.3));
+  const fl = Math.sin(lt * 1.6) * 8;
+  card(img.side, lerp(-400, 440, a), 650 + fl, 520, -.07);
+  card(img.back, lerp(2320, 1480, b), 660 - fl, 520, .07);
+  card(img.hero, 960, lerp(1500, 640, m), 580, -.015);
+  ['#표정만들기', '#친구설정', '#AI대화'].forEach((tag, i) => {
+    const k = out(p(lt, 1.4 + i * .12, 1.9 + i * .12));
+    pill(tag, 670 + i * 290, 984 + (1 - k) * 30, 30, i === 2 ? '#fff' : MINT, i === 2 ? AMBER : MINT_L, { align: 'center', alpha: k });
+  });
+}
+function scene7(lt) { // end card
+  c.fillStyle = '#000'; c.fillRect(0, 0, W, H);
+  const g = c.createRadialGradient(960, 400, 0, 960, 400, 760);
+  g.addColorStop(0, 'rgba(14,165,245,.18)'); g.addColorStop(1, 'rgba(14,165,245,0)');
+  c.fillStyle = g; c.fillRect(0, 0, W, H);
+  const k = back(p(lt, 0, .6));
+  if (lt > 1.6) lcd(960, 360, 1.5, 0, 'happy', { off: -6 * Math.abs(Math.sin((lt - 1.6) * 7)), tt: lt }, { glow: 40 });
+  else lcd(960, 360, 1.5 * (k || .0001), 0, 'idle', { blink: blinkAt(lt, 1.0) }, { glow: 40 });
+  headline(['SODABOT STUDIO'], 960, 760, 100, 900, '#fff', lt, .5, { align: 'center' });
+  const u = inOut(p(lt, 1.0, 1.8));
+  c.fillStyle = EYE; c.fillRect(960 - 260 * u, 800, 520 * u, 6);
+  text('소다사이언스랩', 960, 880, 42, 600, 'rgba(255,255,255,.75)', { align: 'center', alpha: out(p(lt, 1.2, 1.8)) });
+  const m = out(p(lt, 1.8, 2.4));
+  pill('나만의 AI 친구, 지금 만들어 보세요', 960, 930 + (1 - m) * 30, 32, INK, '#fff', { align: 'center', alpha: m });
+}
+// [start, end, fn]; each fades in over FADE and keeps drawing until the next one is opaque
+const FADE = .45;
+const SCENES = [[0, 3.0, scene1], [3.0, 7.8, scene2], [7.8, 14.4, sceneFace], [14.4, 19.6, sceneFriend],
+  [19.6, 24.8, sceneChat], [24.8, 32.6, scene4], [32.6, 36.2, scene6], [36.2, DUR, scene7]];
+function render(t) {
+  c.setTransform(1, 0, 0, 1, 0, 0); c.globalAlpha = 1;
+  SCENES.forEach(([a, b, fn], i) => {
+    const next = SCENES[i + 1];
+    const until = next ? next[0] + (next[2] === scene2 ? 0 : FADE) : b;
+    if (t < a || t >= until) return;
+    c.save();
+    c.globalAlpha = i === 0 || fn === scene2 ? 1 : p(t, a, a + FADE);
+    fn(t - a);
+    c.restore();
+  });
+  c.globalAlpha = p(t, DUR - .6, DUR);
+  c.fillStyle = '#000'; c.fillRect(0, 0, W, H);
+  c.globalAlpha = 1;
+}
+window.render = render; window.DUR = DUR; window.ready = ready;
+if (!location.search.includes('record')) ready.then(() => {
+  const t0 = performance.now();
+  const loop = () => { render(((performance.now() - t0) / 1000) % DUR); requestAnimationFrame(loop); };
+  loop();
+});
+</script>
+</body>
+</html>
