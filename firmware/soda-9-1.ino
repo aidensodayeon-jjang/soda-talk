@@ -2591,8 +2591,8 @@ void uploadRecordedConversation() {
 
 void setup() {
   Serial.begin(115200);
-  uint32_t serialStarted = millis();
-  while (!Serial && millis() - serialStarted < 2000) delay(10);
+  // USB 수신기가 로그를 읽지 않아도 녹음과 서버 통신은 계속 진행한다.
+  Serial.setTxTimeoutMs(0);
   Serial.println("소다봇: 마이크 및 음성 대화 펌웨어");
   Serial0.end(); // UART0를 먼저 해제: GPIO43=J1 버튼, GPIO44=스피커. USB CDC는 유지.
   pinMode(BUTTON_PIN, INPUT_PULLUP);
@@ -2639,15 +2639,47 @@ void setup() {
   // === CUSTOM_SETUP_END ===
 }
 
-void loop() {
-  if (micProbeState.load() == 2) {
-    Serial.printf("[MIC_RAW_BEGIN] %u\n", unsigned(micProbeCount));
-    for (size_t i = 0; i < micProbeCount; ++i) {
-      Serial.printf("%08lx%c", (unsigned long)(uint32_t)micRawProbe[i], (i % 8 == 7) ? '\n' : ' ');
+void sendMicrophoneProbe() {
+  if (micProbeState.load() != 2) return;
+  static size_t nextSample = 0;
+  static uint32_t lastProgress = 0;
+  static bool headerSent = false;
+  if (lastProgress == 0) lastProgress = millis();
+
+  // 수신 버퍼가 비는 만큼만 보낸다. 진단이 멈춰도 음성 처리 루프는 기다리지 않는다.
+  char line[80];
+  size_t end = nextSample;
+  size_t length = 0;
+  bool done = headerSent && nextSample == micProbeCount;
+  if (!headerSent) {
+    length = snprintf(line, sizeof(line), "[MIC_RAW_BEGIN] %u\n", unsigned(micProbeCount));
+  } else if (done) {
+    length = snprintf(line, sizeof(line), "\n[MIC_RAW_END]\n");
+  } else {
+    end = min(nextSample + 8, micProbeCount);
+    for (size_t i = nextSample; i < end; ++i) {
+      length += snprintf(line + length, sizeof(line) - length, "%08lx%c",
+                         (unsigned long)(uint32_t)micRawProbe[i], i + 1 == end ? '\n' : ' ');
     }
-    Serial.println("\n[MIC_RAW_END]");
-    micProbeState.store(0);
   }
+
+  if (Serial && Serial.availableForWrite() >= int(length)
+      && Serial.write(reinterpret_cast<const uint8_t*>(line), length) == length) {
+    headerSent = true;
+    nextSample = end;
+    lastProgress = millis();
+    if (!done) return;
+  } else if (millis() - lastProgress < 1000) {
+    return;
+  }
+  headerSent = false;
+  nextSample = 0;
+  lastProgress = 0;
+  micProbeState.store(0);
+}
+
+void loop() {
+  sendMicrophoneProbe();
   // LCD는 이 작업에서만 갱신. 마이크 작업은 상태만 전달한다.
   updateVoiceFace();
   uploadRecordedConversation();
